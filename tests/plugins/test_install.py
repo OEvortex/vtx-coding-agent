@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 import textwrap
 
+import ctx.plugins.install as install_module
 import pytest
-
-import vtx.plugins.install as install_module
-from vtx.plugins.install import (
+from ctx.plugins.install import (
     InstallPlan,
     _package_of,
     _satisfies,
@@ -19,7 +18,7 @@ from vtx.plugins.install import (
     verify_installed,
     write_exemption,
 )
-from vtx.plugins.profile import init_profile
+from ctx.plugins.profile import init_profile
 
 #: An editable checkout reports VERSION as "editable", which cannot be ordered
 #: against a requirement; pin a real one so the gate is under test.
@@ -28,7 +27,7 @@ RUNNING = "1.2.2"
 
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(install_module, "VERSION", RUNNING)
     init_profile("default")
 
@@ -40,7 +39,7 @@ def _write_pyproject(directory, *, version: str, requirement: str | None):
             name = "demo-plugin"
             version = "{version}"
             [project.optional-dependencies]
-            vtx = ["{requirement}"]
+            ctx = ["{requirement}"]
             """)
         if requirement
         else textwrap.dedent(f"""\
@@ -64,10 +63,10 @@ def test_an_incompatible_local_path_is_refused_with_the_reason(tmp_path):
     _write_pyproject(tmp_path, version="1.0.0", requirement=">=99.0")
     plan = plan_install(str(tmp_path))
     assert plan.compatible is False
-    assert f"requires vtx >=99.0, running {RUNNING}" == plan.reason
+    assert f"requires ctx >=99.0, running {RUNNING}" == plan.reason
 
 
-def test_a_package_declaring_no_vtx_requirement_is_allowed(tmp_path):
+def test_a_package_declaring_no_ctx_requirement_is_allowed(tmp_path):
     _write_pyproject(tmp_path, version="1.0.0", requirement=None)
     plan = plan_install(str(tmp_path))
     assert plan.compatible is True
@@ -149,7 +148,7 @@ def test_a_compatible_plan_is_exempt_without_any_grant():
 
 
 def test_verify_installed_reports_a_missing_distribution():
-    plan = verify_installed("vtx-this-package-does-not-exist-xyz")
+    plan = verify_installed("ctx-this-package-does-not-exist-xyz")
     assert plan.compatible is False
     assert "not installed" in plan.reason
 
@@ -188,8 +187,8 @@ def test_an_unparseable_requirement_is_treated_as_satisfied():
     assert _satisfies("1.2.2", "not a requirement") is True
 
 
-def test_the_vtx_group_may_name_the_package_or_be_a_bare_specifier(tmp_path):
-    for requirement in (f"vtx-coding-agent>={RUNNING}", f">={RUNNING}"):
+def test_the_ctx_group_may_name_the_package_or_be_a_bare_specifier(tmp_path):
+    for requirement in (f"ctx-code>={RUNNING}", f">={RUNNING}"):
         directory = tmp_path / requirement.replace(">", "_gt_")
         directory.mkdir()
         _write_pyproject(directory, version="1.0.0", requirement=requirement)

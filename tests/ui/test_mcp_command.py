@@ -14,8 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-
-from vtx.tui.commands import CommandsMixin
+from ctx.tui.commands import CommandsMixin
 
 pytestmark = pytest.mark.asyncio
 
@@ -317,7 +316,7 @@ async def test_signout_on_an_unknown_server_says_so(tmp_path):
 
 
 def _project_file(tmp_path, servers: dict) -> None:
-    path = tmp_path / ".vtx" / "mcp.json"
+    path = tmp_path / ".ctx" / "mcp.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"mcpServers": servers}), encoding="utf-8")
 

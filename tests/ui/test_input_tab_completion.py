@@ -7,7 +7,7 @@ so a user reaching for Tab to accept fell through to path completion instead.
 
 import types
 
-from vtx.tui.input import InputBox
+from ctx.tui.input import InputBox
 
 
 class _FakeSelection:

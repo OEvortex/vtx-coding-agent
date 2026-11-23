@@ -21,9 +21,8 @@ from typing import Any
 
 import httpx
 import pytest
-
-from vtx.mcp.auth import UnauthorizedContext
-from vtx.mcp.oauth import (
+from ctx.mcp.auth import UnauthorizedContext
+from ctx.mcp.oauth import (
     FileOAuthStateStore,
     McpOAuthAuthorizationRequiredError,
     McpOAuthProvider,
@@ -47,8 +46,8 @@ from vtx.mcp.oauth import (
     select_resource,
     start_authorization,
 )
-from vtx.mcp.oauth.errors import OAuthRegistrationError
-from vtx.mcp.oauth.types import (
+from ctx.mcp.oauth.errors import OAuthRegistrationError
+from ctx.mcp.oauth.types import (
     parse_authorization_server_metadata,
     parse_protected_resource_metadata,
 )
@@ -258,7 +257,7 @@ def _provider(
         server_url=server_url,
         redirect_url=redirect_url,
         client_metadata=OAuthClientMetadata(
-            redirect_uris=[redirect_url], client_name="vtx-test", **kwargs
+            redirect_uris=[redirect_url], client_name="ctx-test", **kwargs
         ),
         store=store or MemoryOAuthStateStore(),
         on_redirect=on_redirect,

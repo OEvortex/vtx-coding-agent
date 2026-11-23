@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from ctx.coding_agent.tools.apply_patch import format_diff_display, generate_diff
+from ctx.tui import boxed
+from ctx.tui.diff_display import DIFF_BG_PAD_MARKER
 from rich.text import Text
-
-from vtx.coding_agent.tools.apply_patch import format_diff_display, generate_diff
-from vtx.tui import boxed
-from vtx.tui.diff_display import DIFF_BG_PAD_MARKER
 
 
 def test_top_border_never_overflows_its_width():
@@ -16,7 +15,7 @@ def test_top_border_never_overflows_its_width():
                 text = boxed.top_border(
                     "→",
                     "Read",
-                    "src/vtx/tui/very/long/path/to/file.py:120-400",
+                    "src/ctx/tui/very/long/path/to/file.py:120-400",
                     width,
                     badge=badge,
                     status=status,
@@ -27,7 +26,7 @@ def test_top_border_never_overflows_its_width():
 def test_top_border_accepts_pre_styled_text_detail():
     # A bash command arrives as an already-highlighted ``Text``; the header must
     # keep its syntax-coloured spans instead of flattening it back to dim text.
-    from vtx.tui.formatting import format_bash_command
+    from ctx.tui.formatting import format_bash_command
 
     highlighted = format_bash_command("git log --oneline && echo done")
     assert len(highlighted.spans) > 1
@@ -41,7 +40,7 @@ def test_top_border_accepts_pre_styled_text_detail():
 
 
 def test_bash_tool_header_is_syntax_highlighted():
-    from vtx.tui.blocks import ToolBlock
+    from ctx.tui.blocks import ToolBlock
 
     block = ToolBlock(name="bash", call_msg="$ git log --oneline && echo done")
     header = block._format_header()

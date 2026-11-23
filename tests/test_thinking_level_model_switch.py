@@ -11,10 +11,9 @@ on a local provider cache being present.
 """
 
 import pytest
-
-from vtx.agent import runtime as runtime_mod
-from vtx.agent.runtime import ConversationRuntime
-from vtx.ai.models import ApiType, Model
+from ctx.agent import runtime as runtime_mod
+from ctx.agent.runtime import ConversationRuntime
+from ctx.ai.models import ApiType, Model
 
 # The shape reported for stealth/space-bunny-alpha: reasoning on, and an effort
 # ladder that deliberately excludes "none".

@@ -7,9 +7,8 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-
-from vtx.agent.runtime import ConversationRuntime
-from vtx.coding_agent.agents import (
+from ctx.agent.runtime import ConversationRuntime
+from ctx.coding_agent.agents import (
     AGENT_ACTIVATED,
     AGENT_CHANGED,
     AgentDef,
@@ -17,7 +16,7 @@ from vtx.coding_agent.agents import (
     LoadedAgent,
     load_all_agents,
 )
-from vtx.plugins.bus import EventBus
+from ctx.plugins.bus import EventBus
 
 # =============================================================================
 # Loader
@@ -26,11 +25,11 @@ from vtx.plugins.bus import EventBus
 
 def test_load_all_agents_with_cwd(monkeypatch, tmp_path: Path):
     monkeypatch.chdir(tmp_path)
-    (tmp_path / ".vtx" / "agent").mkdir(parents=True)
-    (tmp_path / ".vtx" / "agent" / "review.py").write_text(
+    (tmp_path / ".ctx" / "agent").mkdir(parents=True)
+    (tmp_path / ".ctx" / "agent" / "review.py").write_text(
         dedent(
             """
-            from vtx.coding_agent.agents import AgentDef
+            from ctx.coding_agent.agents import AgentDef
             AGENT = AgentDef(name="review", description="Reviewer", tools_deny=["bash"])
             """
         ).strip()
@@ -44,10 +43,10 @@ def test_load_all_agents_with_cwd(monkeypatch, tmp_path: Path):
 
 
 def test_load_all_agents_user_writes_global_only(tmp_path: Path):
-    global_dir = tmp_path / "home" / ".vtx" / "agent"
+    global_dir = tmp_path / "home" / ".ctx" / "agent"
     global_dir.mkdir(parents=True)
     (global_dir / "yolo.py").write_text(
-        "from vtx.coding_agent.agents import AgentDef\n"
+        "from ctx.coding_agent.agents import AgentDef\n"
         'AGENT = AgentDef(name="yolo", description="fast")\n'
     )
     cwd = tmp_path / "project"
@@ -73,7 +72,7 @@ def _make_agent(name: str, **kwargs) -> LoadedAgent:
 def test_runtime_set_active_agent_persists_last_selected(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "home")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    from vtx.coding_agent import reset_config
+    from ctx.coding_agent import reset_config
 
     reset_config()
 
@@ -93,7 +92,7 @@ def test_runtime_set_active_agent_persists_last_selected(monkeypatch, tmp_path: 
     assert runtime.active_agent is not None
     assert runtime.active_agent.definition.name == "review"
 
-    from vtx.coding_agent import get_last_selected
+    from ctx.coding_agent import get_last_selected
 
     ls = get_last_selected()
     assert ls.agent == "review"
@@ -102,7 +101,7 @@ def test_runtime_set_active_agent_persists_last_selected(monkeypatch, tmp_path: 
 def test_runtime_set_active_agent_unknown_returns_none(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "home")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    from vtx.coding_agent import reset_config
+    from ctx.coding_agent import reset_config
 
     reset_config()
 
@@ -123,7 +122,7 @@ def test_runtime_set_active_agent_unknown_returns_none(monkeypatch, tmp_path: Pa
 def test_runtime_cycle_active_agent_cycles(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "home")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    from vtx.coding_agent import reset_config
+    from ctx.coding_agent import reset_config
 
     reset_config()
 
@@ -164,7 +163,7 @@ def test_runtime_active_commands_no_agent():
 
 
 def test_system_prompt_includes_agent_instructions(monkeypatch, tmp_path: Path):
-    from vtx.agent.prompts import build_system_prompt
+    from ctx.agent.prompts import build_system_prompt
 
     prompt = build_system_prompt(
         cwd=str(tmp_path),
@@ -172,18 +171,18 @@ def test_system_prompt_includes_agent_instructions(monkeypatch, tmp_path: Path):
     )
     assert "AGENT PROFILE: be terse" in prompt
     # Default base is also present
-    assert "Vtx" in prompt
+    assert "Ctx" in prompt
 
 
 def test_system_prompt_replace_mode(monkeypatch, tmp_path: Path):
-    from vtx.agent.prompts import build_system_prompt
+    from ctx.agent.prompts import build_system_prompt
 
     prompt = build_system_prompt(
         cwd=str(tmp_path), extra_instructions="CUSTOM ONLY", extra_instructions_mode="replace"
     )
     assert "CUSTOM ONLY" in prompt
     # The base identity line should be gone
-    assert "You are an expert coding assistant called Vtx" not in prompt
+    assert "You are an expert coding assistant called Ctx" not in prompt
 
 
 # =============================================================================
@@ -192,15 +191,15 @@ def test_system_prompt_replace_mode(monkeypatch, tmp_path: Path):
 
 
 def test_cli_list_agents(monkeypatch, tmp_path: Path, capsys):
-    from vtx.coding_agent import cli
+    from ctx.coding_agent import cli
 
-    (tmp_path / ".vtx" / "agent").mkdir(parents=True)
-    (tmp_path / ".vtx" / "agent" / "review.py").write_text(
-        "from vtx.coding_agent.agents import AgentDef\n"
+    (tmp_path / ".ctx" / "agent").mkdir(parents=True)
+    (tmp_path / ".ctx" / "agent" / "review.py").write_text(
+        "from ctx.coding_agent.agents import AgentDef\n"
         'AGENT = AgentDef(name="review", description="Reviewer")\n'
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["vtx", "--list-agents"])
+    monkeypatch.setattr(sys, "argv", ["ctx", "--list-agents"])
     with pytest.raises(SystemExit) as e:
         cli.main()
     assert e.value.code == 0
@@ -209,10 +208,10 @@ def test_cli_list_agents(monkeypatch, tmp_path: Path, capsys):
 
 
 def test_cli_list_agents_empty(monkeypatch, tmp_path: Path, capsys):
-    from vtx.coding_agent import cli
+    from ctx.coding_agent import cli
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["vtx", "--list-agents"])
+    monkeypatch.setattr(sys, "argv", ["ctx", "--list-agents"])
     with pytest.raises(SystemExit) as e:
         cli.main()
     assert e.value.code == 0
@@ -227,15 +226,15 @@ def test_cli_list_agents_empty(monkeypatch, tmp_path: Path, capsys):
 
 
 def test_agent_activated_event_in_all_events():
-    from vtx.plugins.event_contract import ALL_EVENTS
+    from ctx.plugins.event_contract import ALL_EVENTS
 
     assert AGENT_ACTIVATED in ALL_EVENTS
     assert AGENT_CHANGED in ALL_EVENTS
 
 
 def test_loaded_agent_wire_handlers():
-    from vtx.coding_agent.agents.api import LoadedAgent
-    from vtx.plugins.event_contract import AGENT_START
+    from ctx.coding_agent.agents.api import LoadedAgent
+    from ctx.plugins.event_contract import AGENT_START
 
     agent = LoadedAgent(definition=AgentDef(name="a", description="x"), path=Path("/x.py"))
 
@@ -256,9 +255,9 @@ def test_loaded_agent_wire_handlers():
 
 
 def test_runtime_set_active_agent_updates_agent_tools(monkeypatch, tmp_path: Path):
-    from vtx.agent.runtime import ConversationRuntime
-    from vtx.coding_agent.agents import AgentRegistry
-    from vtx.plugins.bus import EventBus
+    from ctx.agent.runtime import ConversationRuntime
+    from ctx.coding_agent.agents import AgentRegistry
+    from ctx.plugins.bus import EventBus
 
     registry = AgentRegistry()
     registry.agents = [
@@ -304,10 +303,10 @@ def test_runtime_set_active_agent_updates_agent_tools(monkeypatch, tmp_path: Pat
 def test_agent_tool_list_does_not_leak_across_switches(monkeypatch, tmp_path: Path):
     """Switching FROM a restrictive agent (plan) TO a default agent must not
     carry over tools that only the restrictive agent should have."""
-    from vtx.agent.runtime import ConversationRuntime
-    from vtx.coding_agent.agents import AgentRegistry
-    from vtx.coding_agent.tools import DEFAULT_TOOLS
-    from vtx.plugins.bus import EventBus
+    from ctx.agent.runtime import ConversationRuntime
+    from ctx.coding_agent.agents import AgentRegistry
+    from ctx.coding_agent.tools import DEFAULT_TOOLS
+    from ctx.plugins.bus import EventBus
 
     registry = AgentRegistry()
     registry.agents = [_make_agent("plan", tools_allow=["read", "todo", "grep", "skill"])]
@@ -354,10 +353,10 @@ def test_agent_tool_list_does_not_leak_across_switches(monkeypatch, tmp_path: Pa
 def test_runtime_set_active_agent_updates_system_prompt(monkeypatch, tmp_path: Path):
     from typing import Any, cast
 
-    from vtx.agent.context import Context
-    from vtx.agent.runtime import ConversationRuntime
-    from vtx.coding_agent.agents import AgentRegistry
-    from vtx.plugins.bus import EventBus
+    from ctx.agent.context import Context
+    from ctx.agent.runtime import ConversationRuntime
+    from ctx.coding_agent.agents import AgentRegistry
+    from ctx.plugins.bus import EventBus
 
     registry = AgentRegistry()
     registry.agents = [

@@ -6,15 +6,14 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-from vtx.agent.revert import commit as _commit
-from vtx.agent.revert import current_state as _current_state
-from vtx.agent.revert import record_turn_snapshot
-from vtx.agent.session import Session
-from vtx.agent.snapshot import SnapshotStore, get_store
-from vtx.protocol.types import FileChanges, TextContent, ToolResultMessage, UserMessage
-from vtx.tui.app import Vtx
-from vtx.tui.chat import ChatLog
+from ctx.agent.revert import commit as _commit
+from ctx.agent.revert import current_state as _current_state
+from ctx.agent.revert import record_turn_snapshot
+from ctx.agent.session import Session
+from ctx.agent.snapshot import SnapshotStore, get_store
+from ctx.protocol.types import FileChanges, TextContent, ToolResultMessage, UserMessage
+from ctx.tui.app import Ctx
+from ctx.tui.chat import ChatLog
 
 
 @pytest.fixture()
@@ -61,7 +60,7 @@ def _turn(
     return entry
 
 
-def _seed_turns(app: Vtx, proj: Path) -> tuple[Session, list[str]]:
+def _seed_turns(app: Ctx, proj: Path) -> tuple[Session, list[str]]:
     """Three turns that edit a.txt."""
     session = app._runtime.session
     assert session is not None
@@ -73,14 +72,14 @@ def _seed_turns(app: Vtx, proj: Path) -> tuple[Session, list[str]]:
     return session, boundaries
 
 
-def _chat_lines(app: Vtx) -> list[str]:
+def _chat_lines(app: Ctx) -> list[str]:
     chat = app.query_one("#chat-log", ChatLog)
     return [str(getattr(child, "content", "")) for child in chat.children]
 
 
 @pytest.mark.asyncio
 async def test_undo_then_redo_restores_and_reapplies_files(project: Path) -> None:
-    app = Vtx(cwd=str(project))
+    app = Ctx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
         _seed_turns(app, project)
         assert (project / "a.txt").read_text() == "a3\n"
@@ -117,7 +116,7 @@ async def test_undo_restores_files_changed_without_tool_reports(project: Path) -
     revert that trusted tool reports would restore nothing and leave the
     worktree dirty.
     """
-    app = Vtx(cwd=str(project))
+    app = Ctx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
         session = app._runtime.session
         assert session is not None
@@ -140,7 +139,7 @@ async def test_undo_restores_files_changed_without_tool_reports(project: Path) -
 
 @pytest.mark.asyncio
 async def test_undo_to_the_start_and_back_is_graceful(project: Path) -> None:
-    app = Vtx(cwd=str(project))
+    app = Ctx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
         _seed_turns(app, project)
         for _ in range(4):
@@ -152,7 +151,7 @@ async def test_undo_to_the_start_and_back_is_graceful(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_undo_is_refused_while_the_agent_is_working(project: Path) -> None:
-    app = Vtx(cwd=str(project))
+    app = Ctx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
         _seed_turns(app, project)
         app._is_running = True
@@ -172,7 +171,7 @@ async def test_tree_jump_restores_files_too(project: Path) -> None:
     Regression: `/tree` re-pointed the session leaf but never touched disk, so
     picking an old point showed a past conversation over a dirty worktree.
     """
-    app = Vtx(cwd=str(project))
+    app = Ctx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
         session, boundaries = _seed_turns(app, project)
         assert (project / "a.txt").read_text() == "a3\n"
@@ -192,7 +191,7 @@ async def test_tree_jump_restores_files_too(project: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_tree_jump_to_current_position_is_a_noop(project: Path) -> None:
-    app = Vtx(cwd=str(project))
+    app = Ctx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
         session, boundaries = _seed_turns(app, project)
         app._revert_tree_to(boundaries[2], app.query_one("#chat-log", ChatLog))
@@ -209,7 +208,7 @@ async def test_undo_without_git_reports_a_clear_error(tmp_path: Path, monkeypatc
     plain.mkdir()
     (plain / "a.txt").write_text("a0\n")
 
-    app = Vtx(cwd=str(plain))
+    app = Ctx(cwd=str(plain))
     async with app.run_test(size=(100, 30)) as pilot:
         session = app._runtime.session
         assert session is not None
@@ -227,7 +226,7 @@ async def test_resumed_session_undo_works_after_a_new_turn(project: Path) -> Non
     They can only rewind the conversation; the first turn that runs after the
     resume records its own bracket, and from then on files are restored.
     """
-    app = Vtx(cwd=str(project))
+    app = Ctx(cwd=str(project))
     async with app.run_test(size=(100, 30)) as pilot:
         session = app._runtime.session
         assert session is not None

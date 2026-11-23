@@ -33,10 +33,10 @@
       <button id="title-btn" class="title-btn"><span id="title-code" class="session-code hidden"></span><span id="chat-title">Chat</span></button>
       <span class="spacer"></span>
       <!-- List-mode right cluster -->
-      <div id="new-session-dd" class="hidden"></div>
+      <button id="refresh-btn" class="icon-btn hidden" title="Refresh sessions"><i class="codicon codicon-refresh"></i></button>
       <button id="list-search-btn" class="icon-btn hidden" title="Search sessions"><i class="codicon codicon-search"></i></button>
       <button id="list-filter-btn" class="icon-btn hidden" title="Filter sessions"><i class="codicon codicon-list-filter"></i></button>
-      <button id="settings-btn" class="icon-btn hidden" title="Vtx settings"><i class="codicon codicon-gear"></i></button>
+      <button id="view-panel-btn" class="icon-btn hidden" title="Toggle sessions panel"><i class="codicon codicon-layout-sidebar-right"></i></button>
       <!-- Thread-mode right cluster. Moving the chat comes before stopping it:
            terminate stays next to the panel toggle at the far end. -->
       <!-- Moves this chat between the side panel and an editor tab, carrying the
@@ -53,6 +53,17 @@
            itself is announced through #announcer rather than by making the whole
            transcript live, which would re-read a reply on every chunk. -->
       <div id="thread" role="log" aria-label="Vtx chat transcript"></div>
+      <!-- Decorative companion on the empty sessions view, the way Copilot's
+           chat pet waits in the corner until there is a conversation. -->
+      <div id="landing-pet" class="hidden" aria-hidden="true">
+        <svg viewBox="0 0 16 16" shape-rendering="crispEdges" focusable="false">
+          <g class="pet-body">
+            <path d="M5 0h1v3H5zM10 0h1v3h-1zM6 3h4v1H6zM4 4h8v1H4zM3 5h10v7H3zM4 12h8v1H4zM6 13h4v1H6z" />
+          </g>
+          <path class="pet-shade" d="M3 11h10v1H3zM4 12h8v1H4z" />
+          <path class="pet-eyes" d="M6 7h1v2H6zM9 7h1v2H9z" />
+        </svg>
+      </div>
       <!-- Jump-to-bottom button (VS Code's .chat-scroll-down): a round secondary
            button bottom-right of the thread, shown only when scrolled up. -->
       <button id="scroll-down" class="chat-scroll-down" title="Scroll to Latest"><i class="codicon codicon-arrow-down"></i></button>
@@ -74,8 +85,13 @@
             <div id="model-dd" class="dd"></div>
             <div id="fusion-dd" class="dd hidden"></div>
             <div id="thinking-dd" class="dd hidden"></div>
+            <!-- Context window size, shown in the input itself like Copilot's
+                 token pill. The full used/size breakdown stays in the hover. -->
+            <button id="context-pill" class="tool-ctl context-pill hidden" title="Context window"></button>
+            <button id="options-btn" class="tool-ctl options-pill" title="Chat options"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 4.5h12M2 11.5h12"/><circle cx="6" cy="4.5" r="1.6" fill="currentColor" stroke="none"/><circle cx="10.5" cy="11.5" r="1.6" fill="currentColor" stroke="none"/></svg></button>
           </div>
           <div class="toolbar-right">
+            <button id="mic-btn" class="tool-ctl mic-btn" title="Dictate (Speech to Text)"><i class="codicon codicon-mic"></i></button>
             <!-- Stop comes first, then Send, which is the order VS Code's chat
                  puts them in: the send control stays at the far end whether it is
                  the blue Send or, while Vtx works, the split queue button. -->
@@ -87,9 +103,14 @@
           </div>
         </div>
       </div>
-      <!-- VS Code's .chat-secondary-toolbar: the row under the input box that
-           carries the context-usage widget, right aligned. -->
+      <!-- VS Code's .chat-secondary-toolbar: the row under the input box. On the
+           left are the session target and permission pickers (Local / Default
+           permissions); the context ring sits on the right in a thread. -->
       <div id="secondary-toolbar">
+        <div id="composer-status">
+          <span id="host-pill" class="status-pill" title="Vtx runs locally in this workspace"><i class="codicon codicon-device-desktop"></i><span>Local</span></span>
+          <button id="permission-pill" class="status-pill" title="Choose permissions"><i class="codicon codicon-shield"></i><span id="permission-label">Default permissions</span></button>
+        </div>
         <button id="usage" class="usage-ring hidden" title=""></button>
       </div>
     </div>

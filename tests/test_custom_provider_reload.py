@@ -11,9 +11,8 @@ deletion take effect.
 from __future__ import annotations
 
 import pytest
-
-from vtx.ai import provider_catalog
-from vtx.ai.provider_catalog import custom_provider_slugs, reload_custom_providers
+from ctx.ai import provider_catalog
+from ctx.ai.provider_catalog import custom_provider_slugs, reload_custom_providers
 
 PROVIDER_BODY = "\n".join(
     [
@@ -31,7 +30,7 @@ PROVIDER_BODY = "\n".join(
 def providers_dir(tmp_path, monkeypatch):
     """A sandboxed providers directory, with the catalog resynced to it."""
     xdg = tmp_path / "xdg"
-    providers = xdg / "vtx" / "providers"
+    providers = xdg / "ctx" / "providers"
     providers.mkdir(parents=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     # A previous test may have populated the cache from the real directories.
@@ -86,7 +85,7 @@ def test_an_edited_base_url_lands_on_reload(providers_dir):
 def test_a_deleted_provider_leaves_the_dynamic_fetcher(providers_dir):
     """Custom providers are mirrored into the dynamic model fetcher so they show
     up in ``/model``; a deleted file has to stop being offered there too."""
-    from vtx.ai.dynamic_models import DYNAMIC_PROVIDERS
+    from ctx.ai.dynamic_models import DYNAMIC_PROVIDERS
 
     _write(providers_dir)
     reload_custom_providers()

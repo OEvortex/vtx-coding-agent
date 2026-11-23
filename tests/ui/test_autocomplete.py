@@ -2,8 +2,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-
-from vtx.tui.autocomplete import (
+from ctx.tui.autocomplete import (
     DEFAULT_COMMANDS,
     CompletionResult,
     FilePathProvider,

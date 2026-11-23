@@ -16,10 +16,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-from vtx.tui.app import Vtx
-from vtx.tui.blocks import UsageBlock
-from vtx.tui.usage_stats import DailyUsage, aggregate_usage
+from ctx.tui.app import Ctx
+from ctx.tui.blocks import UsageBlock
+from ctx.tui.usage_stats import DailyUsage, aggregate_usage
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -67,7 +66,7 @@ def _usage_entry(day: date | datetime, *, inp: int, out: int, cached: int = 0) -
 @pytest.fixture
 def fake_history(tmp_path, monkeypatch):
     """Point the aggregator at a throwaway session directory."""
-    from vtx.tui import usage_stats
+    from ctx.tui import usage_stats
 
     sessions = tmp_path / "sessions" / "home-test"
     sessions.mkdir(parents=True)
@@ -178,7 +177,7 @@ def test_empty_history_still_renders(fake_history, monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_usage_command_mounts_the_panel(tmp_path) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     async with app.run_test(size=(100, 40)) as pilot:
         app.run_worker(app.action_usage(), exclusive=True)
         for _ in range(100):
@@ -208,7 +207,7 @@ def test_daily_usage_total_is_the_sum_of_its_parts() -> None:
 
 
 def test_token_format_uses_1024_units() -> None:
-    from vtx.tui.formatting import format_tokens
+    from ctx.tui.formatting import format_tokens
 
     assert format_tokens(1023) == "1023"
     assert format_tokens(1024) == "1k"
@@ -225,7 +224,7 @@ async def test_session_turns_come_from_message_counts(monkeypatch) -> None:
     ``token_totals()`` carries no turn count, so it must come from
     ``message_counts()``; leaving it unset silently rendered zero.
     """
-    from vtx.tui.commands.sessions import SessionCommands
+    from ctx.tui.commands.sessions import SessionCommands
 
     session = SimpleNamespace(
         token_totals=lambda: SimpleNamespace(
@@ -241,7 +240,7 @@ async def test_session_turns_come_from_message_counts(monkeypatch) -> None:
     commands = SimpleNamespace(
         _runtime=SimpleNamespace(session=session), query_one=lambda *a, **k: chat
     )
-    monkeypatch.setattr("vtx.tui.usage_stats._sessions_root", lambda: Path(os.devnull))
+    monkeypatch.setattr("ctx.tui.usage_stats._sessions_root", lambda: Path(os.devnull))
 
     await SessionCommands.action_usage(commands)  # type: ignore[arg-type]
 
@@ -255,7 +254,7 @@ def test_days_follow_the_local_clock_not_utc(tmp_path, monkeypatch) -> None:
     midnight and the UTC offset under the day before, which is why the "last
     30 days" total and the heatmap disagreed with the calendar.
     """
-    monkeypatch.setattr("vtx.tui.usage_stats._sessions_root", lambda: tmp_path)
+    monkeypatch.setattr("ctx.tui.usage_stats._sessions_root", lambda: tmp_path)
     sub = tmp_path / "proj"
     sub.mkdir()
     instant = datetime(2026, 10, 4, 19, 0, tzinfo=UTC)  # 00:30 IST on the 5th
@@ -276,7 +275,7 @@ def test_card_shows_exact_total_next_to_the_compact_one() -> None:
     ``2.7B``, so the breakdown appears not to add up. The exact count makes the
     arithmetic checkable instead of something to squint at.
     """
-    from vtx.tui.blocks import _total_line
+    from ctx.tui.blocks import _total_line
 
     usage = DailyUsage(input_tokens=2_894_436_029, output_tokens=12_844_767)
     line = _total_line(usage)

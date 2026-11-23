@@ -31,10 +31,9 @@ Reference:
 from __future__ import annotations
 
 import pytest
-
-from vtx.ai.sdk.anthropic import AnthropicSDK
-from vtx.ai.sdk.base import GenerationConfig, Message
-from vtx.ai.sdk.openai import OpenAISDK
+from ctx.ai.sdk.anthropic import AnthropicSDK
+from ctx.ai.sdk.base import GenerationConfig, Message
+from ctx.ai.sdk.openai import OpenAISDK
 
 _LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
 _NON_NONE_LEVELS = tuple(level for level in _LEVELS if level != "none")
@@ -173,7 +172,7 @@ def test_minimax_m3_does_not_emit_thinking_extra_body() -> None:
 def test_every_openai_compat_slug_in_catalog_sends_the_level() -> None:
     """Every ``openai_compat`` slug in ``provider.yaml`` must forward a
     verified level on the wire — none may silently swallow it."""
-    from vtx.ai.provider_catalog import list_providers
+    from ctx.ai.provider_catalog import list_providers
 
     catalog_slugs = {p.slug for p in list_providers() if p.family == "openai_compat"}
     assert catalog_slugs, "provider.yaml must declare at least one openai_compat slug"

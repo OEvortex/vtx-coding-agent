@@ -1,8 +1,7 @@
 import asyncio
 
+from ctx.tui.input import InputBox
 from textual.app import App, ComposeResult
-
-from vtx.tui.input import InputBox
 
 
 class Harness(App[None]):

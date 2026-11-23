@@ -6,8 +6,7 @@ import time
 from pathlib import Path
 
 import pytest
-
-from vtx.mcp import McpClient, McpClientOptions, StdioTransport, StdioTransportOptions
+from ctx.mcp import McpClient, McpClientOptions, StdioTransport, StdioTransportOptions
 
 FIXTURES = Path(__file__).parent / "fixtures"
 STDIO_SERVER = FIXTURES / "stdio_server.py"
@@ -133,7 +132,7 @@ async def test_close_is_idempotent():
 
 @pytest.mark.asyncio
 async def test_sending_after_close_is_refused():
-    from vtx.mcp import McpConnectionClosedError
+    from ctx.mcp import McpConnectionClosedError
 
     transport = _transport(STDIO_SERVER)
     client = await _connect(transport)
@@ -165,7 +164,7 @@ async def test_passes_environment_to_the_child():
 
 @pytest.mark.asyncio
 async def test_cancellation_stops_a_running_tool_call():
-    from vtx.mcp import McpAbortError, McpRequestOptions
+    from ctx.mcp import McpAbortError, McpRequestOptions
 
     slow = FIXTURES / "slow_server.py"
     transport = _transport(slow)
@@ -185,7 +184,7 @@ async def test_cancellation_stops_a_running_tool_call():
 
 @pytest.mark.asyncio
 async def test_timeout_kills_the_child_process():
-    from vtx.mcp import McpRequestOptions, McpTimeoutError
+    from ctx.mcp import McpRequestOptions, McpTimeoutError
 
     slow = FIXTURES / "slow_server.py"
     transport = _transport(slow)

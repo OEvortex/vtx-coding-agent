@@ -8,7 +8,7 @@ snapshot, and recap systems write.
 ## Where sessions live
 
 One directory per working directory, one file per session
-(`src/vtx/agent/session.py:243-248`):
+(`src/ctx/agent/session.py:243-248`):
 
 ```python
 @staticmethod
@@ -21,14 +21,14 @@ def get_sessions_dir(cwd: str) -> Path:
 ```
 
 ```text
-~/.vtx/sessions/-home-user-proj/
+~/.ctx/sessions/-home-user-proj/
   2026-10-11T10-47-12_5f3a1c2e-8b90-4c11-9d2f-1a2b3c4d5e6f.jsonl
   2026-10-12T09-02-44_9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d.jsonl
 ```
 
 The directory is `chmod 0700`, and the directory name is the absolute path with `/` and
 `\` turned into `-`. The file name is `<start-timestamp>_<session-uuid>.jsonl`
-(`src/vtx/agent/session.py:965-968`):
+(`src/ctx/agent/session.py:965-968`):
 
 ```python
 session_id = str(uuid.uuid4())
@@ -38,23 +38,23 @@ session._session_file = sessions_dir / f"{file_timestamp}_{session_id}.jsonl"
 ```
 
 The session id is a full UUID; the short 8-character ids you see in the UI are **entry**
-ids, generated separately (`uuid4().hex[:8]`, `src/vtx/agent/session.py:238-240`).
+ids, generated separately (`uuid4().hex[:8]`, `src/ctx/agent/session.py:238-240`).
 
 Two kinds of state are deliberately *not* in the project: working-tree snapshots live in a
-separate shadow git repo under `~/.vtx/snapshots/`. See `snapshots`.
+separate shadow git repo under `~/.ctx/snapshots/`. See `snapshots`.
 
 ### Retention and the token ledger
 
 Session files are pruned automatically, and the cost of a deleted conversation is not
 lost with it. At startup -- after the session in use is known, so it can be protected by
-name -- vtx removes files that are **both** untouched for `session_retention.max_age_days`
+name -- ctx removes files that are **both** untouched for `session_retention.max_age_days`
 (default 90) **and** outside the `session_retention.keep_recent` newest files of their
 project directory (default 20). A project directory that ends up empty is removed too
-(`src/vtx/core/session_retention.py:69-155`). The TUI reports what went; headless and ACP
+(`src/ctx/core/session_retention.py:69-155`). The TUI reports what went; headless and ACP
 prune silently in the background.
 
 Before anything is unlinked, usage is folded into a durable ledger,
-`~/.vtx/token_usage.json` (`src/vtx/core/token_usage.py`):
+`~/.ctx/token_usage.json` (`src/ctx/core/token_usage.py`):
 
 ```json
 {"version":1,"files":{"-home-user-proj/2026-01-11T10-47-12_5f3a.jsonl":{"mtime":1768130832.5,"size":482911,"days":{"2026-01-11":[812034,28441,1320000,0,17]}}}}
@@ -64,7 +64,7 @@ Each file keeps its per-day buckets -- `[input, output, cache_read, cache_write,
 -- after the file itself is gone, so `/usage`'s lifetime total never shrinks when
 retention runs. A file whose `(mtime, size)` still matches its ledger entry is not
 re-parsed, which also makes `/usage` cheap after the first scan. Delete
-`~/.vtx/token_usage.json` and lifetime usage falls back to whatever session files still
+`~/.ctx/token_usage.json` and lifetime usage falls back to whatever session files still
 exist; set `session_retention.enabled: false` to keep every transcript.
 
 The ledger reads only assistant-message usage. A sub-agent's tokens are counted from the
@@ -76,10 +76,10 @@ transcript, so nothing is counted twice.
 One JSON object per line, UTF-8, no array wrapper. The first line is always the header:
 
 ```json
-{"type":"header","version":1,"id":"5f3a1c2e-8b90-4c11-9d2f-1a2b3c4d5e6f","timestamp":"2026-10-11T10:47:12.000000+00:00","cwd":"/home/user/proj","system_prompt":"You are Vtx...","tools":["read","edit","write","bash","find","skill","web","ask_user","delegate_subagent"],"initial_thinking_level":"high"}
+{"type":"header","version":1,"id":"5f3a1c2e-8b90-4c11-9d2f-1a2b3c4d5e6f","timestamp":"2026-10-11T10:47:12.000000+00:00","cwd":"/home/user/proj","system_prompt":"You are Ctx...","tools":["read","edit","write","bash","find","skill","web","ask_user","delegate_subagent"],"initial_thinking_level":"high"}
 ```
 
-`SessionHeader` fields (`src/vtx/agent/session.py:47-55`):
+`SessionHeader` fields (`src/ctx/agent/session.py:47-55`):
 
 | Field | Type | Notes |
 |---|---|---|
@@ -93,7 +93,7 @@ One JSON object per line, UTF-8, no array wrapper. The first line is always the 
 | `initial_thinking_level` | `str` | Defaults to `"high"` |
 
 Every later line is an entry, and every entry carries the same three base fields
-(`EntryBase`, `src/vtx/agent/session.py:58-62`):
+(`EntryBase`, `src/ctx/agent/session.py:58-62`):
 
 | Field | Type | Notes |
 |---|---|---|
@@ -103,7 +103,7 @@ Every later line is an entry, and every entry carries the same three base fields
 
 ### Entry types
 
-`SessionEntry` (`src/vtx/agent/session.py:157-167`) is a union of the nine non-header
+`SessionEntry` (`src/ctx/agent/session.py:157-167`) is a union of the nine non-header
 classes; the header is parsed into `SessionHeader` instead (`:47-55`):
 
 | `type` | Payload | Written when |
@@ -133,26 +133,21 @@ A compaction entry, written when `/compact` succeeds:
 
 A `HarnessStateEntry` is still parsed and validated even though nothing reads it, because
 "deleting the class would make those sessions unloadable, which is a worse outcome than
-carrying a few dead lines" (`src/vtx/agent/session.py:115-123`). `Session.load` skips any
+carrying a few dead lines" (`src/ctx/agent/session.py:115-123`). `Session.load` skips any
 line that is not valid JSON rather than failing the whole file (`:987-990`).
 
 ## What reaches disk, and when
 
-Persistence is lazy and incremental, not write-per-append (`src/vtx/agent/session.py:343-381`):
+Persistence is lazy and incremental, not write-per-append (`src/ctx/agent/session.py:343-381`):
 
 ```python
 has_assistant = any(
     isinstance(e, MessageEntry) and e.message.role == "assistant" for e in self._entries
 ) or isinstance(entry, LeafEntry)
 is_usage_charge = (
-    isinstance(entry, CustomMessageEntry)
-    and entry.custom_type == SUBAGENT_USAGE_CUSTOM_TYPE
+    isinstance(entry, CustomMessageEntry) and entry.custom_type == SUBAGENT_USAGE_CUSTOM_TYPE
 )
-if (
-    not has_assistant
-    and not isinstance(entry, RuntimeCheckpointEntry)
-    and not is_usage_charge
-):
+if not has_assistant and not isinstance(entry, RuntimeCheckpointEntry) and not is_usage_charge:
     return
 ```
 
@@ -179,20 +174,20 @@ first assistant message may get one big rewrite.
 
 | Command | Behavior | Source |
 |---|---|---|
-| `vtx --continue` / `-c` | Reopen the most recently modified `.jsonl` for this directory; create a new session if there is none (by mtime) | `src/vtx/agent/session.py:1042-1064` |
-| `vtx --resume <id>` / `-r` | Reopen by full session id, or a unique prefix; an ambiguous prefix is a hard error | `:1066-1083` |
-| `/resume` | Picker over every session for this directory, with handoff nesting and delete | `src/vtx/tui/commands/sessions.py:384-392` |
+| `ctx --continue` / `-c` | Reopen the most recently modified `.jsonl` for this directory; create a new session if there is none (by mtime) | `src/ctx/agent/session.py:1042-1064` |
+| `ctx --resume <id>` / `-r` | Reopen by full session id, or a unique prefix; an ambiguous prefix is a hard error | `:1066-1083` |
+| `/resume` | Picker over every session for this directory, with handoff nesting and delete | `src/ctx/tui/commands/sessions.py:384-392` |
 | `/new` | Start a new session in the same process | `:51-89` |
 | `/clear` | Drop the conversation and reset the codemode store, same session file | `:27-49` |
 
 `--continue` with no prior session silently creates a new one
-(`src/vtx/agent/session.py:1054-1061`), so `vtx -c` is safe as a default shell alias.
+(`src/ctx/agent/session.py:1054-1061`), so `ctx -c` is safe as a default shell alias.
 `--resume` never falls back: an unknown id raises
 `FileNotFoundError: Session not found: <id>`, and a prefix that matches two sessions
 raises `ValueError: Session ID prefix is ambiguous: <id>` (`:1077-1083`).
 
 `-p/--prompt` with either flag is rejected at parse time
-(`src/vtx/coding_agent/cli.py:307-308`):
+(`src/ctx/coding_agent/cli.py:307-308`):
 
 ```text
 -c/--continue and -r/--resume are not supported with -p/--prompt
@@ -202,7 +197,7 @@ raises `ValueError: Session ID prefix is ambiguous: <id>` (`:1077-1083`).
 
 A session records its own model, provider, base URL, and thinking level, and those win over
 your startup selection unless you pass an explicit override
-(`src/vtx/agent/runtime.py:1079-1104`):
+(`src/ctx/agent/runtime.py:1079-1104`):
 
 ```python
 if resume_session:
@@ -219,18 +214,18 @@ if resume_session:
 Precedence for the model side is `--model`/`--provider`/`--base-url` over whatever the
 session recorded. The TUI prints `Resumed session` and then re-renders the transcript into
 the chat log, including the token and file-change counters
-(`src/vtx/tui/app.py:665-681`).
+(`src/ctx/tui/app.py:665-681`).
 
 ### What `/resume` shows you
 
 `Session.list` returns `SessionInfo` records sorted by `modified` descending
-(`src/vtx/agent/session.py:1085-1102`), and the picker builds a label from
+(`src/ctx/agent/session.py:1085-1102`), and the picker builds a label from
 `_extract_preview_from_user_message` (`:1104-1129`). That function recognises a
 skill-trigger envelope and renders it as the slash command it came from, rather than
 showing you the raw injected prompt:
 
 ```python
-header_match = _SKILL_TRIGGER_HEADER_RE.match(lines[0])   # ^[a-z0-9-]+$
+header_match = _SKILL_TRIGGER_HEADER_RE.match(lines[0])  # ^[a-z0-9-]+$
 ...
 return f"/{skill_name} {query}"
 ```
@@ -240,7 +235,7 @@ The first user message is clipped to 100 characters (`:1158`).
 ## Branching and the session tree
 
 The file is append-only, so a branch never rewrites history. Moving the active point
-appends a `LeafEntry` (`src/vtx/agent/session.py:568-577`):
+appends a `LeafEntry` (`src/ctx/agent/session.py:568-577`):
 
 ```python
 def move_to(self, entry_id: str | None) -> None:
@@ -271,7 +266,7 @@ else entry.id` (`:340`), which is the whole mechanism: a leaf repoints the conve
 
 `/tree` refuses while the agent is running and when there are no entries, then opens
 `TreeSelector` over `session.get_tree()` with the current `leaf_id` marked
-(`src/vtx/tui/commands/sessions.py:365-382`). Its keys (`src/vtx/tui/tree.py:42-49`):
+(`src/ctx/tui/commands/sessions.py:365-382`). Its keys (`src/ctx/tui/tree.py:42-49`):
 
 | Key | Action |
 |---|---|
@@ -282,9 +277,9 @@ else entry.id` (`:340`), which is the whole mechanism: a leaf repoints the conve
 | `escape` | Cancel |
 
 Only `message` entries are listed: a user message and a tool result always, an assistant
-message only when it has non-empty text (`src/vtx/tui/tree.py:239-249`).
+message only when it has non-empty text (`src/ctx/tui/tree.py:239-249`).
 
-Selecting an entry goes through `navigate_tree` (`src/vtx/agent/runtime.py:1485-1511`).
+Selecting an entry goes through `navigate_tree` (`src/ctx/agent/runtime.py:1485-1511`).
 For a user message it appends a leaf to `entry.parent_id` and returns the message text for
 the editor, so you re-send from before your old turn. For a custom message the content
 becomes editor text on the same branch. For anything else it appends a leaf to that entry,
@@ -296,18 +291,18 @@ navigates.
 
 ## Custom entry types
 
-`CustomMessageEntry` is the extension point (`src/vtx/agent/session.py:90-99`). These are
-the types Vtx itself writes:
+`CustomMessageEntry` is the extension point (`src/ctx/agent/session.py:90-99`). These are
+the types Ctx itself writes:
 
 | `custom_type` | Written by | `display` | Meaning |
 |---|---|---|---|
-| `shell_command` | `!cmd` / `!!cmd` in the editor | yes | A manual shell run, with `command`, `output`, `success` in `details` (`src/vtx/tui/agent_runner.py:726-736`) |
-| `handoff_backlink` | `/handoff` | no | This session was created by a handoff; `details.target_session_id` points at the parent (`src/vtx/agent/runtime.py:1787`) |
+| `shell_command` | `!cmd` / `!!cmd` in the editor | yes | A manual shell run, with `command`, `output`, `success` in `details` (`src/ctx/tui/agent_runner.py:726-736`) |
+| `handoff_backlink` | `/handoff` | no | This session was created by a handoff; `details.target_session_id` points at the parent (`src/ctx/agent/runtime.py:1787`) |
 | `handoff_forward_link` | `/handoff` | no | This session handed off; `details` points at the child |
 
-| `vtx-revert-snapshot` | Undo, before reverting | no | A `TurnSnapshot`: turn start/end trees and the worktree diff |
-| `vtx-revert` | Undo and redo | no | A `RevertState`: boundary, staged tree, `files_available`, `original_tree` |
-| `refinement_notice` | Retired | yes | Was model-facing; `Session.messages` still converts it back (`src/vtx/agent/session.py:98-106`) |
+| `ctx-revert-snapshot` | Undo, before reverting | no | A `TurnSnapshot`: turn start/end trees and the worktree diff |
+| `ctx-revert` | Undo and redo | no | A `RevertState`: boundary, staged tree, `files_available`, `original_tree` |
+| `refinement_notice` | Retired | yes | Was model-facing; `Session.messages` still converts it back (`src/ctx/agent/session.py:98-106`) |
 
 `display=False` is what keeps them out of the transcript while still being in the file, so
 `/export` and resume can read them. A handoff link is the exception that matters most:
@@ -320,7 +315,7 @@ origin as a parent row.
 ### Snapshots: a shadow git repo
 
 `SnapshotStore` hashes your working tree into a **separate** git repository
-(`src/vtx/agent/snapshot.py:182-184`):
+(`src/ctx/agent/snapshot.py:182-184`):
 
 ```python
 def _root(self) -> Path:
@@ -354,7 +349,7 @@ size of the repo.
 Both commands move a single boundary - the session leaf - along a linear list of user
 messages. There is nothing to unwind twice in a row unless you undo twice.
 
-`TurnSnapshot` records one turn (`src/vtx/agent/revert.py:142-183`):
+`TurnSnapshot` records one turn (`src/ctx/agent/revert.py:142-183`):
 
 | Field | Meaning |
 |---|---|
@@ -364,7 +359,7 @@ messages. There is nothing to unwind twice in a row unless you undo twice.
 
 `files` is a diff, not a list of reported paths: "bash and a code-mode script both mutate
 files without reporting anything" (`revert.py:150-153`). Snapshots are written as
-`vtx-revert-snapshot` custom entries with `display=False`, and `record_turn_snapshot`
+`ctx-revert-snapshot` custom entries with `display=False`, and `record_turn_snapshot`
 returns `None` when it cannot bracket the turn.
 
 `plan(session, boundary_id)` maps each path to the **earliest** reverted turn's start tree,
@@ -376,7 +371,7 @@ The phases:
 
 | Phase | What happens |
 |---|---|
-| `stage()` | Restore the files, keep the messages, append a `vtx-revert` entry (`:363-438`) |
+| `stage()` | Restore the files, keep the messages, append a `ctx-revert` entry (`:363-438`) |
 | preview | `/redo` still works, because nothing was committed yet |
 | `commit()` | Append a `LeafEntry` to the boundary. Runs when you next send a prompt (`:519-534`) |
 
@@ -396,7 +391,7 @@ Reverted to "fix the typo" (3 files, 1 added, 1 removed)
 ```
 
 In the TUI, `/undo` and `/redo` refuse while the agent is running
-(`src/vtx/tui/commands/sessions.py:276-329`), and a staged revert whose turn predates
+(`src/ctx/tui/commands/sessions.py:276-329`), and a staged revert whose turn predates
 snapshotting leaves an explicit marker: "files were left as-is: this turn predates
 snapshotting (resumed session). `/redo` still works." (`:343-348`).
 
@@ -406,7 +401,7 @@ When you come back to a long session, the recap is one or two sentences telling 
 you left off. It is drafted in the background and dropped into the chat as a trailing
 status - it never enters the conversation the model sees.
 
-The constants (`src/vtx/core/recap.py`):
+The constants (`src/ctx/core/recap.py`):
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -438,20 +433,20 @@ least 150 characters of assistant text. A session that has only just started pro
 nothing.
 
 The timer is armed when a run ends, with the interval read from config
-(`src/vtx/tui/recap.py:79`):
+(`src/ctx/tui/recap.py:79`):
 
 ```python
 seconds = max(5.0, float(config.recap.idle_seconds))
 ```
 
 `recap.idle_seconds` defaults to **60** and is constrained to 5 or more
-(`src/vtx/core/config.py:167-171`). The module docstring in
-`src/vtx/tui/recap.py:1-6` says 30s; that line is stale.
+(`src/ctx/core/config.py:167-171`). The module docstring in
+`src/ctx/tui/recap.py:1-6` says 30s; that line is stale.
 
 Two behaviours worth knowing:
 
 - **A sub-agent in flight suppresses the recap.** `_subagents_in_flight()` checks
-  `vtx.tui.subagents.REGISTRY.has_live()` (`src/vtx/tui/recap.py:54-68`), because the
+  `ctx.tui.subagents.REGISTRY.has_live()` (`src/ctx/tui/recap.py:54-68`), because the
   recap would otherwise land in the chat *instead of* the sub-agent's result reaching the
   agent.
 - **The next prompt dismisses it.** `_dismiss_recap()` cancels the timer and the worker,
@@ -467,7 +462,7 @@ agent is running. If there is nothing to summarise you get
 
 | Command | Effect | Source |
 |---|---|---|
-| `/session` | File path, directory, user/assistant/tool counts, token totals | `src/vtx/tui/commands/sessions.py:152-216` |
+| `/session` | File path, directory, user/assistant/tool counts, token totals | `src/ctx/tui/commands/sessions.py:152-216` |
 | `/new` | New session in this process | `:51-89` |
 | `/clear` | Clear the conversation and the codemode store | `:27-49` |
 | `/resume` | Picker over this directory's sessions, with delete | `:384-412` |
@@ -478,28 +473,28 @@ agent is running. If there is nothing to summarise you get
 | `/redo` | Step forward again | `:303-329` |
 | `/export` | Write an HTML transcript to disk | `:446-469` |
 | `/copy` | Copy the last assistant message to the clipboard | `:470-484` |
-| `/usage` | Token and cost breakdown, from the durable ledger (deleted sessions included) | `src/vtx/tui/commands/__init__.py:109-110`, `src/vtx/tui/usage_stats.py:94` |
+| `/usage` | Token and cost breakdown, from the durable ledger (deleted sessions included) | `src/ctx/tui/commands/__init__.py:109-110`, `src/ctx/tui/usage_stats.py:94` |
 
 `/resume` refuses to delete the session you are currently in: `Cannot delete current
-session` (`src/vtx/tui/commands/sessions.py:412`).
+session` (`src/ctx/tui/commands/sessions.py:412`).
 
 ## Known gaps
 
 - **`/clear` does not start a new file.** It drops the messages in memory and resets the
   codemode store, but the session file keeps accumulating; use `/new` for a fresh file.
 - **A session whose first turn crashed leaves no file.** Nothing before the first assistant
-  message is persisted (`src/vtx/agent/session.py:359-364`), so `-c` cannot recover it.
+  message is persisted (`src/ctx/agent/session.py:359-364`), so `-c` cannot recover it.
 - **The header's `system_prompt` and `tools` are provenance only.** Neither is used to
   rebuild the session; the prompt is re-derived from the current profile and the tool list
-  is recomposed (`src/vtx/agent/runtime.py:466-502`). A header recorded under one agent
+  is recomposed (`src/ctx/agent/runtime.py:466-502`). A header recorded under one agent
   tells you nothing about what a resumed session will actually use.
 - **`first_kept_entry_id` is dead metadata.** The compaction entry carries it, but
   `Session.messages` selects messages by position, not by id
-  (`src/vtx/agent/session.py:81-87`, `:647-685`).
+  (`src/ctx/agent/session.py:81-87`, `:647-685`).
 - **Undo cannot cross a compaction.** A boundary that predates a compaction entry has no
   snapshot on the current branch, so it falls back to conversation-only rewind.
 - **`refinement_notice` has no writer.** The read path remains only so old sessions keep
-  rendering (`src/vtx/agent/session.py:98-106`).
+  rendering (`src/ctx/agent/session.py:98-106`).
 - **Pruning is all-or-nothing per file.** A session that is eligible is deleted whole;
   its ledger totals survive, but its transcript is unrecoverable. `Session.list` still
   reads every `.jsonl` that remains in the directory, so `keep_recent` is what bounds the

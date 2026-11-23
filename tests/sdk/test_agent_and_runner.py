@@ -6,11 +6,10 @@ import asyncio
 from typing import Any
 
 import pytest
+from ctx.agent.sdk import Agent, Runner, tool
+from ctx.agent.sdk.run_config import RunConfig
+from ctx.agent.sdk.sessions import InMemorySession
 from pydantic import BaseModel
-
-from vtx.agent.sdk import Agent, Runner, tool
-from vtx.agent.sdk.run_config import RunConfig
-from vtx.agent.sdk.sessions import InMemorySession
 
 
 def test_agent_required_name() -> None:
@@ -65,7 +64,7 @@ def test_agent_compiled_handoff_tools_default_name() -> None:
 
 
 def test_agent_compiled_handoff_tools_with_handoff_obj() -> None:
-    from vtx.agent.sdk import handoff
+    from ctx.agent.sdk import handoff
 
     target = Agent(name="Target", instructions="t")
     parent = Agent(name="Parent", handoffs=[handoff(target, tool_name_override="ask_target")])
@@ -216,7 +215,7 @@ def test_runner_run_streamed_basic(text_provider) -> None:
 async def test_runner_with_structured_output(text_provider) -> None:
 
     # Build a custom provider that returns a JSON object as text.
-    from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
+    from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig
 
     class JsonProvider(BaseProvider):
         name = "json"
@@ -228,7 +227,7 @@ async def test_runner_with_structured_output(text_provider) -> None:
             s = LLMStream()
             s._id = "j-1"
             s._usage = None
-            from vtx.protocol.types import StopReason, StreamDone, TextPart
+            from ctx.protocol.types import StopReason, StreamDone, TextPart
 
             async def it():
                 yield TextPart(text='{"value": 42}')

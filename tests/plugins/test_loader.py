@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import BaseModel
-
-from vtx.plugins import (
+from ctx.plugins import (
     ConfigError,
     Context,
     DuplicateRowError,
@@ -17,14 +15,15 @@ from vtx.plugins import (
     rows_from_layer,
     validate_config,
 )
-from vtx.plugins.plugin import Plugin, Service, as_plugin, plugin
+from ctx.plugins.plugin import Plugin, Service, as_plugin, plugin
+from pydantic import BaseModel
 
 
 def test_row_round_trips_to_dict():
-    row = Row(id="llm", name="vtx.plugins.builtins.services.llm:PLUGIN", config={"a": 1})
+    row = Row(id="llm", name="ctx.plugins.builtins.services.llm:PLUGIN", config={"a": 1})
     assert row.to_dict() == {
         "id": "llm",
-        "name": "vtx.plugins.builtins.services.llm:PLUGIN",
+        "name": "ctx.plugins.builtins.services.llm:PLUGIN",
         "disabled": False,
         "config": {"a": 1},
     }
@@ -150,19 +149,19 @@ def test_a_plugin_with_no_schema_accepts_any_mapping():
 
 
 def test_resolve_plugin_reads_the_module_plugin_export():
-    spec = resolve_plugin("vtx.plugins.builtins.services.tools:PLUGIN")
+    spec = resolve_plugin("ctx.plugins.builtins.services.tools:PLUGIN")
     assert spec.name == "tools"
     assert spec.inject == ()
 
 
 def test_resolve_plugin_reports_an_unimportable_module():
     with pytest.raises(RowError, match="cannot import"):
-        resolve_plugin("vtx.plugins.does_not_exist:PLUGIN")
+        resolve_plugin("ctx.plugins.does_not_exist:PLUGIN")
 
 
 def test_resolve_plugin_reports_a_missing_export():
     with pytest.raises(RowError, match="exposes no"):
-        resolve_plugin("vtx.plugins.builtins.services.tools:NOPE")
+        resolve_plugin("ctx.plugins.builtins.services.tools:NOPE")
 
 
 def test_decorator_records_name_inject_and_meta():

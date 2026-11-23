@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.core.config import config
-from vtx.core.harness_config import get_harness_config
-from vtx.tui.widgets import CONTEXT_METER_WIDTH, InfoBar
+from ctx.core.config import config
+from ctx.core.harness_config import get_harness_config
+from ctx.tui.widgets import CONTEXT_METER_WIDTH, InfoBar
 
 
 @pytest.fixture

@@ -17,8 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from vtx.agent.context.skills import _parse_frontmatter, load_builtin_cmd_skills, load_skills
+from ctx.agent.context.skills import _parse_frontmatter, load_builtin_cmd_skills, load_skills
 
 
 def _skills_root(tmp_path: Path) -> Path:
@@ -124,7 +123,7 @@ def test_no_bundled_skill_ships_a_python_package():
     that reads as a supported way to build a skill.
     """
     builtin_root = (
-        Path(__file__).resolve().parents[1] / "src" / "vtx" / "coding_agent" / "builtin_skills"
+        Path(__file__).resolve().parents[1] / "src" / "ctx" / "coding_agent" / "builtin_skills"
     )
     offenders = sorted(
         str(p.relative_to(builtin_root)) for p in builtin_root.rglob("pyproject.toml")

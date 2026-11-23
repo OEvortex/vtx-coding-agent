@@ -12,8 +12,7 @@ import json
 from pathlib import Path
 
 import pytest
-
-from vtx.agent.background import BackgroundTaskManager, get_manager, reset_manager, set_manager
+from ctx.agent.background import BackgroundTaskManager, get_manager, reset_manager, set_manager
 
 
 class FakeResult:
@@ -49,7 +48,7 @@ class TestManagerContextVars:
         without an explicit reset. A leak from a sibling test would
         silently break these isolated assertions.
         """
-        from vtx.agent.background import reset_manager
+        from ctx.agent.background import reset_manager
 
         reset_manager()
         yield
@@ -58,7 +57,7 @@ class TestManagerContextVars:
     def test_set_and_get_manager(self):
         token = set_manager(None)
         assert get_manager() is None
-        mgr = BackgroundTaskManager(store_dir=Path("/tmp/vtx-bg-test-doesnotexist"))
+        mgr = BackgroundTaskManager(store_dir=Path("/tmp/ctx-bg-test-doesnotexist"))
         tok = set_manager(mgr)
         try:
             assert get_manager() is mgr
@@ -85,7 +84,7 @@ class TestManagerContextVars:
         """
         import contextvars
 
-        mgr = BackgroundTaskManager(store_dir=Path("/tmp/vtx-bg-test-doesnotexist"))
+        mgr = BackgroundTaskManager(store_dir=Path("/tmp/ctx-bg-test-doesnotexist"))
         outer_ctx = contextvars.copy_context()
         token = outer_ctx.run(set_manager, mgr)
         # ``set_manager`` ran in ``outer_ctx``; ``token`` belongs to it.
@@ -102,7 +101,7 @@ class TestManagerContextVars:
         assert outer_ctx.run(get_manager) is None
 
     def test_reset_with_no_token_clears_slot(self):
-        mgr = BackgroundTaskManager(store_dir=Path("/tmp/vtx-bg-test-doesnotexist"))
+        mgr = BackgroundTaskManager(store_dir=Path("/tmp/ctx-bg-test-doesnotexist"))
         set_manager(mgr)
         assert get_manager() is mgr
         reset_manager()
@@ -441,7 +440,7 @@ class TestCompletionListeners:
 
     @pytest.fixture(autouse=True)
     def _clean_contextvar(self):
-        from vtx.agent.background import reset_manager
+        from ctx.agent.background import reset_manager
 
         reset_manager()
         yield

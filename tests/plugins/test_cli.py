@@ -1,15 +1,14 @@
-"""Tests for the ``vtx plugin`` command surface and the CLI flags."""
+"""Tests for the ``ctx plugin`` command surface and the CLI flags."""
 
 from __future__ import annotations
 
 import pytest
-
-from vtx.coding_agent.plugin_cmd import run_plugin_command
+from ctx.coding_agent.plugin_cmd import run_plugin_command
 
 
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
 
 
 def test_profiles_lists_the_shipped_templates(capsys):
@@ -31,7 +30,7 @@ def test_init_creates_a_profile_directory(capsys):
 def test_disable_then_enable_round_trips_a_row(capsys):
     assert run_plugin_command(["--profile", "p", "disable", "tool-grep"]) == 0
     assert "disabled" in capsys.readouterr().out
-    from vtx.plugins.profile import load_profile
+    from ctx.plugins.profile import load_profile
 
     rows = {row.id: row for row in load_profile("p")}
     assert rows["tool-grep"].disabled is True
@@ -62,7 +61,7 @@ def test_disable_keeps_exactly_one_home_for_the_row(tmp_path):
 def test_disable_the_same_row_twice_is_idempotent(capsys):
     assert run_plugin_command(["--profile", "p", "disable", "tool-grep"]) == 0
     assert run_plugin_command(["--profile", "p", "disable", "tool-grep"]) == 0
-    from vtx.plugins.profile import load_profile
+    from ctx.plugins.profile import load_profile
 
     rows = [row for row in load_profile("p") if row.id == "tool-grep"]
     assert len(rows) == 1
@@ -80,15 +79,15 @@ def test_help_is_not_an_error(capsys):
 
 def test_a_refusal_prints_the_command_that_grants_the_exemption(tmp_path, monkeypatch, capsys):
     """The install gate must tell the operator exactly what to run, not just no."""
-    import vtx.plugins.install as install_module
-    from vtx.coding_agent.plugin_cmd import _install
+    import ctx.plugins.install as install_module
+    from ctx.coding_agent.plugin_cmd import _install
 
     monkeypatch.setattr(install_module, "VERSION", "1.2.2")
     package = tmp_path / "demo-plugin"
     package.mkdir()
     (package / "pyproject.toml").write_text(
         "[project]\nname = 'demo-plugin'\nversion = '1.0.0'\n"
-        "[project.optional-dependencies]\nvtx = ['>=99.0']\n",
+        "[project.optional-dependencies]\nctx = ['>=99.0']\n",
         encoding="utf-8",
     )
     assert _install("default", [str(package)]) == 1
@@ -99,15 +98,15 @@ def test_a_refusal_prints_the_command_that_grants_the_exemption(tmp_path, monkey
 
 
 def test_granting_an_exemption_then_installing_succeeds(tmp_path, monkeypatch, capsys):
-    import vtx.plugins.install as install_module
-    from vtx.coding_agent.plugin_cmd import _install
+    import ctx.plugins.install as install_module
+    from ctx.coding_agent.plugin_cmd import _install
 
     monkeypatch.setattr(install_module, "VERSION", "1.2.2")
     package = tmp_path / "demo-plugin"
     package.mkdir()
     (package / "pyproject.toml").write_text(
         "[project]\nname = 'demo-plugin'\nversion = '1.0.0'\n"
-        "[project.optional-dependencies]\nvtx = ['>=99.0']\n",
+        "[project.optional-dependencies]\nctx = ['>=99.0']\n",
         encoding="utf-8",
     )
     assert _install("default", [str(package)]) == 1
@@ -118,7 +117,7 @@ def test_granting_an_exemption_then_installing_succeeds(tmp_path, monkeypatch, c
                 "default",
                 "allow-version",
                 "demo-plugin@1.0.0",
-                "--vtx-version",
+                "--ctx-version",
                 "1.2.2",
                 "--accept-risk",
             ]
@@ -127,7 +126,7 @@ def test_granting_an_exemption_then_installing_succeeds(tmp_path, monkeypatch, c
     )
     capsys.readouterr()
     # Only the gate is asserted here: the real `uv pip install` would run next.
-    from vtx.plugins.install import is_exempt, plan_install
+    from ctx.plugins.install import is_exempt, plan_install
 
     assert is_exempt(plan_install(str(package))) is True
 
@@ -141,7 +140,7 @@ def test_version_exemptions_lists_grants_as_json(tmp_path, capsys):
             "default",
             "allow-version",
             "demo@1.0.0",
-            "--vtx-version",
+            "--ctx-version",
             "1.2.2",
             "--accept-risk",
         ]
@@ -160,7 +159,7 @@ def test_allow_version_without_a_target_fails(capsys):
 def test_allow_version_rejects_a_package_without_a_version(capsys):
     assert (
         run_plugin_command(
-            ["--profile", "default", "allow-version", "demo-plugin", "--vtx-version", "1.2.2"]
+            ["--profile", "default", "allow-version", "demo-plugin", "--ctx-version", "1.2.2"]
         )
         == 1
     )
@@ -176,14 +175,14 @@ def test_revoking_without_accept_risk_is_allowed(capsys):
             "default",
             "allow-version",
             "demo@1.0.0",
-            "--vtx-version",
+            "--ctx-version",
             "1.2.2",
             "--accept-risk",
         ]
     )
     capsys.readouterr()
     run_plugin_command(
-        ["--profile", "default", "revoke-version", "demo@1.0.0", "--vtx-version", "1.2.2"]
+        ["--profile", "default", "revoke-version", "demo@1.0.0", "--ctx-version", "1.2.2"]
     )
     capsys.readouterr()
     assert run_plugin_command(["--profile", "default", "version-exemptions"]) == 0
@@ -193,29 +192,29 @@ def test_revoking_without_accept_risk_is_allowed(capsys):
 def test_dump_config_flag_prints_the_composed_rows(capsys):
     import sys
 
-    from vtx.coding_agent.cli import main
+    from ctx.coding_agent.cli import main
 
-    sys.argv = ["vtx", "--dump-config"]
+    sys.argv = ["ctx", "--dump-config"]
     with pytest.raises(SystemExit) as exc:
         main()
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "tool-bash" in out
     assert "[enabled]" in out
-    assert "vtx.plugins.builtins" in out
+    assert "ctx.plugins.builtins" in out
 
 
 def test_the_cli_boots_the_active_composition(tmp_path, monkeypatch):
     import sys
 
-    import vtx.tui.launch as launch
-    from vtx.coding_agent import cli
-    from vtx.plugins import active_host
+    import ctx.tui.launch as launch
+    from ctx.coding_agent import cli
+    from ctx.plugins import active_host
 
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     # Stop before the TUI launch, which needs a terminal.
     monkeypatch.setattr(launch, "run_tui", lambda args: None)
-    sys.argv = ["vtx", "--profile", "headless"]
+    sys.argv = ["ctx", "--profile", "headless"]
     cli.main()
     assert active_host() is not None
     assert active_host().base.label == "headless"
@@ -225,16 +224,16 @@ def test_the_cli_boots_the_active_composition(tmp_path, monkeypatch):
 def test_a_broken_composition_fails_loud(tmp_path, monkeypatch, capsys):
     import sys
 
-    import vtx.tui.launch as launch
-    from vtx.coding_agent import cli
+    import ctx.tui.launch as launch
+    from ctx.coding_agent import cli
 
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     directory = tmp_path / "profiles" / "broken"
     directory.mkdir(parents=True)
     (directory / "bundle.txt").write_text("base\n", encoding="utf-8")
     (directory / "cordis.yml").write_text("- nope:\n    - whatever\n", encoding="utf-8")
     monkeypatch.setattr(launch, "run_tui", lambda args: None)
-    sys.argv = ["vtx", "--profile", "broken"]
+    sys.argv = ["ctx", "--profile", "broken"]
     with pytest.raises(SystemExit) as exc:
         cli.main()
     assert exc.value.code == 1

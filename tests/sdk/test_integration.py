@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import BaseModel
-
-from vtx.agent.sdk import (
+from ctx.agent.sdk import (
     Agent,
     GuardrailFunctionOutput,
     JSONLSession,
@@ -13,6 +11,7 @@ from vtx.agent.sdk import (
     input_guardrail,
     tool,
 )
+from pydantic import BaseModel
 
 
 @pytest.mark.asyncio
@@ -70,7 +69,7 @@ async def test_session_persistence_pattern(tmp_path) -> None:
     session1 = JSONLSession(path)
     agent = Agent(name="Bot", provider=None)  # set below
 
-    from vtx.ai.providers.mock import MockProvider
+    from ctx.ai.providers.mock import MockProvider
 
     session1_provider = MockProvider(scenario="simple_text")
     agent.provider = session1_provider
@@ -91,8 +90,8 @@ async def test_structured_output_pattern() -> None:
         name: str
         date: str
 
-    from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-    from vtx.protocol.types import StopReason, StreamDone, TextPart
+    from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig
+    from ctx.protocol.types import StopReason, StreamDone, TextPart
 
     class JsonProvider(BaseProvider):
         name = "json"
@@ -128,7 +127,7 @@ async def test_input_guardrail_in_run(text_provider) -> None:
     def block(data):
         return GuardrailFunctionOutput(tripwire_triggered="bad" in (data.input or ""))
 
-    from vtx.agent.sdk import InputGuardrailTripwireTriggered
+    from ctx.agent.sdk import InputGuardrailTripwireTriggered
 
     agent = Agent(name="Bot", provider=text_provider, input_guardrails=[block])
     with pytest.raises(InputGuardrailTripwireTriggered):
@@ -140,7 +139,7 @@ async def test_input_guardrail_in_run(text_provider) -> None:
 @pytest.mark.asyncio
 async def test_run_sync_via_thread(text_provider) -> None:
     """``Runner.run_sync`` works from a synchronous context (or a running loop)."""
-    from vtx.agent.sdk import Runner
+    from ctx.agent.sdk import Runner
 
     agent = Agent(name="Bot", provider=text_provider)
     result = Runner.run_sync(agent, "hi")

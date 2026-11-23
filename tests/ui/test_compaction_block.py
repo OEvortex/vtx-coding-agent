@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import pytest
-from textual.app import App, ComposeResult
-from textual.widgets import Label, ProgressBar
-
-from vtx.core.compaction import (
+from ctx.core.compaction import (
     SUMMARIZATION_PROMPT,
     SUMMARY_SECTIONS,
     generate_summary,
     summary_progress,
 )
-from vtx.core.events import CompactionEndEvent, CompactionProgressEvent, CompactionStartEvent
-from vtx.protocol.types import TextPart
-from vtx.tui.blocks import CompactionBlock, _format_elapsed, _short_section_title
-from vtx.tui.chat import ChatLog
-from vtx.tui.styles import get_styles
+from ctx.core.events import CompactionEndEvent, CompactionProgressEvent, CompactionStartEvent
+from ctx.protocol.types import TextPart
+from ctx.tui.blocks import CompactionBlock, _format_elapsed, _short_section_title
+from ctx.tui.chat import ChatLog
+from ctx.tui.styles import get_styles
+from textual.app import App, ComposeResult
+from textual.widgets import Label, ProgressBar
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -89,7 +88,7 @@ class TestCompactionHeader:
         assert "auto-compaction" in header
 
     def test_running_header_colour_escalates_past_threshold(self):
-        from vtx.core.config import config
+        from ctx.core.config import config
 
         colors = config.ui.colors
         low = _make_block(tokens_before=100_000, context_window=200_000)

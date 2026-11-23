@@ -3,12 +3,11 @@ import base64
 import json
 
 import pytest
-
-from vtx.codemode import CodemodeSandbox
-from vtx.codemode.declarations import to_identifier
-from vtx.codemode.types import CodemodeTool
-from vtx.mcp.manager import McpManager, McpServerConfig, McpServerConnection, McpServerStatus
-from vtx.mcp.tool import (
+from ctx.codemode import CodemodeSandbox
+from ctx.codemode.declarations import to_identifier
+from ctx.codemode.types import CodemodeTool
+from ctx.mcp.manager import McpManager, McpServerConfig, McpServerConnection, McpServerStatus
+from ctx.mcp.tool import (
     MCP_OUTPUT_MAX_BYTES,
     McpTool,
     McpToolCaller,
@@ -18,7 +17,7 @@ from vtx.mcp.tool import (
     enrich_result,
     truncate_middle,
 )
-from vtx.protocol.types import ImageContent
+from ctx.protocol.types import ImageContent
 
 
 async def _unreachable(args, signal):

@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from vtx.agent.sdk.sessions import InMemorySession, JSONLSession, Session
+from ctx.agent.sdk.sessions import InMemorySession, JSONLSession, Session
 
 
 @pytest.mark.asyncio

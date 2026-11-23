@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.agent.sdk.approvals import ApprovalDecision, RunState, ToolApprovalItem
-from vtx.protocol.types import ToolCall
+from ctx.agent.sdk.approvals import ApprovalDecision, RunState, ToolApprovalItem
+from ctx.protocol.types import ToolCall
 
 
 def _make_approval(

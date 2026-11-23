@@ -1,6 +1,6 @@
 # Plugins
 
-Vtx composes itself from a list of **plugin rows**. Every subsystem - the tool registry,
+Ctx composes itself from a list of **plugin rows**. Every subsystem - the tool registry,
 the provider seam, the session log, the agent loop, the permission gate - is a row, so
 each is replaceable from configuration rather than by editing the harness.
 
@@ -9,12 +9,12 @@ of bundles plus one patch layer the user owns. Use this page when you need a new
 new command, an event hook, or a replacement for a core service.
 
 The design mirrors DeepSeek Harness and the Cordis kernel it vendors. The kernel is
-`vtx.plugins`; Vtx's own subsystems are re-expressed as plugins in
-`vtx.plugins.builtins` rather than rewritten behind a new interface.
+`ctx.plugins`; Ctx's own subsystems are re-expressed as plugins in
+`ctx.plugins.builtins` rather than rewritten behind a new interface.
 
 ## The five ideas
 
-| Idea | In Vtx |
+| Idea | In Ctx |
 |---|---|
 | A plugin is an object with `name`, `inject`, and `apply` | `@plugin(name=..., inject=("tools",))` over a function, or a `Service` subclass |
 | A context is a repository of services | `ctx.tools`, `ctx.llm`, `ctx.sessions`, `ctx.agentLoop` - claimed by key, never imported |
@@ -31,9 +31,9 @@ missing key - it is never skipped quietly (`ServiceMissingError`).
 
 ```python
 # my_package/plugins.py
-from vtx.plugins import plugin
-from vtx.plugins.builtins.tools._register import mount_tool
-from vtx.plugins.events import DispatchMode
+from ctx.plugins import plugin
+from ctx.plugins.builtins.tools._register import mount_tool
+from ctx.plugins.events import DispatchMode
 
 
 def approve_reads_in_tmp(name, args):  # your own rule
@@ -43,7 +43,7 @@ def approve_reads_in_tmp(name, args):  # your own rule
 @plugin(name="my-tool", inject=("tools",))
 def apply(ctx, config):
     """Runs once at mount. ``config`` is the row's config, validated."""
-    mount_tool(ctx, MyTool())            # unregistered when the row unloads
+    mount_tool(ctx, MyTool())  # unregistered when the row unloads
     ctx.permissions.add_rule(approve_reads_in_tmp)
     ctx.prompts.add_section("mine", lambda cwd, tools: "Always run the tests.")
 
@@ -61,8 +61,8 @@ Four rules to internalise:
 - **Register through the context.** `ctx.effect`, `ctx.on`, and the service's own
   register methods all record teardown. Anything you do outside them leaks.
 - **`mount_tool`, not `ctx.tools.register`.** The helper wires the row's teardown, so
-  disabling the row while Vtx runs does not leave two copies
-  (`src/vtx/plugins/builtins/tools/_register.py:13`).
+  disabling the row while Ctx runs does not leave two copies
+  (`src/ctx/plugins/builtins/tools/_register.py:13`).
 - **Return a dict from a blocking handler.** At `tools/execute`-style seams,
   `{"block": True, "reason": ...}` denies; `{"args": {...}}` rewrites.
 
@@ -72,10 +72,12 @@ Four rules to internalise:
 @plugin(name="p", inject=("tools",), config=MyConfig, owner="me")
 def apply(ctx, config): ...
 
+
 class p(Service):
     name = "p"
     inject = ("tools",)
     Config = MyConfig
+
     def start(self, ctx, config): ...
 ```
 
@@ -119,7 +121,7 @@ prove it by swapping the service and watching the real harness change
 
 ## Events
 
-There are 44 event names in `ALL_EVENTS` (`src/vtx/plugins/event_contract.py:77`),
+There are 44 event names in `ALL_EVENTS` (`src/ctx/plugins/event_contract.py:77`),
 covering the session lifecycle (`session_start` through `session_shutdown`), the agent
 and turn lifecycle, tool calls and results, permission decisions, compaction, provider
 requests, and input.
@@ -141,8 +143,8 @@ callable last:
 ```python
 async def decide(value, next, **kwargs):
     if is_forbidden(value):
-        return "denied"          # short-circuit: downstream never runs
-    return await next(value)     # observe, then delegate
+        return "denied"  # short-circuit: downstream never runs
+    return await next(value)  # observe, then delegate
 ```
 
 Returning without calling `next()` is the design for a policy listener that owns the
@@ -155,16 +157,16 @@ caller uses `hub.emit_nowait(...)`.
 
 ### Profiles and bundles
 
-A profile lives in `~/.vtx/profiles/<name>/` (`profiles_dir()`,
-`src/vtx/plugins/profile.py:54`):
+A profile lives in `~/.ctx/profiles/<name>/` (`profiles_dir()`,
+`src/ctx/plugins/profile.py:54`):
 
 ```text
-~/.vtx/profiles/default/
+~/.ctx/profiles/default/
   bundle.txt     # ordered bundle names, one per line
   cordis.yml     # the user's patch layer
 ```
 
-Vtx ships four bundles (`src/vtx/plugins/builtins/__init__.py:88`) and three profile
+Ctx ships four bundles (`src/ctx/plugins/builtins/__init__.py:88`) and three profile
 templates (`:96`):
 
 | Bundle | Rows | Role |
@@ -190,12 +192,12 @@ For `insert`, `set`, and `replace` a row's `config` is a whole value, not a merg
 That is deliberate: a row whose value differs by mode lives in that mode's bundle,
 so every row is owned by exactly one bundle plus the user's patch. `override` is
 the exception - it requires the row to exist and merges only the fields it names,
-with `config` merged key-by-key (`src/vtx/plugins/loader.py:228-238`).
+with `config` merged key-by-key (`src/ctx/plugins/loader.py:228-238`).
 
 ### The patch language
 
 ```yaml
-# ~/.vtx/profiles/default/cordis.yml
+# ~/.ctx/profiles/default/cordis.yml
 
 - override:                      # partial: replace only the fields named
     - id: tool-grep
@@ -228,27 +230,27 @@ every mount decision:
 ### Commands
 
 ```sh
-vtx --dump-config                     # the composed row list
-vtx --dump-config --profile headless
-vtx plugin profiles                   # shipped profiles and bundles
-vtx plugin init mine                  # create ~/.vtx/profiles/mine/
-vtx plugin path mine
-vtx plugin --profile mine disable tool-grep
-vtx plugin --profile mine enable  tool-grep
-vtx plugin --profile mine install git+https://github.com/me/my-plugin
-vtx plugin --profile mine version-exemptions
-vtx --profile mine --patch extra.yml  # boot with an overlay
-vtx --profile minimal                 # boot the minimal composition
+ctx --dump-config                     # the composed row list
+ctx --dump-config --profile headless
+ctx plugin profiles                   # shipped profiles and bundles
+ctx plugin init mine                  # create ~/.ctx/profiles/mine/
+ctx plugin path mine
+ctx plugin --profile mine disable tool-grep
+ctx plugin --profile mine enable  tool-grep
+ctx plugin --profile mine install git+https://github.com/me/my-plugin
+ctx plugin --profile mine version-exemptions
+ctx --profile mine --patch extra.yml  # boot with an overlay
+ctx --profile minimal                 # boot the minimal composition
 ```
 
 `enable` and `disable` rewrite only the `disabled` flag in `cordis.yml`, appending an
 `override` when there is none yet and leaving the rest of the file alone
-(`src/vtx/coding_agent/plugin_cmd.py:78`). Every row keeps exactly one home in the file,
+(`src/ctx/coding_agent/plugin_cmd.py:78`). Every row keeps exactly one home in the file,
 so repeated toggles do not accumulate.
 
 **Disabling a tool row is not always disabling the tool.** Three tool rows are inert
 as disables: `tool-web`, `tool-ask-user`, and `tool-subagent`.
-`src/vtx/agent/tools/__init__.py:216-218` registers `WebTool`, `AskUserTool`,
+`src/ctx/agent/tools/__init__.py:216-218` registers `WebTool`, `AskUserTool`,
 and `TaskTool` at *import time* with `is_default=True`, so disabling the row unmounts it
 while the tool stays in the global registry and in the default set - `--dump-config`
 shows `[disabled]` and the model still has the tool. Service rows, and the coding-agent
@@ -257,64 +259,64 @@ tool rows (`tool-read`, `tool-edit`, `tool-write`, `tool-bash`, `tool-grep`,
 
 So verify a disable against the live tool set, not the row list: `--dump-config` must show
 `[disabled]` *and* the tool's name must be absent from `ctx.tools.assemble()`
-(`src/vtx/plugins/services.py:118`). A row that does not take effect is a bug worth
-reporting, not something to paper over in `src/vtx/**`.
+(`src/ctx/plugins/services.py:118`). A row that does not take effect is a bug worth
+reporting, not something to paper over in `src/ctx/**`.
 
 `--dump-config` prints the tree your machine boots, and **any row it prints can be
 replaced by a patch of your own**.
 
 ### Installing a plugin, and refusing an incompatible one
 
-A plugin declares which Vtx versions it was built against:
+A plugin declares which Ctx versions it was built against:
 
 ```toml
 # my-plugin/pyproject.toml
 [project.optional-dependencies]
-vtx = [">=1.2,<2.0"]          # or: vtx = ["vtx-coding-agent>=1.2,<2.0"]
+ctx = [">=1.2,<2.0"]          # or: ctx = ["ctx-code>=1.2,<2.0"]
 ```
 
-`vtx plugin install` judges what it can **before anything runs**: a local path or
-registry spec is checked against its declared `vtx` requirement up front, and an
+`ctx plugin install` judges what it can **before anything runs**: a local path or
+registry spec is checked against its declared `ctx` requirement up front, and an
 incompatible one refuses before anything is downloaded or any build script runs.
 The refusal prints the command that grants an exemption:
 
 ```text
-vtx plugin: demo-plugin is incompatible: requires vtx >=99.0, running 1.2.2
+ctx plugin: demo-plugin is incompatible: requires ctx >=99.0, running 1.2.2
 to install it anyway, grant an exemption for exactly this pair:
-  vtx plugin --profile mine allow-version demo-plugin@1.0.0 --vtx-version 1.2.2 --accept-risk
+  ctx plugin --profile mine allow-version demo-plugin@1.0.0 --ctx-version 1.2.2 --accept-risk
 ```
 
-The grant lives in `~/.vtx/profiles/<name>/compatibility.json` as an exact
-`package@version` to exact Vtx version pair. `allow-version` requires `--accept-risk` and
-prints a warning first. Neither a plugin upgrade nor a Vtx upgrade inherits a grant, and
+The grant lives in `~/.ctx/profiles/<name>/compatibility.json` as an exact
+`package@version` to exact Ctx version pair. `allow-version` requires `--accept-risk` and
+prints a warning first. Neither a plugin upgrade nor a Ctx upgrade inherits a grant, and
 a grant authorises nothing except that pair.
 
 A local path is judged before install. A registry name, a git URL, or a tarball cannot
 be judged without fetching, so those install first and are verified afterwards: an
 incompatible one is uninstalled and rolled back, and a rollback that itself fails is
 reported (`"(and the rollback also failed)"`) rather than swallowed
-(`src/vtx/plugins/install.py:273-283`).
+(`src/ctx/plugins/install.py:273-283`).
 
 An editable checkout reports its version as `"editable"`, which cannot be ordered against
 a requirement. That is treated as satisfied rather than crashing the gate -
-`vtx.plugins.install.comparable("editable")` is `False`, so a caller that needs to know
+`ctx.plugins.install.comparable("editable")` is `False`, so a caller that needs to know
 can ask.
 
 ## Embedding
 
 ```python
-from vtx.plugins import PluginHost, load_profile, plugin
-from vtx.plugins.builtins.tools._register import mount_tool
+from ctx.plugins import PluginHost, load_profile, plugin
+from ctx.plugins.builtins.tools._register import mount_tool
 
-rows = load_profile("base")                 # or "minimal"
+rows = load_profile("base")  # or "minimal"
 host = PluginHost(rows, label="embedded")
 host.add(plugin(name="my-tool", inject=("tools",))(lambda ctx, cfg: mount_tool(ctx, MyTool())))
 ctx = host.mount()
 
-tools = ctx.tools.assemble()                # the active tool list
+tools = ctx.tools.assemble()  # the active tool list
 engine = ctx.agentLoop.create(provider, tools, session)
 
-host.dispose()                              # unwinds everything, newest first
+host.dispose()  # unwinds everything, newest first
 ```
 
 `host.add(plugin_obj)` mounts a plugin object rather than an import path. Taking over an
@@ -322,7 +324,7 @@ existing row id substitutes your provider for that row - including re-enabling i
 is how you swap `ctx.tools` or `ctx.agentLoop`.
 
 `boot()`, `active_host()` and `active_context()` hold the composition the current process
-is running; `reset()` disposes it. `VTX_PROFILE` selects the profile without a flag.
+is running; `reset()` disposes it. `CTX_PROFILE` selects the profile without a flag.
 
 ## Kernel reference
 
@@ -352,10 +354,10 @@ Plugin code runs **in-process with the user's full permissions**. There is no sa
 around a plugin; the `ctx.sandbox` seam is a confined runner for scripts that a plugin
 may use, not an isolation boundary around the plugin itself.
 
-The trust boundary is therefore the profile. `~/.vtx/profiles/<name>/cordis.yml` names
-arbitrary importable modules, and `vtx plugin install` will build and run a package's
+The trust boundary is therefore the profile. `~/.ctx/profiles/<name>/cordis.yml` names
+arbitrary importable modules, and `ctx plugin install` will build and run a package's
 build scripts. Treat a profile you did not write, or a `cordis.yml` that appeared in a
-repository you just opened, as untrusted code execution. Check `vtx --dump-config` for
+repository you just opened, as untrusted code execution. Check `ctx --dump-config` for
 row ids you do not recognise before extending anything.
 
 ## What is not a plugin yet
@@ -373,7 +375,7 @@ Honest accounting, so the claim is scoped:
   `Session.continue_by_id` itself.
 - No browser or Telemetry exporters are mounted beyond the optional JSONL one.
 
-Running `vtx` boots the `default` profile before either surface starts, and the runtime
+Running `ctx` boots the `default` profile before either surface starts, and the runtime
 reads `ctx.prompts` and `ctx.agentLoop` from it - so the two seams a third-party plugin
 is most likely to replace are already live. The four above are the migration path, in
 the order you would take them.

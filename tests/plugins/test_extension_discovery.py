@@ -1,12 +1,12 @@
 """Focused tests for the extension discovery row.
 
 The old 2600-line extension module was replaced by three modules under
-``vtx.plugins``. The behaviour that matters is narrow and easy to state, which is
+``ctx.plugins``. The behaviour that matters is narrow and easy to state, which is
 why these tests exist rather than the migrated ones: an extension file has to be
 *found*, has to be *re-read* when it is edited, and has to *fail loudly and
 locally* when it is broken. Every root used here is under ``tmp_path``, and every
 call that would otherwise read ``get_config_dir()`` passes ``agent_dir=``, so no
-test can touch the developer's real ``~/.vtx``.
+test can touch the developer's real ``~/.ctx``.
 
 One source bug is worked around rather than fixed here, and it is the reason for
 the autouse fixture below: the handler-arity caches are keyed by ``id(handler)``,
@@ -27,9 +27,8 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-
-from vtx.plugins import PluginHost, boot, plugin, reset
-from vtx.plugins.extensions import (
+from ctx.plugins import PluginHost, boot, plugin, reset
+from ctx.plugins.extensions import (
     _ENTRYPOINT_KEYS_ATTR,
     ENTRYPOINT_KEYS,
     ExtensionLoadError,
@@ -42,7 +41,7 @@ from vtx.plugins.extensions import (
     load_module,
     register_extension_entrypoint_key,
 )
-from vtx.plugins.services import ToolService
+from ctx.plugins.services import ToolService
 
 _NOOP = "def register(api):\n    pass\n"
 
@@ -88,7 +87,7 @@ def purge_extension_modules():
     submodule objects.
     """
     yield
-    for name in [n for n in sys.modules if n.startswith("vtx_ext_")]:
+    for name in [n for n in sys.modules if n.startswith("ctx_ext_")]:
         del sys.modules[name]
 
 
@@ -102,8 +101,8 @@ def isolated_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     """
     root = tmp_path / "config"
     (root / "agent" / "extensions").mkdir(parents=True)
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: root)
-    monkeypatch.setattr("vtx.plugins.extensions.get_config_dir", lambda: root)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: root)
+    monkeypatch.setattr("ctx.plugins.extensions.get_config_dir", lambda: root)
     return root
 
 
@@ -124,7 +123,7 @@ def test_discovery_is_project_then_agent_dir_then_configured(tmp_path: Path):
     """The order is the extension system's order, and it is load-bearing: a
     project-local file has to be able to shadow a global one of the same name."""
     project = tmp_path / "project"
-    _write(project / ".vtx" / "extensions" / "local.py")
+    _write(project / ".ctx" / "extensions" / "local.py")
 
     agent_dir = tmp_path / "agent"
     global_file = _write(agent_dir / "extensions" / "global_ext.py")
@@ -136,7 +135,7 @@ def test_discovery_is_project_then_agent_dir_then_configured(tmp_path: Path):
         cwd=str(project), configured=[str(configured), str(global_file)], agent_dir=agent_dir
     )
     assert paths == [
-        (project / ".vtx" / "extensions" / "local.py").resolve(),
+        (project / ".ctx" / "extensions" / "local.py").resolve(),
         global_file.resolve(),
         (configured / "loose.py").resolve(),
     ]
@@ -199,7 +198,7 @@ def test_a_package_inside_a_discovery_directory_is_contributed_as_a_unit(tmp_pat
     """A subdirectory of a discovery root contributes its ``__init__.py`` and
     nothing else, and dot/underscore-prefixed modules stay out of the way."""
     project = tmp_path / "project"
-    root = project / ".vtx" / "extensions"
+    root = project / ".ctx" / "extensions"
     _write(root / "visible.py")
     _write(root / "_private.py")
     _write(root / ".hidden.py")
@@ -230,7 +229,7 @@ def test_the_agent_dir_is_searched_when_a_project_has_none(tmp_path: Path, isola
 def test_load_module_imports_a_single_file(tmp_path: Path):
     module = load_module(_write(tmp_path / "solo.py", "VERSION = 'solo'\n"), "solo")
     assert module.VERSION == "solo"
-    assert module.__name__ == "vtx_ext_solo"
+    assert module.__name__ == "ctx_ext_solo"
 
 
 def test_load_module_imports_a_package_with_submodule_search_locations(tmp_path: Path):
@@ -304,7 +303,7 @@ def _forget_package_modules(package_name: str) -> None:
     for name in [
         n
         for n in sys.modules
-        if n == f"vtx_ext_{package_name}" or n.startswith(f"vtx_ext_{package_name}.")
+        if n == f"ctx_ext_{package_name}" or n.startswith(f"ctx_ext_{package_name}.")
     ]:
         del sys.modules[name]
     importlib.invalidate_caches()
@@ -349,7 +348,7 @@ def test_a_syntax_error_is_reported_against_the_path(tmp_path: Path):
     assert "failed to import" in str(error)
     assert str(path) in str(error)
     assert isinstance(error.error, SyntaxError)
-    assert "vtx_ext_broken" not in sys.modules
+    assert "ctx_ext_broken" not in sys.modules
 
 
 def test_a_module_without_register_is_reported_as_not_exporting_one(tmp_path: Path):
@@ -420,8 +419,8 @@ def test_the_service_returns_one_plugin_per_discovered_file(tmp_path: Path):
     """Discovery composes *before* mount: one row per file, named for the
     module, carrying the path it came from so ``/extensions`` can name it."""
     project = tmp_path / "project"
-    first = _write(project / ".vtx" / "extensions" / "first.py")
-    second = _write(project / ".vtx" / "extensions" / "second.py")
+    first = _write(project / ".ctx" / "extensions" / "first.py")
+    second = _write(project / ".ctx" / "extensions" / "second.py")
 
     service = ExtensionService()
     plugins = service.load(cwd=str(project), entry_points=False)
@@ -434,7 +433,7 @@ def test_auto_discover_false_keeps_only_the_callers_explicit_files(tmp_path: Pat
     """``auto_discover=False`` is how a caller says "these, and nothing else":
     the directory scan must not smuggle in rows nobody asked for."""
     project = tmp_path / "project"
-    _write(project / ".vtx" / "extensions" / "autodiscovered.py")
+    _write(project / ".ctx" / "extensions" / "autodiscovered.py")
     wanted = _write(tmp_path / "explicit" / "wanted.py")
 
     service = ExtensionService()
@@ -539,7 +538,7 @@ class _FakeEntryPoint:
 
 
 def test_discover_entrypoints_is_a_list_when_nothing_is_installed(monkeypatch: pytest.MonkeyPatch):
-    """No package declares ``vtx.extensions``, which is the normal case; the
+    """No package declares ``ctx.extensions``, which is the normal case; the
     result has to be an empty list a caller can iterate, not an error."""
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda *, group: [])
 
@@ -550,21 +549,21 @@ def test_a_registered_entrypoint_group_is_searched(monkeypatch: pytest.MonkeyPat
     """An embedder's own packages need a group name they control, and the
     registration has to be visible in the search order that follows."""
     monkeypatch.setattr(sys, _ENTRYPOINT_KEYS_ATTR, [], raising=False)
-    register_extension_entrypoint_key("vtx.acme.extensions")
-    assert "vtx.acme.extensions" in _entrypoint_keys()
+    register_extension_entrypoint_key("ctx.acme.extensions")
+    assert "ctx.acme.extensions" in _entrypoint_keys()
 
     searched: list[str] = []
 
     def fake_entry_points(*, group: str):
         searched.append(group)
-        if group == "vtx.acme.extensions":
+        if group == "ctx.acme.extensions":
             return [_FakeEntryPoint("acme.contrib:register")]
         return []
 
     monkeypatch.setattr(importlib.metadata, "entry_points", fake_entry_points)
 
     assert discover_entrypoints() == ["acme.contrib:register"]
-    assert searched == [*ENTRYPOINT_KEYS, "vtx.acme.extensions"]
+    assert searched == [*ENTRYPOINT_KEYS, "ctx.acme.extensions"]
 
 
 def test_a_broken_metadata_backend_does_not_break_discovery(monkeypatch: pytest.MonkeyPatch):
@@ -606,9 +605,9 @@ def booted(tmp_path: Path, isolated_config_dir: Path):
 
 def test_a_discovered_extension_mounts_through_boot_and_unmounts_cleanly(tmp_path, booted):
     """The property a user depends on: an extension file under
-    ``.vtx/extensions/`` becomes a live tool with no wiring of its own, and
+    ``.ctx/extensions/`` becomes a live tool with no wiring of its own, and
     unloading its row really removes it again."""
-    _write(tmp_path / ".vtx" / "extensions" / "booted.py", _TOOL_EXTENSION)
+    _write(tmp_path / ".ctx" / "extensions" / "booted.py", _TOOL_EXTENSION)
 
     host = booted()
     try:
@@ -629,7 +628,7 @@ def test_a_discovered_records_path_is_the_file_it_came_from(tmp_path, booted):
     was the bare stem — ``booted`` rather than the file they wrote. The path is
     the one thing that tells them which of several same-named modules is live.
     """
-    written = _write(tmp_path / ".vtx" / "extensions" / "booted.py", _TOOL_EXTENSION)
+    written = _write(tmp_path / ".ctx" / "extensions" / "booted.py", _TOOL_EXTENSION)
 
     host = booted()
     try:

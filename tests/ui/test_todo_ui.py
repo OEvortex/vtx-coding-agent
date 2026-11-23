@@ -1,18 +1,16 @@
 """Tests for the todo surfaces: the pinned strip and the in-chat block body.
 
-Both build from :mod:`vtx.tui.todo_ui`, so the renderers are tested here once
+Both build from :mod:`ctx.tui.todo_ui`, so the renderers are tested here once
 rather than twice through two widgets. The widget-level tests only cover what
 the widget itself adds: the hide/show class, the spinner timer, and the
 collapse/expand split.
 """
 
 import pytest
-from rich.cells import cell_len
-
-from vtx.coding_agent.tools.todo import TaskRecord
-from vtx.tui import todo_ui
-from vtx.tui.todo_block import _Record
-from vtx.tui.todo_ui import (
+from ctx.coding_agent.tools.todo import TaskRecord
+from ctx.tui import todo_ui
+from ctx.tui.todo_block import _Record
+from ctx.tui.todo_ui import (
     BAR_CELLS,
     GLYPH_BLOCKED,
     GLYPH_COMPLETED,
@@ -27,6 +25,7 @@ from vtx.tui.todo_ui import (
     status_glyph,
     task_row,
 )
+from rich.cells import cell_len
 
 
 def _task(task_id: int, subject: str, status: str = "pending", **kwargs) -> TaskRecord:
@@ -152,7 +151,7 @@ def test_strip_draws_one_row_per_task(plan: list[TaskRecord]) -> None:
 
 
 def test_strip_uses_the_same_branch_glyphs_as_the_agents_panel(plan: list[TaskRecord]) -> None:
-    from vtx.tui.agents_panel import TREE_EDGE, TREE_LAST
+    from ctx.tui.agents_panel import TREE_EDGE, TREE_LAST
 
     lines = render_strip(plan, width=80).plain.splitlines()
     assert f"│ {TREE_EDGE} " in lines[1]

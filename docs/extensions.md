@@ -1,28 +1,27 @@
 # Extensions
 
-An extension is a Python file that Vtx imports at boot and hands an `ExtensionAPI` to.
+An extension is a Python file that Ctx imports at boot and hands an `ExtensionAPI` to.
 Use this page when you need to register an LLM provider, a message or entry renderer, or
 a slash command from a file dropped on disk rather than declared as a plugin row.
 
 For everything else - a tool, an event hook, a permission rule, a prompt section - prefer
-a [plugin row](plugins.md). A row has real teardown, so disabling it while Vtx runs
+a [plugin row](plugins.md). A row has real teardown, so disabling it while Ctx runs
 leaves no copies behind. This page exists because the extension surface predates the row
 model and is still the shortest path for providers and renderers.
 
 ## The entry convention
 
-An extension file must define a `register` function. Vtx calls it once with the API:
+An extension file must define a `register` function. Ctx calls it once with the API:
 
 ```python
-# ~/.vtx/agent/extensions/my_provider.py
+# ~/.ctx/agent/extensions/my_provider.py
 
 
-def register(api):
-    ...
+def register(api): ...
 ```
 
 There is no decorator to import: the loader looks for a top-level `register`
-callable and calls it once with the API (`src/vtx/plugins/extensions.py:229-236`).
+callable and calls it once with the API (`src/ctx/plugins/extensions.py:229-236`).
 
 `ExtensionAPI` is implemented over the running composition's `Context`, so a
 registration lands on the same tool registry, the same command registry, and the same
@@ -30,7 +29,7 @@ registration lands on the same tool registry, the same command registry, and the
 
 ## The API surface
 
-`src/vtx/plugins/api.py`.
+`src/ctx/plugins/api.py`.
 
 ### Registration
 
@@ -46,7 +45,7 @@ registration lands on the same tool registry, the same command registry, and the
 | `register_flag(name, options)` / `get_flag(name)` | Read a user-set feature flag |
 | `register_shortcut(shortcut, options)` | Bind a keyboard shortcut |
 
-`register_tool` is at `src/vtx/plugins/api.py:234`; it builds an `ExtensionTool`, converts
+`register_tool` is at `src/ctx/plugins/api.py:234`; it builds an `ExtensionTool`, converts
 the JSON Schema to a pydantic params model, and calls `mount_tool`, so teardown is wired.
 
 Set `mutating=True` on a tool that changes state and it routes through the permission
@@ -55,12 +54,11 @@ gate; `mutating=False` tools never prompt.
 ### Events
 
 `api.on(event, handler)` subscribes to the composition's `EventHub`. There are 44 event
-names in `ALL_EVENTS` (`src/vtx/plugins/event_contract.py:77`).
+names in `ALL_EVENTS` (`src/ctx/plugins/event_contract.py:77`).
 
 ```python
 @api.on("tool_result")
-async def on_tool_result(event, payload):
-    ...
+async def on_tool_result(event, payload): ...
 ```
 
 ### Reaching the user and the session
@@ -81,41 +79,41 @@ async def on_tool_result(event, payload):
 `on_*` methods are registered but have **zero internal callers**. They are public surface
 that nothing in this repo exercises, so a bug there is caught by nothing. Use
 `api.on(event, handler)` instead, which is the path the built-ins use
-(`src/vtx/plugins/builtins/hooks.py:114`).
+(`src/ctx/plugins/builtins/hooks.py:114`).
 
 `unregister_provider`, `register_flag`, and `register_shortcut` are likewise unreferenced
 internally. Treat any of them as unverified until you have run it.
 
 ## Discovery paths
 
-Vtx discovers extensions automatically and silently, with no prompt:
+Ctx discovers extensions automatically and silently, with no prompt:
 
 | Path | Scope |
 |---|---|
-| `.vtx/extensions/*.py` (and package dirs with `__init__.py`) | This project |
-| `~/.vtx/agent/extensions/*.py` | User-wide |
+| `.ctx/extensions/*.py` (and package dirs with `__init__.py`) | This project |
+| `~/.ctx/agent/extensions/*.py` | User-wide |
 
 A file becomes one `extension:<stem>` row appended to the profile's row list, which is
-why `/reload` and `vtx --dump-config` both affect extensions. A package extension with a
-`pyproject.toml` can also declare entry points under the `vtx.extensions` or
-`vtx.agent.extensions` groups (`ENTRYPOINT_KEYS`, `src/vtx/plugins/extensions.py:42`).
+why `/reload` and `ctx --dump-config` both affect extensions. A package extension with a
+`pyproject.toml` can also declare entry points under the `ctx.extensions` or
+`ctx.agent.extensions` groups (`ENTRYPOINT_KEYS`, `src/ctx/plugins/extensions.py:42`).
 
 The same files can be named explicitly (the `extensions:` list in `config.yml` feeds the
 same path):
 
 ```sh
-vtx --extension /path/to/ext.py      # repeatable
-vtx --no-extensions                  # skip auto-discovery entirely
-vtx --list-extensions                # print what mounted, with tools and commands
+ctx --extension /path/to/ext.py      # repeatable
+ctx --no-extensions                  # skip auto-discovery entirely
+ctx --list-extensions                # print what mounted, with tools and commands
 ```
 
 Auto-discovery order is project first, then user, then explicitly configured paths,
-deduplicated by resolved path (`discover_extension_paths`, `src/vtx/plugins/extensions.py:280`).
+deduplicated by resolved path (`discover_extension_paths`, `src/ctx/plugins/extensions.py:280`).
 
 ## Hot reload
 
 `/reload` re-runs extension discovery and re-executes the files, so an edit takes effect
-without a restart. The sequence is (`src/vtx/tui/commands/reload.py:70`):
+without a restart. The sequence is (`src/ctx/tui/commands/reload.py:70`):
 
 1. outgoing extensions are told to let go, **before** the module cache is cleared
 2. the imported extension modules are dropped, so a re-mounted file re-executes
@@ -123,10 +121,10 @@ without a restart. The sequence is (`src/vtx/tui/commands/reload.py:70`):
 4. `reload_extensions` mounts the new set
 
 Package submodules are handled too: `_invalidate_extension_modules` drops every
-`vtx_ext_*` module (submodules included) from `sys.modules`, and
+`ctx_ext_*` module (submodules included) from `sys.modules`, and
 `invalidate_extension_bytecode` removes a package's `__pycache__` as it loads, so an
 edit that keeps the same byte length in the same mtime tick is still really re-read
-(`src/vtx/tui/commands/reload.py:366-373`, `src/vtx/plugins/extensions.py:362-381`).
+(`src/ctx/tui/commands/reload.py:366-373`, `src/ctx/plugins/extensions.py:362-381`).
 
 `/reload` is refused while a turn is running, because swapping the tool set mid-flight
 leaves the advertised tools and the running tools out of sync. Wait for the turn or
@@ -135,8 +133,8 @@ interrupt it first.
 ## Providers
 
 `register_provider(provider_or_name, config=None)` records a provider registration -
-a name plus a config dict, or a provider object (`src/vtx/plugins/api.py:430-441`). The
-config dict is what becomes a `ProviderConfig` (`vtx.ai.base.ProviderConfig`) when the
+a name plus a config dict, or a provider object (`src/ctx/plugins/api.py:430-441`). The
+config dict is what becomes a `ProviderConfig` (`ctx.ai.base.ProviderConfig`) when the
 provider is built: a base URL, an API key (an environment variable name or a literal),
 the API family, custom headers, an auth header, a model list, and an OAuth block.
 
@@ -157,7 +155,7 @@ with the user's environment.
 
 Two consequences worth stating plainly:
 
-- **`.vtx/extensions/` is a repository supply-chain vector.** Anyone who can land a file
+- **`.ctx/extensions/` is a repository supply-chain vector.** Anyone who can land a file
   in that directory in a project you open gets arbitrary code execution with your
   credentials on next start, with no prompt. This is materially the same trust model as a
   checked-in `.vscode/tasks.json`, but with no install step and no prompt at all.
@@ -165,8 +163,8 @@ Two consequences worth stating plainly:
   tool, and reload. There is no gate asking whether the human wanted that tool installed.
 
 If you want that gate, keep the executable half out of extensions and use a plugin row,
-where a change to `~/.vtx/profiles/<name>/cordis.yml` is a decision you can see and
-review with `vtx --dump-config`.
+where a change to `~/.ctx/profiles/<name>/cordis.yml` is a decision you can see and
+review with `ctx --dump-config`.
 
 ## Known gaps
 
@@ -175,7 +173,7 @@ review with `vtx --dump-config`.
   unexercised public surface rather than a supported path.
 - `register_flag`, `register_shortcut`, and `unregister_provider` are likewise
   unreferenced internally (`get_flag` is bound to a stub that always returns `None`,
-  `src/vtx/tui/app.py:433`).
-- The old `register(api)`-style extension manager in `vtx.agent` was removed. The live
-  path is `vtx.plugins.extensions`; `load_extension` and `load_all_extensions` in that
+  `src/ctx/tui/app.py:433`).
+- The old `register(api)`-style extension manager in `ctx.agent` was removed. The live
+  path is `ctx.plugins.extensions`; `load_extension` and `load_all_extensions` in that
   module are superseded by `load_for_runtime` and are reachable only from tests.

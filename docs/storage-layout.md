@@ -1,6 +1,6 @@
 # Storage layout
 
-This page lists every path Vtx writes to and reads from, and names the function that resolves each one.
+This page lists every path Ctx writes to and reads from, and names the function that resolves each one.
 
 Paths come from the running code, not from convention, so treat the `Resolved by` column as the source of truth. For what the files mean, read [configuration.md](configuration.md), [sessions.md](sessions.md), [skills.md](skills.md), and [mcp.md](mcp.md). For what a run writes to them, read [headless.md](headless.md) and [sdk.md](sdk.md); for what a plugin adds to that set, read [plugins.md](plugins.md).
 
@@ -10,62 +10,62 @@ There are two home roots and one project root.
 
 | Root | Function | Default |
 |---|---|---|
-| Global config | `get_config_dir()` (`src/vtx/core/config.py:403-406`, implementation `src/vtx/core/paths.py:7-44`) | `~/.vtx` |
-| Legacy agents | `get_agents_dir()` (`src/vtx/core/paths.py:47-67`) | `~/.agents` |
-| Project | literal, per subsystem | `<cwd>/.vtx` |
+| Global config | `get_config_dir()` (`src/ctx/core/config.py:403-406`, implementation `src/ctx/core/paths.py:7-44`) | `~/.ctx` |
+| Legacy agents | `get_agents_dir()` (`src/ctx/core/paths.py:47-67`) | `~/.agents` |
+| Project | literal, per subsystem | `<cwd>/.ctx` |
 
-`get_config_dir()` resolves in this order and stops at the first hit (`src/vtx/core/paths.py:7-44`):
+`get_config_dir()` resolves in this order and stops at the first hit (`src/ctx/core/paths.py:7-44`):
 
 | # | Condition | Result |
 |---|---|---|
-| 1 | `XDG_CONFIG_HOME` is set and absolute | `$XDG_CONFIG_HOME/vtx` (`src/vtx/core/paths.py:13-19`) |
-| 2 | `HOME` is set and is neither `""` nor `/` | `$HOME/.vtx` (`src/vtx/core/paths.py:20-24`) |
-| 3 | `Path.home()` resolves to something other than `/` | `~/.vtx` (`src/vtx/core/paths.py:27-30`) |
-| 4 | The `pwd` database has an entry for the uid | `<pw_dir>/.vtx` (`src/vtx/core/paths.py:34-41`) |
-| 5 | Last resort | `<cwd>/.vtx` (`src/vtx/core/paths.py:44`) |
+| 1 | `XDG_CONFIG_HOME` is set and absolute | `$XDG_CONFIG_HOME/ctx` (`src/ctx/core/paths.py:13-19`) |
+| 2 | `HOME` is set and is neither `""` nor `/` | `$HOME/.ctx` (`src/ctx/core/paths.py:20-24`) |
+| 3 | `Path.home()` resolves to something other than `/` | `~/.ctx` (`src/ctx/core/paths.py:27-30`) |
+| 4 | The `pwd` database has an entry for the uid | `<pw_dir>/.ctx` (`src/ctx/core/paths.py:34-41`) |
+| 5 | Last resort | `<cwd>/.ctx` (`src/ctx/core/paths.py:44`) |
 
-The directory name is the constant `CONFIG_DIR_NAME = "vtx"` (`src/vtx/core/paths.py:4`), and the XDG branch exists only for an explicitly set variable: unset, `~/.vtx` wins for backwards compatibility (`src/vtx/core/paths.py:14-17`). The chain exists so an empty `HOME` never resolves to `/.vtx`, which is not writable.
+The directory name is the constant `CONFIG_DIR_NAME = "ctx"` (`src/ctx/core/paths.py:4`), and the XDG branch exists only for an explicitly set variable: unset, `~/.ctx` wins for backwards compatibility (`src/ctx/core/paths.py:14-17`). The chain exists so an empty `HOME` never resolves to `/.ctx`, which is not writable.
 
-`get_agents_dir()` is `~/.agents` with the same `HOME` guard, because agents historically lived there (`src/vtx/core/paths.py:49`). It is still a live read root for skills (`src/vtx/agent/context/skills.py:20`).
+`get_agents_dir()` is `~/.agents` with the same `HOME` guard, because agents historically lived there (`src/ctx/core/paths.py:49`). It is still a live read root for skills (`src/ctx/agent/context/skills.py:20`).
 
 ## Global tree
 
-Everything under `~/.vtx`, unless one of the env vars listed below moved it.
+Everything under `~/.ctx`, unless one of the env vars listed below moved it.
 
 | Path | What | Resolved by |
 |---|---|---|
-| `config.yml` | The whole config schema, versioned and migrated on load | `src/vtx/core/config.py:415-417` |
-| `config.yml.bak.<ts>` | Pre-migration backup, `YYYYMMDDHHMMSS` in the name | `src/vtx/core/config.py:835-840` |
-| `profiles/<name>/bundle.txt` | The profile's ordered bundle list | `src/vtx/plugins/profile.py:33-34`, `:79-83` |
-| `profiles/<name>/cordis.yml` | The profile's patch layer | `src/vtx/plugins/profile.py:34`, `:64-66` |
-| `profiles/<name>/compatibility.json` | `allow-version` grants | `src/vtx/plugins/install.py:31`, `:47-48` |
-| `sessions/<safe_cwd>/<ts>_<id>.jsonl` | One file per session; the directory is `chmod 0700`. Old, untouched files are pruned (`session_retention`) | `src/vtx/agent/session.py:243-248`, `:966-968`, `src/vtx/core/session_retention.py:69` |
-| `token_usage.json` | Durable per-session token ledger; keeps lifetime `/usage` totals after a session file is deleted | `src/vtx/core/token_usage.py:35`, `:58` |
-| `tasks/<safe_cwd>/` | Background-task store and sub-agent results | `src/vtx/agent/background.py:100`, `src/vtx/agent/tools/task.py:213` |
-| `snapshots/<digest>/` | Pre-edit file snapshots for revert | `src/vtx/agent/snapshot.py:184` |
-| `skills/` | Skills installed into the vtx home; marked `bundled` on load | `src/vtx/agent/context/skills.py:351`, `:414-419` |
-| `agent/*.py` | Global agent files and packages | `src/vtx/agent/agents/discovery.py:17`, `:54` |
-| `agent/extensions/*.py` | Global extensions | `src/vtx/plugins/extensions.py:9`, `:314` |
-| `mcp.json` | Global MCP server config | `src/vtx/mcp/config.py:57`, `:310` |
-| `mcp-auth.json` | MCP OAuth credentials | `src/vtx/mcp/oauth/provider.py:45`, `:98` |
-| `hooks.yml` | Global YAML hooks | `src/vtx/plugins/builtins/hooks.py:29`, `:42` |
-| `providers/*.yaml` | User-wide custom provider catalog | `src/vtx/ai/provider_catalog.py:455-459` |
-| `prompt-history.jsonl` | Prompt history | `src/vtx/tui/prompt_history.py:12` |
-| `telemetry.jsonl` | JSONL trace export, only when the telemetry row enables it | `src/vtx/plugins/builtins/services/telemetry.py:24` |
-| `bin/` | Where managed binaries are looked for alongside `PATH` | `src/vtx/agent/tools_manager.py:21`, `src/vtx/core/config.py:417-420` |
-| `gh_app/config.json`, `gh_app/bot_user_id.json` | GitHub App config and bot-id cache | `src/vtx/git/gh_app.py:57-59` |
-| `models/<slug>.json` | Per-provider model catalog cache | `src/vtx/ai/dynamic_models.py:53`, `:307-313` |
-| `models_dev_limits.json` | Context-length limits, fetched from models.dev and written after a successful fetch; several MB | `src/vtx/ai/context_length.py:21`, `:52-53`, `:68-72`, `:82` |
-| `codex_auth.json` (legacy `openai_auth.json`) | Codex OAuth tokens | `src/vtx/ai/oauth/codex.py:68-71` |
-| `copilot_auth.json` | Copilot OAuth token | `src/vtx/ai/oauth/copilot.py:49` |
-| `cline_auth.json` | Cline OAuth token | `src/vtx/ai/oauth/cline.py:69` |
-| `dynamic_auth.json` | Dynamic-provider API keys | `src/vtx/ai/oauth/dynamic.py:32`, `:52-72` |
+| `config.yml` | The whole config schema, versioned and migrated on load | `src/ctx/core/config.py:415-417` |
+| `config.yml.bak.<ts>` | Pre-migration backup, `YYYYMMDDHHMMSS` in the name | `src/ctx/core/config.py:835-840` |
+| `profiles/<name>/bundle.txt` | The profile's ordered bundle list | `src/ctx/plugins/profile.py:33-34`, `:79-83` |
+| `profiles/<name>/cordis.yml` | The profile's patch layer | `src/ctx/plugins/profile.py:34`, `:64-66` |
+| `profiles/<name>/compatibility.json` | `allow-version` grants | `src/ctx/plugins/install.py:31`, `:47-48` |
+| `sessions/<safe_cwd>/<ts>_<id>.jsonl` | One file per session; the directory is `chmod 0700`. Old, untouched files are pruned (`session_retention`) | `src/ctx/agent/session.py:243-248`, `:966-968`, `src/ctx/core/session_retention.py:69` |
+| `token_usage.json` | Durable per-session token ledger; keeps lifetime `/usage` totals after a session file is deleted | `src/ctx/core/token_usage.py:35`, `:58` |
+| `tasks/<safe_cwd>/` | Background-task store and sub-agent results | `src/ctx/agent/background.py:100`, `src/ctx/agent/tools/task.py:213` |
+| `snapshots/<digest>/` | Pre-edit file snapshots for revert | `src/ctx/agent/snapshot.py:184` |
+| `skills/` | Skills installed into the ctx home; marked `bundled` on load | `src/ctx/agent/context/skills.py:351`, `:414-419` |
+| `agent/*.py` | Global agent files and packages | `src/ctx/agent/agents/discovery.py:17`, `:54` |
+| `agent/extensions/*.py` | Global extensions | `src/ctx/plugins/extensions.py:9`, `:314` |
+| `mcp.json` | Global MCP server config | `src/ctx/mcp/config.py:57`, `:310` |
+| `mcp-auth.json` | MCP OAuth credentials | `src/ctx/mcp/oauth/provider.py:45`, `:98` |
+| `hooks.yml` | Global YAML hooks | `src/ctx/plugins/builtins/hooks.py:29`, `:42` |
+| `providers/*.yaml` | User-wide custom provider catalog | `src/ctx/ai/provider_catalog.py:455-459` |
+| `prompt-history.jsonl` | Prompt history | `src/ctx/tui/prompt_history.py:12` |
+| `telemetry.jsonl` | JSONL trace export, only when the telemetry row enables it | `src/ctx/plugins/builtins/services/telemetry.py:24` |
+| `bin/` | Where managed binaries are looked for alongside `PATH` | `src/ctx/agent/tools_manager.py:21`, `src/ctx/core/config.py:417-420` |
+| `gh_app/config.json`, `gh_app/bot_user_id.json` | GitHub App config and bot-id cache | `src/ctx/git/gh_app.py:57-59` |
+| `models/<slug>.json` | Per-provider model catalog cache | `src/ctx/ai/dynamic_models.py:53`, `:307-313` |
+| `models_dev_limits.json` | Context-length limits, fetched from models.dev and written after a successful fetch; several MB | `src/ctx/ai/context_length.py:21`, `:52-53`, `:68-72`, `:82` |
+| `codex_auth.json` (legacy `openai_auth.json`) | Codex OAuth tokens | `src/ctx/ai/oauth/codex.py:68-71` |
+| `copilot_auth.json` | Copilot OAuth token | `src/ctx/ai/oauth/copilot.py:49` |
+| `cline_auth.json` | Cline OAuth token | `src/ctx/ai/oauth/cline.py:69` |
+| `dynamic_auth.json` | Dynamic-provider API keys | `src/ctx/ai/oauth/dynamic.py:32`, `:52-72` |
 
-Two of these are read rather than written as whole directories: the usage aggregate walks everything under `sessions/` but only re-parses files whose `(mtime, size)` changed, recording the rest in `token_usage.json` (`src/vtx/core/token_usage.py:198`), and HTML export reads the same per-project session directory (`src/vtx/tui/export.py:182-183`).
+Two of these are read rather than written as whole directories: the usage aggregate walks everything under `sessions/` but only re-parses files whose `(mtime, size)` changed, recording the rest in `token_usage.json` (`src/ctx/core/token_usage.py:198`), and HTML export reads the same per-project session directory (`src/ctx/tui/export.py:182-183`).
 
-Global `AGENTS.md` or `CLAUDE.md` context files are read straight out of `~/.vtx` (`src/vtx/agent/context/agent_mds.py:87-89`), so `~/.vtx/AGENTS.md` is global project instructions.
+Global `AGENTS.md` or `CLAUDE.md` context files are read straight out of `~/.ctx` (`src/ctx/agent/context/agent_mds.py:87-89`), so `~/.ctx/AGENTS.md` is global project instructions.
 
-Any directory in this table can be named without guessing: `vtx plugin path default` prints the profile directory (`src/vtx/coding_agent/plugin_cmd.py:50-52`). See [plugins.md](plugins.md) for what the two files in it mean, [cli.md](cli.md) for the flags that override them, and [development.md](development.md) for the commands that read this tree.
+Any directory in this table can be named without guessing: `ctx plugin path default` prints the profile directory (`src/ctx/coding_agent/plugin_cmd.py:50-52`). See [plugins.md](plugins.md) for what the two files in it mean, [cli.md](cli.md) for the flags that override them, and [development.md](development.md) for the commands that read this tree.
 
 ## Project tree
 
@@ -73,44 +73,44 @@ Everything here is relative to the working directory and is *not* moved by the c
 
 | Path | What | Resolved by |
 |---|---|---|
-| `.vtx/extensions/*.py` | Project extensions | `src/vtx/plugins/extensions.py:8`, `:313` |
-| `.vtx/agent/*.py` | Project agents, walked up to the git root | `src/vtx/agent/agents/discovery.py:15`, `:46-51` |
-| `.vtx/mcp.json` | Project MCP config, read on every start | `src/vtx/mcp/config.py:54`, `:294-311` |
-| `.vtx/hooks.yml` | Project YAML hooks, loaded before the global one | `src/vtx/plugins/builtins/hooks.py:42-43` |
-| `.vtx/providers/*.yaml` | Project-local custom provider catalog | `src/vtx/ai/provider_catalog.py:462-464` |
-| `.agents/skills/<name>/SKILL.md` | Project skills, one directory per skill | `src/vtx/agent/context/skills.py:309-318`, `:407-411` |
+| `.ctx/extensions/*.py` | Project extensions | `src/ctx/plugins/extensions.py:8`, `:313` |
+| `.ctx/agent/*.py` | Project agents, walked up to the git root | `src/ctx/agent/agents/discovery.py:15`, `:46-51` |
+| `.ctx/mcp.json` | Project MCP config, read on every start | `src/ctx/mcp/config.py:54`, `:294-311` |
+| `.ctx/hooks.yml` | Project YAML hooks, loaded before the global one | `src/ctx/plugins/builtins/hooks.py:42-43` |
+| `.ctx/providers/*.yaml` | Project-local custom provider catalog | `src/ctx/ai/provider_catalog.py:462-464` |
+| `.agents/skills/<name>/SKILL.md` | Project skills, one directory per skill | `src/ctx/agent/context/skills.py:309-318`, `:407-411` |
 
-The project roots are always scanned; the `extensions:` and `agents.files` lists in `config.yml` add to them rather than replace them (`src/vtx/core/config.py:250-256`).
+The project roots are always scanned; the `extensions:` and `agents.files` lists in `config.yml` add to them rather than replace them (`src/ctx/core/config.py:250-256`).
 
 ### Session directory encoding
 
-A session directory name is the working directory with `/` and `\` replaced by `-` and leading or trailing dashes stripped (`src/vtx/agent/session.py:244`):
+A session directory name is the working directory with `/` and `\` replaced by `-` and leading or trailing dashes stripped (`src/ctx/agent/session.py:244`):
 
 ```python
 safe_cwd = cwd.replace("/", "-").replace("\\", "-").strip("-")
 sessions_dir = get_config_dir() / "sessions" / safe_cwd
 ```
 
-So `/home/me/proj` becomes `home-me-proj`, and the session files inside are named `<file_timestamp>_<session_id>.jsonl`, where the timestamp is the session's UTC start time formatted `%Y-%m-%dT%H-%M-%S` (`src/vtx/agent/session.py:966-968`).
+So `/home/me/proj` becomes `home-me-proj`, and the session files inside are named `<file_timestamp>_<session_id>.jsonl`, where the timestamp is the session's UTC start time formatted `%Y-%m-%dT%H-%M-%S` (`src/ctx/agent/session.py:966-968`).
 
 ## Discovery order
 
-Skills are merged from three roots, first seen wins, and a later collision is reported as a warning rather than silently replacing the earlier skill (`src/vtx/agent/context/skills.py:392-405`):
+Skills are merged from three roots, first seen wins, and a later collision is reported as a warning rather than silently replacing the earlier skill (`src/ctx/agent/context/skills.py:392-405`):
 
-1. `<cwd>/.agents/skills/` and every ancestor up to and including the git root (`src/vtx/agent/context/skills.py:309-318`).
+1. `<cwd>/.agents/skills/` and every ancestor up to and including the git root (`src/ctx/agent/context/skills.py:309-318`).
 2. `~/.agents/skills/`.
-3. `~/.vtx/skills/`, whose entries are flagged `bundled`.
+3. `~/.ctx/skills/`, whose entries are flagged `bundled`.
 
-Agents follow the same shape (`src/vtx/agent/agents/discovery.py:40-100`): project files walked from the working directory up to the git root deepest-first, then `~/.vtx/agent/`, then the explicitly configured paths. `_add` keeps the first path it sees for a name and drops every later duplicate (`src/vtx/agent/agents/discovery.py:60-72`), so a project agent shadows a global or configured agent of the same name. `load_all_agents` then assigns by name in list order (`src/vtx/agent/agents/loader.py:181-190`).
+Agents follow the same shape (`src/ctx/agent/agents/discovery.py:40-100`): project files walked from the working directory up to the git root deepest-first, then `~/.ctx/agent/`, then the explicitly configured paths. `_add` keeps the first path it sees for a name and drops every later duplicate (`src/ctx/agent/agents/discovery.py:60-72`), so a project agent shadows a global or configured agent of the same name. `load_all_agents` then assigns by name in list order (`src/ctx/agent/agents/loader.py:181-190`).
 
 ## Env vars that move a path
 
 | Variable | Effect |
 |---|---|
-| `XDG_CONFIG_HOME` | Moves the global root to `$XDG_CONFIG_HOME/vtx` (`src/vtx/core/paths.py:13-19`) |
-| `HOME` | Sets the global root to `$HOME/.vtx` (`src/vtx/core/paths.py:20-24`) |
-| `VTX_MODELS_CACHE_DIR` | Replaces `~/.vtx/models` for every model catalog cache (`src/vtx/ai/dynamic_models.py:307-313`, `src/vtx/ai/model_fetcher.py:53-58`, `src/vtx/ai/oauth/cline.py:429-431`) |
-| `VTX_PROFILE` | Selects the profile, and therefore which `profiles/<name>/` is read (`src/vtx/plugins/bootstrap.py:38`) |
+| `XDG_CONFIG_HOME` | Moves the global root to `$XDG_CONFIG_HOME/ctx` (`src/ctx/core/paths.py:13-19`) |
+| `HOME` | Sets the global root to `$HOME/.ctx` (`src/ctx/core/paths.py:20-24`) |
+| `CTX_MODELS_CACHE_DIR` | Replaces `~/.ctx/models` for every model catalog cache (`src/ctx/ai/dynamic_models.py:307-313`, `src/ctx/ai/model_fetcher.py:53-58`, `src/ctx/ai/oauth/cline.py:429-431`) |
+| `CTX_PROFILE` | Selects the profile, and therefore which `profiles/<name>/` is read (`src/ctx/plugins/bootstrap.py:38`) |
 
 ## Worked example
 
@@ -120,9 +120,9 @@ Print the resolved layout of the machine you are on, with file sizes for everyth
 uv run python - <<'PY'
 from pathlib import Path
 
-from vtx.agent.session import Session
-from vtx.core.paths import get_agents_dir, get_config_dir
-from vtx.mcp.config import load_mcp_config
+from ctx.agent.session import Session
+from ctx.core.paths import get_agents_dir, get_config_dir
+from ctx.mcp.config import load_mcp_config
 
 root = get_config_dir()
 sessions = Session.get_sessions_dir(str(Path.cwd()))
@@ -145,13 +145,13 @@ for path in sorted(root.iterdir()):
 PY
 ```
 
-The interesting lines are the first four: they name the exact directories this installation resolves to, and they are the paths every row of the tables above is relative to. `Session.get_sessions_dir` creates the directory with mode `0700` if it does not exist (`src/vtx/agent/session.py:243-248`), so running this script has a side effect you can undo with `rmdir`.
+The interesting lines are the first four: they name the exact directories this installation resolves to, and they are the paths every row of the tables above is relative to. `Session.get_sessions_dir` creates the directory with mode `0700` if it does not exist (`src/ctx/agent/session.py:243-248`), so running this script has a side effect you can undo with `rmdir`.
 
 ## Known gaps
 
-- Almost nothing under `~/.vtx` is encrypted. The OAuth tokens in `codex_auth.json`, `copilot_auth.json`, `cline_auth.json` and `mcp-auth.json` are plain files at default permissions, and even the GitHub App config is only tightened after the write, with a `chmod 0600` rather than an exclusive create (`src/vtx/git/gh_app.py:108-109`). Its bot-id cache gets no permissions treatment at all (`src/vtx/git/gh_app.py:228`, `src/vtx/git/README.md:87`).
-- The dynamic-auth key file does not follow one root. It prefers `~/vtx/dynamic_auth.yml` (a bare `vtx` in the home directory, outside the config dir), then `$XDG_CONFIG_HOME/vtx/dynamic_auth.json`, then `~/.vtx/dynamic_auth.json` (`src/vtx/ai/oauth/dynamic.py:52-72`). Only the third is what the rest of the layout would predict.
-- `get_agents_dir()` ignores `XDG_CONFIG_HOME` entirely, so setting it moves the config root but leaves skills reading `~/.agents/skills` (`src/vtx/core/paths.py:47-67`).
-- Session directories are keyed by the resolved-at-session-start working directory, so moving a project invalidates its history rather than following it (`src/vtx/agent/session.py:238`).
-- Agent discovery promises more than the code delivers. `_add`'s comment says "configured beats auto-discovered", but configured paths are added last and `_add` keeps the first occurrence, so a configured agent loses to a project or global agent with the same name (`src/vtx/agent/agents/discovery.py:66-72`, `:96-100`). The `find_agent_paths` docstring also claims the loader dedupes "last seen wins", which never comes into play because duplicates are already gone (`src/vtx/agent/agents/discovery.py:44-47`, `src/vtx/agent/agents/loader.py:184-190`).
-- `load_skills` reports a name collision but keeps going, so a mistyped duplicate skill is easy to miss unless you read the warnings (`src/vtx/agent/context/skills.py:392-405`).
+- Almost nothing under `~/.ctx` is encrypted. The OAuth tokens in `codex_auth.json`, `copilot_auth.json`, `cline_auth.json` and `mcp-auth.json` are plain files at default permissions, and even the GitHub App config is only tightened after the write, with a `chmod 0600` rather than an exclusive create (`src/ctx/git/gh_app.py:108-109`). Its bot-id cache gets no permissions treatment at all (`src/ctx/git/gh_app.py:228`, `src/ctx/git/README.md:87`).
+- The dynamic-auth key file does not follow one root. It prefers `~/ctx/dynamic_auth.yml` (a bare `ctx` in the home directory, outside the config dir), then `$XDG_CONFIG_HOME/ctx/dynamic_auth.json`, then `~/.ctx/dynamic_auth.json` (`src/ctx/ai/oauth/dynamic.py:52-72`). Only the third is what the rest of the layout would predict.
+- `get_agents_dir()` ignores `XDG_CONFIG_HOME` entirely, so setting it moves the config root but leaves skills reading `~/.agents/skills` (`src/ctx/core/paths.py:47-67`).
+- Session directories are keyed by the resolved-at-session-start working directory, so moving a project invalidates its history rather than following it (`src/ctx/agent/session.py:238`).
+- Agent discovery promises more than the code delivers. `_add`'s comment says "configured beats auto-discovered", but configured paths are added last and `_add` keeps the first occurrence, so a configured agent loses to a project or global agent with the same name (`src/ctx/agent/agents/discovery.py:66-72`, `:96-100`). The `find_agent_paths` docstring also claims the loader dedupes "last seen wins", which never comes into play because duplicates are already gone (`src/ctx/agent/agents/discovery.py:44-47`, `src/ctx/agent/agents/loader.py:184-190`).
+- `load_skills` reports a name collision but keeps going, so a mistyped duplicate skill is easy to miss unless you read the warnings (`src/ctx/agent/context/skills.py:392-405`).

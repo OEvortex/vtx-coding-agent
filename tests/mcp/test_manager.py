@@ -4,9 +4,8 @@ import sys
 from pathlib import Path
 
 import pytest
-
-from vtx.mcp.config import LoadedMcpConfig
-from vtx.mcp.manager import McpManager, cwd_to_uri
+from ctx.mcp.config import LoadedMcpConfig
+from ctx.mcp.manager import McpManager, cwd_to_uri
 
 FIXTURES = Path(__file__).parent / "fixtures"
 STDIO_SERVER = FIXTURES / "stdio_server.py"
@@ -14,7 +13,7 @@ SLOW_SERVER = FIXTURES / "slow_server.py"
 
 
 def _config(*servers: dict) -> LoadedMcpConfig:
-    from vtx.mcp.config import validate_mcp_server_config
+    from ctx.mcp.config import validate_mcp_server_config
 
     configs = []
     for entry in servers:
@@ -143,7 +142,7 @@ async def test_tool_names_never_collide_across_servers(tmp_path):
 @pytest.mark.asyncio
 async def test_mcp_tools_never_shadow_builtin_tools(tmp_path):
     # A server named to collide with a built-in must not take its name.
-    from vtx.coding_agent.tools import all_tools
+    from ctx.coding_agent.tools import all_tools
 
     builtin = next(t.name for t in all_tools if t.name == "web")
     manager = McpManager(cwd=str(tmp_path), config=_config(_stdio("web")))
@@ -242,7 +241,7 @@ def test_cwd_to_uri_quotes_spaces():
 
 @pytest.mark.asyncio
 async def test_status_describe_reads_as_prose(tmp_path):
-    from vtx.mcp.manager import McpServerStatus
+    from ctx.mcp.manager import McpServerStatus
 
     assert McpServerStatus("a", state="connected", tool_count=1).describe() == "connected (1 tool)"
     assert (
@@ -256,7 +255,7 @@ async def test_status_describe_reads_as_prose(tmp_path):
 @pytest.mark.asyncio
 async def test_the_resource_tools_join_a_connected_server(tmp_path):
     """A connected server makes the resources API reachable by the model."""
-    from vtx.mcp.resources import (
+    from ctx.mcp.resources import (
         LIST_MCP_RESOURCE_TEMPLATES_TOOL,
         LIST_MCP_RESOURCES_TOOL,
         READ_MCP_RESOURCE_TOOL,
@@ -296,7 +295,7 @@ async def test_resource_tools_survive_a_reload(tmp_path):
     the files, so an in-memory config would simply vanish and the test would
     pass for the wrong reason.
     """
-    from vtx.mcp.resources import LIST_MCP_RESOURCES_TOOL, READ_MCP_RESOURCE_TOOL
+    from ctx.mcp.resources import LIST_MCP_RESOURCES_TOOL, READ_MCP_RESOURCE_TOOL
 
     (tmp_path / "mcp.json").write_text(
         json.dumps(

@@ -1,12 +1,11 @@
 import pytest
-
-from vtx.agent.loop import Agent
-from vtx.agent.runtime import ConversationRuntime
-from vtx.agent.session import Session
-from vtx.ai.providers.mock import MockProvider
-from vtx.protocol.types import AssistantMessage, TextContent
-from vtx.tui.session_ui import SessionUIMixin
-from vtx.tui.widgets import InfoBar
+from ctx.agent.loop import Agent
+from ctx.agent.runtime import ConversationRuntime
+from ctx.agent.session import Session
+from ctx.ai.providers.mock import MockProvider
+from ctx.protocol.types import AssistantMessage, TextContent
+from ctx.tui.session_ui import SessionUIMixin
+from ctx.tui.widgets import InfoBar
 
 
 class _FakeChat:
@@ -129,7 +128,7 @@ class _TestSessionApp(SessionUIMixin):
 
 @pytest.mark.asyncio
 async def test_loading_session_rebuilds_agent_with_persisted_system_prompt(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     original_session = Session.create(
         "/test/project", provider="mock", model_id="mock-model", system_prompt="old prompt"

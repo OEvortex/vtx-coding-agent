@@ -1,52 +1,52 @@
 <div align="center">
 
-<img src="logo.png" alt="Vtx" width="120">
+<img src="logo.png" alt="Ctx" width="120">
 
-# Vtx
+# Ctx
 
 **A coding agent that lives in your terminal.**
 
-[![PyPI version](https://img.shields.io/pypi/v/vtx-coding-agent.svg)](https://pypi.org/project/vtx-coding-agent/)
-[![Python](https://img.shields.io/pypi/pyversions/vtx-coding-agent.svg)](https://pypi.org/project/vtx-coding-agent/)
-[![GitHub](https://img.shields.io/badge/GitHub-OEvortex%2Fvtx--coding--agent-181717?logo=github)](https://github.com/OEvortex/vtx-coding-agent)
+[![PyPI version](https://img.shields.io/pypi/v/ctx-code.svg)](https://pypi.org/project/ctx-code/)
+[![Python](https://img.shields.io/pypi/pyversions/ctx-code.svg)](https://pypi.org/project/ctx-code/)
+[![GitHub](https://img.shields.io/badge/GitHub-OEvortex%2Fctx--coding--agent-181717?logo=github)](https://github.com/OEvortex/ctx-code)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 </div>
 
 ---
 
-Vtx is a coding agent harness. Give it a goal and a working folder, and it reads files,
+Ctx is a coding agent harness. Give it a goal and a working folder, and it reads files,
 runs commands, edits code, and works through multi-step tasks without stopping to confirm
 each one. The same core runs three ways: a keyboard-driven TUI, a headless CLI for
 scripts and CI, and a Python SDK for embedding.
 
-It ships 11 packages under the single `vtx-coding-agent` distribution, with 65 providers,
+It ships 11 packages under the single `ctx-code` distribution, with 65 providers,
 and an agent runtime whose every subsystem is replaceable without editing the
 harness.
 
 ## Quick start
 
 ```bash
-uv tool install vtx-coding-agent
+uv tool install ctx-code
 
-vtx                              # terminal UI
-vtx -p "add tests for vtx.git"   # headless, one task, then exit
+ctx                              # terminal UI
+ctx -p "add tests for ctx.git"   # headless, one task, then exit
 ```
 
-Python 3.12 or newer. The console script is `vtx`.
+Python 3.12 or newer. The console script is `ctx`.
 
 Connect a model with `--provider` and `--model`, or export a key and start:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-vtx --provider anthropic --model claude-sonnet-4-20250514
+ctx --provider anthropic --model claude-sonnet-4-20250514
 ```
 
-Resume a session with `vtx -c`, or a specific one with `vtx -r <id>`.
+Resume a session with `ctx -c`, or a specific one with `ctx -r <id>`.
 
 ## What makes it different
 
-**Everything is a row.** `vtx` boots a *plugin composition*: a profile's ordered bundles,
+**Everything is a row.** `ctx` boots a *plugin composition*: a profile's ordered bundles,
 then its own patch layer, then `--patch` overlays, last write per row id. The tool
 registry, the provider seam, the session log, the permission gate, and the agent loop are
 all rows, so each is replaceable from configuration rather than by forking the harness.
@@ -54,9 +54,9 @@ all rows, so each is replaceable from configuration rather than by forking the h
 A plugin declares what it needs with `inject` and registers through a context that records
 teardown, so unmounting a row unwinds exactly what it registered.
 
-**It extends itself.** Vtx ships a skill that teaches the model which surface to reach for
+**It extends itself.** Ctx ships a skill that teaches the model which surface to reach for
 when it lacks a capability - a directory of instructions, a plugin row that registers a
-real tool, or an extension file - and mounts it in place. It will not upgrade the Vtx
+real tool, or an extension file - and mounts it in place. It will not upgrade the Ctx
 package itself; that stays a user action.
 
 **The sandbox is honest about what it is.** A `codemode` script runs in a separate worker
@@ -67,8 +67,8 @@ deadline is a `kill`, not a cooperative request.
 
 **65 providers, 3 API families.** The catalog ships 65 providers (60 from `provider.yaml`
 plus 5 OAuth built-ins) across 3 API families (`anthropic`, `devin`, `openai_compat`);
-`--provider` takes a provider slug, and dropping a YAML file into `~/.vtx/providers/`
-(or project-local `.vtx/providers/`) adds your own.
+`--provider` takes a provider slug, and dropping a YAML file into `~/.ctx/providers/`
+(or project-local `.ctx/providers/`) adds your own.
 
 **Sessions are durable and branchable.** Resume the last one, fork a new one mid-task to
 explore a different approach, and revert a turn with snapshots.
@@ -80,7 +80,7 @@ Full reference, generated from the source:
 | | |
 |---|---|
 | **[Quickstart](docs/quickstart.md)** | Install, connect a model, finish a first task |
-| **[How Vtx works](docs/how-vtx-works.md)** | The composition, the agent loop, how a tool reaches the model |
+| **[How Ctx works](docs/how-ctx-works.md)** | The composition, the agent loop, how a tool reaches the model |
 | **[Tools](docs/tools.md)** | Every tool, its exact parameter schema, and worked examples |
 | **[CLI](docs/cli.md)** | Every flag, subcommand, and exit code |
 | **[Configuration](docs/configuration.md)** | The config file and every field |
@@ -107,25 +107,25 @@ Full reference, generated from the source:
 
 | | |
 |---|---|
-| [SDK](docs/sdk.md) | Run Vtx inside your own application |
+| [SDK](docs/sdk.md) | Run Ctx inside your own application |
 | [Development](docs/development.md) | Repo layout, the lint and test commands, how to add a tool or a row |
-| [Storage layout](docs/storage-layout.md) | Every path Vtx writes to on disk |
+| [Storage layout](docs/storage-layout.md) | Every path Ctx writes to on disk |
 
 ## Packages
 
 | Package | Description |
 |---------|-------------|
-| **[@vtx.plugins](src/vtx/plugins)** | The plugin kernel: `Context`, `EventHub`, plugin rows, patch layers, profiles, boot composition |
-| **[@vtx.protocol](src/vtx/protocol)** | Leaf. Message, stream, and tool-contract types. Imports nothing from `vtx` |
-| **[@vtx.telemetry](src/vtx/telemetry)** | Leaf. Spans, processors, console and JSONL exporters |
-| **[@vtx.git](src/vtx/git)** | Git and GitHub integration: `gh` CLI wrapper, GitHub App auth |
-| **[@vtx.core](src/vtx/core)** | Agent events, permission gate, compaction, config schema and paths, theme registry |
-| **[@vtx.ai](src/vtx/ai)** | The LLM layer: provider catalog, OAuth, SDK adapters, model catalog, tool parsing |
-| **[@vtx.codemode](src/vtx/codemode)** | The script sandbox and its tool-discovery layer |
-| **[@vtx.mcp](src/vtx/mcp)** | MCP client: server config, transports, tool exposure, trust prompt |
-| **[@vtx.tui](src/vtx/tui)** | Base terminal-UI toolkit: editing, fuzzy matching, overlays, block renderers |
-| **[@vtx.agent](src/vtx/agent)** | Product-neutral harness: loop, turn engine, sessions, tool registry, prompts, hooks, goals, SDK |
-| **[@vtx.coding_agent](src/vtx/coding_agent)** | Product layer: CLI entry point, headless runner, filesystem tools, the TUI app |
+| **[@ctx.plugins](src/ctx/plugins)** | The plugin kernel: `Context`, `EventHub`, plugin rows, patch layers, profiles, boot composition |
+| **[@ctx.protocol](src/ctx/protocol)** | Leaf. Message, stream, and tool-contract types. Imports nothing from `ctx` |
+| **[@ctx.telemetry](src/ctx/telemetry)** | Leaf. Spans, processors, console and JSONL exporters |
+| **[@ctx.git](src/ctx/git)** | Git and GitHub integration: `gh` CLI wrapper, GitHub App auth |
+| **[@ctx.core](src/ctx/core)** | Agent events, permission gate, compaction, config schema and paths, theme registry |
+| **[@ctx.ai](src/ctx/ai)** | The LLM layer: provider catalog, OAuth, SDK adapters, model catalog, tool parsing |
+| **[@ctx.codemode](src/ctx/codemode)** | The script sandbox and its tool-discovery layer |
+| **[@ctx.mcp](src/ctx/mcp)** | MCP client: server config, transports, tool exposure, trust prompt |
+| **[@ctx.tui](src/ctx/tui)** | Base terminal-UI toolkit: editing, fuzzy matching, overlays, block renderers |
+| **[@ctx.agent](src/ctx/agent)** | Product-neutral harness: loop, turn engine, sessions, tool registry, prompts, hooks, goals, SDK |
+| **[@ctx.coding_agent](src/ctx/coding_agent)** | Product layer: CLI entry point, headless runner, filesystem tools, the TUI app |
 
 Dependencies flow `protocol` and `telemetry` into `core`, `git`, and `ai`; those into
 `agent`; `agent` into `coding_agent`, with `mcp`, `tui`, and `plugins` above. Each package
@@ -137,8 +137,8 @@ carries its own README with the public surface and internal notes.
 defined internally as `task`/`TaskTool`). `web_search` is registered but not on by
 default, and `find` is not a registered row (use `bash` for file discovery). All are
 resolved by the composition, not by a constant. Agent profiles load from
-`.vtx/agent/<name>.py` and `~/.vtx/agent/`; none ship built in. Configuration lives in
-`~/.vtx/config.yml`.
+`.ctx/agent/<name>.py` and `~/.ctx/agent/`; none ship built in. Configuration lives in
+`~/.ctx/config.yml`.
 
 ## Contributing
 

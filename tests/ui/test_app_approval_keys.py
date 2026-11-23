@@ -1,9 +1,8 @@
 from typing import cast
 
+from ctx.core import ApprovalResponse
+from ctx.tui.app import Ctx
 from textual import events
-
-from vtx.core import ApprovalResponse
-from vtx.tui.app import Vtx
 
 
 class FakeKeyEvent:
@@ -43,7 +42,7 @@ class FakeFuture:
         return self._result
 
 
-class FakeVtx:
+class FakeCtx:
     def __init__(self, future: FakeFuture) -> None:
         self._approval_future = future
         self._approval_selection = ApprovalResponse.APPROVE
@@ -65,10 +64,10 @@ class FakeVtx:
 
 def test_approval_left_right_toggles_selection_without_submitting() -> None:
     future = FakeFuture()
-    app = FakeVtx(future)
+    app = FakeCtx(future)
 
     left = FakeKeyEvent("left")
-    Vtx.on_key(cast(Vtx, app), cast(events.Key, left))
+    Ctx.on_key(cast(Ctx, app), cast(events.Key, left))
 
     assert app._approval_selection == ApprovalResponse.DENY
     assert not future.done()
@@ -78,7 +77,7 @@ def test_approval_left_right_toggles_selection_without_submitting() -> None:
     assert app.cleared is False
 
     right = FakeKeyEvent("right")
-    Vtx.on_key(cast(Vtx, app), cast(events.Key, right))
+    Ctx.on_key(cast(Ctx, app), cast(events.Key, right))
 
     assert app._approval_selection == ApprovalResponse.APPROVE
     assert not future.done()
@@ -87,11 +86,11 @@ def test_approval_left_right_toggles_selection_without_submitting() -> None:
 
 def test_approval_enter_submits_current_selection() -> None:
     future = FakeFuture()
-    app = FakeVtx(future)
+    app = FakeCtx(future)
     app._approval_selection = ApprovalResponse.DENY
 
     event = FakeKeyEvent("enter")
-    Vtx.on_key(cast(Vtx, app), cast(events.Key, event))
+    Ctx.on_key(cast(Ctx, app), cast(events.Key, event))
 
     assert future.result() == ApprovalResponse.DENY
     assert event.prevented is True

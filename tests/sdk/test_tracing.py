@@ -6,8 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-
-from vtx.telemetry import (
+from ctx.telemetry import (
     DEFAULT_WORKFLOW_NAME,
     add_trace_processor,
     current_span,
@@ -18,8 +17,8 @@ from vtx.telemetry import (
     span,
     trace,
 )
-from vtx.telemetry.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
-from vtx.telemetry.processor import get_default_processors, set_default_processors
+from ctx.telemetry.exporters import ConsoleTraceProcessor, JSONLTraceProcessor
+from ctx.telemetry.processor import get_default_processors, set_default_processors
 
 
 class _CollectingProcessor:

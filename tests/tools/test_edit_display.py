@@ -1,7 +1,6 @@
+from ctx.coding_agent.tools.apply_patch import format_diff_display
+from ctx.core.config import config
 from rich.text import Text
-
-from vtx.coding_agent.tools.apply_patch import format_diff_display
-from vtx.core.config import config
 
 
 def test_format_diff_display_short_lines_not_truncated() -> None:

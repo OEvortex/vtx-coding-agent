@@ -1,4 +1,4 @@
-"""``vtx.sdk`` — the unified surface: one tool type, one hook path, one API.
+"""``ctx.sdk`` — the unified surface: one tool type, one hook path, one API.
 
 These tests pin the contract that SDK, extension, and plugin-row code all speak
 the same language: a ``BaseTool`` is a ``BaseTool`` no matter which door it
@@ -9,16 +9,15 @@ from __future__ import annotations
 
 import asyncio
 
+import ctx.sdk as sdk
 import pytest
-
-import vtx.sdk as sdk
-from vtx.agent.tools.base import BaseTool
-from vtx.plugins import boot
+from ctx.agent.tools.base import BaseTool
+from ctx.plugins import boot
 
 
 @pytest.fixture()
 def composed(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     host = boot(auto_discover_extensions=False)
     yield host
     host.dispose()
@@ -80,10 +79,10 @@ def test_agent_accepts_define_tool_and_tool_decorator_interchangeably():
 
 
 def test_context_and_api_require_a_running_composition(monkeypatch):
-    monkeypatch.setattr("vtx.plugins.bootstrap._ACTIVE", None)
-    with pytest.raises(RuntimeError, match="no vtx composition"):
+    monkeypatch.setattr("ctx.plugins.bootstrap._ACTIVE", None)
+    with pytest.raises(RuntimeError, match="no ctx composition"):
         sdk.context()
-    with pytest.raises(RuntimeError, match="no vtx composition"):
+    with pytest.raises(RuntimeError, match="no ctx composition"):
         sdk.api()
 
 

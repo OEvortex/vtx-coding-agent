@@ -1,7 +1,7 @@
-from vtx.agent.runtime import default_base_url_for_provider
-from vtx.ai.base import is_local_base_url, resolve_api_key
-from vtx.ai.models import ApiType
-from vtx.ai.providers import get_provider_class, resolve_provider_api_type
+from ctx.agent.runtime import default_base_url_for_provider
+from ctx.ai.base import is_local_base_url, resolve_api_key
+from ctx.ai.models import ApiType
+from ctx.ai.providers import get_provider_class, resolve_provider_api_type
 
 
 def test_resolve_provider_api_type_openai():
@@ -67,12 +67,12 @@ def test_resolve_api_key_none_when_not_set(monkeypatch):
 
 def test_resolve_api_key_auto_local():
     key = resolve_api_key(None, base_url="http://localhost:8080", auth_mode="auto")
-    assert key == "vtx-local"
+    assert key == "ctx-local"
 
 
 def test_resolve_api_key_none_mode():
     key = resolve_api_key(None, auth_mode="none")
-    assert key == "vtx-local"
+    assert key == "ctx-local"
 
 
 def test_default_base_url_for_provider_dynamic():

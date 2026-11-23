@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
-from vtx.agent.sdk import (
+from ctx.agent.sdk import (
     Agent,
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered,
@@ -18,8 +17,8 @@ from vtx.agent.sdk import (
     tool_input_guardrail,
     tool_output_guardrail,
 )
-from vtx.agent.sdk.guardrails import run_input_guardrails, run_output_guardrails
-from vtx.agent.sdk.guardrails.types import ToolGuardrailFunctionOutput
+from ctx.agent.sdk.guardrails import run_input_guardrails, run_output_guardrails
+from ctx.agent.sdk.guardrails.types import ToolGuardrailFunctionOutput
 
 
 @pytest.mark.asyncio
@@ -100,7 +99,7 @@ def test_tool_input_guardrail_returns_decorator() -> None:
     def g(data):
         return ToolGuardrailFunctionOutput()
 
-    assert hasattr(g, "_vtx_tool_input_guardrail_spec")
+    assert hasattr(g, "_ctx_tool_input_guardrail_spec")
 
 
 def test_tool_output_guardrail_returns_decorator() -> None:
@@ -108,7 +107,7 @@ def test_tool_output_guardrail_returns_decorator() -> None:
     def g(data):
         return ToolGuardrailFunctionOutput()
 
-    assert hasattr(g, "_vtx_tool_output_guardrail_spec")
+    assert hasattr(g, "_ctx_tool_output_guardrail_spec")
 
 
 @pytest.mark.asyncio

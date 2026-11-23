@@ -2,7 +2,7 @@
 
 These tests cover the public surface of that tool: param
 validation, sub-agent resolution, the parent-context handoff via
-``vtx.dispatcher``, and the LLM-facing result contract (final text
+``ctx.dispatcher``, and the LLM-facing result contract (final text
 only, no metadata leak, silent truncation).
 """
 
@@ -13,11 +13,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import ctx.agent.tools.task as _mod
 import pytest
-from pydantic import ValidationError
-
-import vtx.agent.tools.task as _mod
-from vtx.agent.tools.task import (
+from ctx.agent.tools.task import (
     MAX_RESULT_CHARS,
     SubagentSpec,
     TaskParams,
@@ -26,6 +24,7 @@ from vtx.agent.tools.task import (
     _format_transcript,
     _resolve_subagent_spec,
 )
+from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # Pydantic params
@@ -80,7 +79,7 @@ class TestTaskParamsValidation:
 
 class TestResolveSubagentSpec:
     def test_user_defined_agent_wins(self):
-        from vtx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
+        from ctx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
 
         loaded = LoadedAgent(
             definition=AgentDef(name="reviewer", description="Custom reviewer"), path=Path("/r.py")
@@ -107,7 +106,7 @@ class TestResolveSubagentSpec:
         assert _resolve_subagent_spec("Explore", None).name == "subagent"
 
     def test_registry_agent_is_used_when_name_matches(self):
-        from vtx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
+        from ctx.coding_agent.agents import AgentDef, AgentRegistry, LoadedAgent
 
         reg = AgentRegistry()
         reg.agents = [
@@ -122,24 +121,24 @@ class TestResolveSubagentSpec:
 
 
 # ---------------------------------------------------------------------------
-# Dispatcher context (the vtx platform feature the extension reads)
+# Dispatcher context (the ctx platform feature the extension reads)
 # ---------------------------------------------------------------------------
 
 
 class TestParentContext:
     def teardown_method(self):
-        from vtx.agent.dispatcher import set_context
+        from ctx.agent.dispatcher import set_context
 
         set_context(None)
 
     def test_default_is_none(self):
-        from vtx.agent.dispatcher import get_context, set_context
+        from ctx.agent.dispatcher import get_context, set_context
 
         set_context(None)
         assert get_context() is None
 
     def test_set_and_get(self):
-        from vtx.agent.dispatcher import DispatcherContext, get_context, set_context
+        from ctx.agent.dispatcher import DispatcherContext, get_context, set_context
 
         ctx = DispatcherContext(
             provider=object(),
@@ -154,7 +153,7 @@ class TestParentContext:
         assert get_context() is ctx
 
     def test_set_none_clears(self):
-        from vtx.agent.dispatcher import DispatcherContext, get_context, set_context
+        from ctx.agent.dispatcher import DispatcherContext, get_context, set_context
 
         set_context(
             DispatcherContext(
@@ -180,7 +179,7 @@ class _FakeProvider:
     """Minimal stand-in for ``BaseProvider`` so we don't need a real LLM."""
 
     def __init__(self) -> None:
-        from vtx.ai.base import ProviderConfig
+        from ctx.ai.base import ProviderConfig
 
         self.config = ProviderConfig(model="m", session_id="")
 
@@ -200,11 +199,11 @@ class _FakeRunResult:
 
     def __post_init__(self):
         if self.usage is None:
-            from vtx.protocol.types import Usage
+            from ctx.protocol.types import Usage
 
             self.usage = Usage()
         if self.stop_reason is None:
-            from vtx.protocol.types import StopReason
+            from ctx.protocol.types import StopReason
 
             self.stop_reason = StopReason.STOP
 
@@ -218,7 +217,7 @@ def _reset_subagent_runner():
 
 
 def _install_dispatcher_ctx() -> None:
-    from vtx.agent.dispatcher import DispatcherContext, set_context
+    from ctx.agent.dispatcher import DispatcherContext, set_context
 
     set_context(
         DispatcherContext(
@@ -235,12 +234,12 @@ def _install_dispatcher_ctx() -> None:
 
 class TestTaskToolExecute:
     def teardown_method(self):
-        from vtx.agent.dispatcher import set_context
+        from ctx.agent.dispatcher import set_context
 
         set_context(None)
 
     def test_no_dispatcher_context(self):
-        from vtx.agent.dispatcher import set_context
+        from ctx.agent.dispatcher import set_context
 
         # Force the no-context branch even if another test leaked one.
         set_context(None)
@@ -271,7 +270,7 @@ class TestTaskToolExecute:
         assert "→ bash" in (result.ui_details_full or "")
 
     def test_execute_returns_final_text(self, monkeypatch):
-        from vtx.protocol.types import StopReason, Usage
+        from ctx.protocol.types import StopReason, Usage
 
         _install_dispatcher_ctx()
 
@@ -317,7 +316,7 @@ class TestTaskToolExecute:
         assert "truncated" not in (result.result or "")
 
     def test_execute_does_not_leak_metadata_to_llm(self, monkeypatch):
-        from vtx.protocol.types import StopReason, Usage
+        from ctx.protocol.types import StopReason, Usage
 
         _install_dispatcher_ctx()
 
@@ -345,7 +344,7 @@ class TestTaskToolExecute:
             )
 
     def test_execute_progress_callback_runs(self, monkeypatch):
-        from vtx.agent.dispatcher import DispatcherContext, set_context
+        from ctx.agent.dispatcher import DispatcherContext, set_context
 
         seen: list[tuple[str, dict]] = []
 
@@ -379,8 +378,8 @@ class TestTaskToolExecute:
         part in the final turn concatenated, with ``ThinkingContent``
         filtered out, and earlier mid-run turns' text discarded.
         """
-        from vtx.agent.dispatcher import DispatcherContext
-        from vtx.protocol.types import (
+        from ctx.agent.dispatcher import DispatcherContext
+        from ctx.protocol.types import (
             AssistantMessage,
             StopReason,
             TextContent,
@@ -405,7 +404,7 @@ class TestTaskToolExecute:
                 pass
 
             async def run(self, *args, **kwargs):
-                from vtx.core import AgentEndEvent, TurnEndEvent
+                from ctx.core import AgentEndEvent, TurnEndEvent
 
                 mid_turn = TurnEndEvent(
                     turn=1,
@@ -432,8 +431,8 @@ class TestTaskToolExecute:
         monkeypatch.setattr(_mod, "_create_subagent_session", lambda *a, **kw: _StubSession())
         monkeypatch.setattr(_mod, "_resolve_api_and_base_url", lambda *a, **kw: ("openai", None))
         # create_provider is called from the harness runtime.
-        monkeypatch.setattr("vtx.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider())
-        monkeypatch.setattr("vtx.agent.loop.Agent", lambda *a, **kw: _FakeSubAgent(*a, **kw))
+        monkeypatch.setattr("ctx.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider())
+        monkeypatch.setattr("ctx.agent.loop.Agent", lambda *a, **kw: _FakeSubAgent(*a, **kw))
 
         real_ctx = DispatcherContext(
             provider=_FakeProvider(),
@@ -471,7 +470,7 @@ class TestTaskToolExecute:
 
 class TestSubagentSystemPrompt:
     def test_directive_is_appended_to_base_prompt(self):
-        from vtx.agent.dispatcher import DispatcherContext
+        from ctx.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),
@@ -490,7 +489,7 @@ class TestSubagentSystemPrompt:
         assert "Return ONLY your final answer" in out
 
     def test_directive_added_when_spec_replaces_base(self):
-        from vtx.agent.dispatcher import DispatcherContext
+        from ctx.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),
@@ -514,7 +513,7 @@ class TestSubagentSystemPrompt:
         assert "Return ONLY your final answer" in out
 
     def test_spec_instructions_preserved_alongside_directive(self):
-        from vtx.agent.dispatcher import DispatcherContext
+        from ctx.agent.dispatcher import DispatcherContext
 
         ctx = DispatcherContext(
             provider=object(),
@@ -592,12 +591,12 @@ class TestSubagentUsageChargedToParent:
     """
 
     def teardown_method(self):
-        from vtx.agent.dispatcher import set_context
+        from ctx.agent.dispatcher import set_context
 
         set_context(None)
 
     def _result(self, **kw: Any) -> Any:
-        from vtx.protocol.types import StopReason, Usage
+        from ctx.protocol.types import StopReason, Usage
 
         kw.setdefault("final_text", "answer")
         kw.setdefault("turns", 3)
@@ -610,7 +609,7 @@ class TestSubagentUsageChargedToParent:
         return _FakeRunResult(**kw)
 
     def _ctx(self, session: Any) -> Any:
-        from vtx.agent.dispatcher import DispatcherContext
+        from ctx.agent.dispatcher import DispatcherContext
 
         return DispatcherContext(
             provider=_FakeProvider(),
@@ -624,7 +623,7 @@ class TestSubagentUsageChargedToParent:
         )
 
     def test_charge_lands_on_the_parent_session(self):
-        from vtx.agent.session import Session
+        from ctx.agent.session import Session
 
         parent = Session.in_memory()
         _mod._charge_parent_session(
@@ -637,8 +636,8 @@ class TestSubagentUsageChargedToParent:
 
     def test_failed_subagent_still_charges_the_parent(self):
         """The tokens were spent whether or not the run succeeded."""
-        from vtx.agent.session import Session
-        from vtx.protocol.types import Usage
+        from ctx.agent.session import Session
+        from ctx.protocol.types import Usage
 
         parent = Session.in_memory()
         _mod._charge_parent_session(
@@ -653,7 +652,7 @@ class TestSubagentUsageChargedToParent:
         assert totals.output_tokens == 3
 
     def test_charge_does_not_inflate_the_parent_turn_count(self):
-        from vtx.agent.session import Session
+        from ctx.agent.session import Session
 
         parent = Session.in_memory()
         _mod._charge_parent_session(
@@ -675,9 +674,9 @@ class TestSubagentUsageChargedToParent:
         rest. The parent here is a stub exposing only ``record_subagent_usage``,
         which is exactly the surface the runtime hands the dispatcher.
         """
-        from vtx.agent.dispatcher import DispatcherContext
-        from vtx.core import AgentEndEvent, TurnEndEvent
-        from vtx.protocol.types import AssistantMessage, StopReason, TextContent, Usage
+        from ctx.agent.dispatcher import DispatcherContext
+        from ctx.core import AgentEndEvent, TurnEndEvent
+        from ctx.protocol.types import AssistantMessage, StopReason, TextContent, Usage
 
         charged: dict[str, Any] = {}
 
@@ -708,8 +707,8 @@ class TestSubagentUsageChargedToParent:
         monkeypatch.setattr(_mod, "_build_subagent_system_prompt", lambda *a, **kw: "system")
         monkeypatch.setattr(_mod, "_create_subagent_session", lambda *a, **kw: _StubSession())
         monkeypatch.setattr(_mod, "_resolve_api_and_base_url", lambda *a, **kw: ("openai", None))
-        monkeypatch.setattr("vtx.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider())
-        monkeypatch.setattr("vtx.agent.loop.Agent", lambda *a, **kw: _StubAgent())
+        monkeypatch.setattr("ctx.agent.runtime.create_provider", lambda *a, **kw: _FakeProvider())
+        monkeypatch.setattr("ctx.agent.loop.Agent", lambda *a, **kw: _StubAgent())
 
         parent = _RecordingParent()
         ctx = DispatcherContext(

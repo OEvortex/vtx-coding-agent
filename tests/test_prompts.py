@@ -1,4 +1,4 @@
-"""Tests for the vtx.prompts package.
+"""Tests for the ctx.prompts package.
 
 These exercise the modular prompt builder in isolation: each section
 helper, the orchestrator's section ordering, and the override hooks
@@ -7,11 +7,13 @@ used by the runtime and tests.
 
 from __future__ import annotations
 
-from vtx.agent.context import Context
-from vtx.agent.prompts import (
+from ctx.agent.context import Context
+from ctx.agent.prompts import (
     BACKGROUND_TASKS,
     CONTEXT_AWARENESS,
-    DEFAULT_VTX_BASE,
+    CTX_GENERAL_RULES,
+    CTX_IDENTITY,
+    DEFAULT_CTX_BASE,
     EDITING_CONSTRAINTS,
     ENV_HEADER,
     ERROR_RECOVERY,
@@ -22,15 +24,13 @@ from vtx.agent.prompts import (
     TASK_COMPLETION,
     TOOL_USAGE_HEADER,
     TOOL_USE_ENFORCEMENT,
-    VTX_GENERAL_RULES,
-    VTX_IDENTITY,
     build_env_section,
     build_system_prompt,
     build_tool_guidelines_section,
 )
-from vtx.agent.prompts.identity import _compose_default_base
-from vtx.coding_agent.tools import all_tools
-from vtx.core.config import Config, reset_config, set_config
+from ctx.agent.prompts.identity import _compose_default_base
+from ctx.coding_agent.tools import all_tools
+from ctx.core.config import Config, reset_config, set_config
 
 # ---------------------------------------------------------------------------
 # identity section constants
@@ -39,7 +39,7 @@ from vtx.core.config import Config, reset_config, set_config
 
 def test_default_base_includes_all_sections_in_order():
     sections = [
-        VTX_IDENTITY,
+        CTX_IDENTITY,
         CONTEXT_AWARENESS,
         OUTPUT_FORMATTING,
         EDITING_CONSTRAINTS,
@@ -50,20 +50,20 @@ def test_default_base_includes_all_sections_in_order():
         SAFETY,
         PROGRESS_UPDATES,
         BACKGROUND_TASKS,
-        VTX_GENERAL_RULES,
+        CTX_GENERAL_RULES,
     ]
     expected = "\n\n".join(sections)
-    assert expected == DEFAULT_VTX_BASE
-    assert _compose_default_base() == DEFAULT_VTX_BASE
+    assert expected == DEFAULT_CTX_BASE
+    assert _compose_default_base() == DEFAULT_CTX_BASE
 
 
 def test_default_base_starts_with_identity():
-    assert DEFAULT_VTX_BASE.startswith(VTX_IDENTITY)
+    assert DEFAULT_CTX_BASE.startswith(CTX_IDENTITY)
 
 
 def test_default_base_includes_general_rules():
-    assert VTX_GENERAL_RULES in DEFAULT_VTX_BASE
-    assert "~/.vtx/sessions" in DEFAULT_VTX_BASE
+    assert CTX_GENERAL_RULES in DEFAULT_CTX_BASE
+    assert "~/.ctx/sessions" in DEFAULT_CTX_BASE
 
 
 def test_default_base_includes_safety_rules():
@@ -103,7 +103,7 @@ def test_no_shipped_tool_explodes_its_guidelines_into_characters():
 def test_a_string_valued_guideline_still_renders_as_one_bullet():
     """The builder normalizes rather than trusts, so a future tool that misses
     the comma degrades to one long line instead of one line per character."""
-    from vtx.agent.tools.base import BaseTool
+    from ctx.agent.tools.base import BaseTool
 
     class StrGuidelines(BaseTool):
         name = "str-guidelines"
@@ -136,7 +136,7 @@ def test_env_section_includes_context_details():
     assert "Working directory" in section
     assert "OS" in section
     assert "Python" in section
-    assert "Vtx version" in section
+    assert "Ctx version" in section
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +151,8 @@ def test_build_system_prompt_uses_default_base_when_config_empty():
     finally:
         reset_config()
 
-    assert prompt.startswith(VTX_IDENTITY)
-    assert VTX_GENERAL_RULES in prompt
+    assert prompt.startswith(CTX_IDENTITY)
+    assert CTX_GENERAL_RULES in prompt
     assert TOOL_USAGE_HEADER in prompt
     assert ENV_HEADER in prompt
 
@@ -168,7 +168,7 @@ def test_build_system_prompt_honors_explicit_base_override():
 
     assert prompt.startswith("CUSTOM_BASE")
     # The default identity is no longer in play
-    assert VTX_IDENTITY not in prompt
+    assert CTX_IDENTITY not in prompt
 
 
 def test_build_system_prompt_honors_explicit_git_flag():
@@ -192,7 +192,7 @@ def test_build_system_prompt_section_order_is_stable():
         reset_config()
 
     # The base identity is the only one that appears once at the start.
-    assert prompt.startswith(VTX_IDENTITY)
+    assert prompt.startswith(CTX_IDENTITY)
     # The last tool-usage header is the actual section, not a reference.
     tool_idx = prompt.rfind(TOOL_USAGE_HEADER)
     # The last env header is the actual section, not a reference in CONTEXT_AWARENESS.

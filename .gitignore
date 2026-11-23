@@ -15,8 +15,8 @@ wheels/
 # macOS
 .DS_Store
 
-# Exported vtx sessions
-vtx-session-*
+# Exported ctx sessions
+ctx-session-*
 
 # Local editor settings
 .vscode/
@@ -30,11 +30,11 @@ Site/
 # One-off screenshots
 image.png
 model-merge/
-vscode-vtx/node_modules/
+vscode-ctx/node_modules/
 benchmark_results.json
 
 # Local configuration files
-.vtx/
+.ctx/
 
 # jev lite snd
 jev lite snd/

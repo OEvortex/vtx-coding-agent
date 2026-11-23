@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ctx"]
+
+[tool.hatch.build]
+artifacts = []
+
+[project]
+name = "ctx"
+version = "0.1.0"
+description = "Minimalist agent harness: agent loop, sessions, tools, plugin composition, MCP client, 65 LLM providers, and a Python SDK. The coding agent CLI/TUI is a separate package (ctx-code) built on top."
+requires-python = ">=3.12"
+keywords = ["agent", "harness", "llm", "agent-loop", "sdk"]
+dependencies = [
+    "aiofiles>=25.1.0",
+    "aiohttp>=3.13.3",
+    "anthropic>=0.79.0",
+    "chardet>=3.0.2,<6.0.0",
+    "curl-cffi>=0.15.0",
+    "dulwich>=0.22.0,<1.0.0",
+    "filelock>=3.25.2",
+    "hammett>=0.10.0",
+    "html-to-markdown>=3.3.0,<3.4.0",
+    "httpx>=0.28.0,<1.0.0",
+    "jinja2>=3.1.0,<4.0.0",
+    "json-repair>=0.57.0,<1.0.0",
+    "loguru>=0.7.3,<1.0.0",
+    "lxml-html-clean>=0.4.3",
+    "oauth-cli-kit>=0.1.3,<1.0.0",
+    "openai>=2.21.0",
+    "openpyxl>=3.1.0,<4.0.0",
+    "packaging>=24.0",
+    "pillow>=12.1.1",
+    "pydantic-settings>=2.12.0,<3.0.0",
+    "pydantic>=2.12.5",
+    "pypdf>=5.0.0,<6.0.0",
+    "python-docx>=1.1.0,<2.0.0",
+    "python-pptx>=1.0.0,<2.0.0",
+    "pyyaml>=6.0.3",
+    "readability-lxml>=0.8.4",
+    "rich>=14.3.2",
+    "tiktoken>=0.12.0,<1.0.0",
+    "typer>=0.20.0,<1.0.0",
+    "PyJWT",
+    "protobuf>=5.29,<7",
+]
+
+[project.optional-dependencies]
+gh-app = [
+    "cryptography>=41.0",
+    "requests>=2.32.0",
+]

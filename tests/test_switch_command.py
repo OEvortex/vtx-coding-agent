@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from vtx.tui.commands.switch import SwitchCommands
+from ctx.tui.commands.switch import SwitchCommands
 
 
 def test_switch_delegates_to_agent_handler(monkeypatch):

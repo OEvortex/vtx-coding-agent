@@ -40,8 +40,8 @@ const VARS = {
   "font-size": "13px",
   "editor-font-family": "'SF Mono', Menlo, Monaco, 'Courier New', monospace",
   foreground: "#cccccc",
-  "editor-background": "#1f1f1f",
-  "sideBar-background": "#181818",
+  "editor-background": "#0a0a0a",
+  "sideBar-background": "#050505",
   "panel-border": "#2b2b2b",
   "editorWidget-background": "#202020",
   "list-hoverBackground": "#2a2d2e",
@@ -287,6 +287,19 @@ const SCENARIOS = {
       ]
     }
   ],
+  // The empty sessions view: no chats yet, the companion in the corner and a
+  // ready-to-use composer. Mirrors the Copilot chat welcome surface.
+  empty: [
+    { type: "ready" },
+    { type: "capabilities", contextUsage: true },
+    {
+      type: "options", modes: MODES, currentMode: "default",
+      models: [{ id: "auto", name: "Auto (Free)", provider: "vtx", default: "auto", variants: [{ value: "auto", name: "Auto (Free)" }] }],
+      providers: PROVIDERS, currentModel: "auto"
+    },
+    { type: "usage", used: 0, size: 266000, cost: 0 },
+    { type: "sessions", sessions: [], activeId: null, folders: [], statuses: {} }
+  ],
   // A chat opened on the surface that is not holding it: it says where it is, and
   // offers to bring it over rather than showing a copy of it.
   elsewhere: [
@@ -320,13 +333,39 @@ body {
   color: var(--vscode-foreground);
   background: var(--vscode-sideBar-background);
 }
-/* Emulate the panel width (--width, default the narrow sidebar). */
-#app { max-width: ${panelWidth}px; }
+/* Emulate the panel width (--width, default the narrow sidebar). The native
+   title stand-in takes its height out of the webview, as in the real panel. */
+body > #app { max-width: ${panelWidth}px; height: calc(100vh - 35px); }
+/* Stand-in for VS Code's native view title bar, which owns the CHAT label and
+   the global actions in the real panel. */
+.native-view-title {
+  max-width: ${panelWidth}px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  box-sizing: border-box;
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+}
+.native-view-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.native-view-actions { display: flex; align-items: center; gap: 10px; color: #8b8b95; }
+.native-view-actions i { font-size: 15px; font-style: normal; }
 </style>
 <link rel="stylesheet" href="${cssCodicon}" />
 <link rel="stylesheet" href="${cssMain}" />
 </head>
 <body data-logo="" data-model-icons="{}" data-mermaid-src="${mermaid}" data-surface="${surface}" class="vscode-dark">
+<div class="native-view-title">
+  <span class="native-view-name">Chat</span>
+  <span class="native-view-actions"><i>+</i><i>&#128193;</i><i>&#8943;</i><i>&#9707;</i></span>
+</div>
 ${body}
 <script>
   // Mock the VS Code webview API before the bundle loads.

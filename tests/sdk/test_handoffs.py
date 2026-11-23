@@ -5,10 +5,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from ctx.agent.sdk import Agent, handoff
+from ctx.agent.sdk.handoffs import Handoff, HandoffInputData
 from pydantic import BaseModel
-
-from vtx.agent.sdk import Agent, handoff
-from vtx.agent.sdk.handoffs import Handoff, HandoffInputData
 
 
 def test_handoff_default_name() -> None:

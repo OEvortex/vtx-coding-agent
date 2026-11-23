@@ -1,4 +1,4 @@
-"""Tests for the new vtx hook system."""
+"""Tests for the new ctx hook system."""
 
 from __future__ import annotations
 
@@ -6,8 +6,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
-from vtx.agent.hooks import (
+from ctx.agent.hooks import (
     HOOK_EVENTS,
     HookConfig,
     HookConfigManager,
@@ -20,8 +19,8 @@ from vtx.agent.hooks import (
     run_hook_handlers,
     validate_hook_configs,
 )
-from vtx.agent.hooks.bridge import HookBridge
-from vtx.plugins.bus import ExtensionBus
+from ctx.agent.hooks.bridge import HookBridge
+from ctx.plugins.bus import ExtensionBus
 
 
 def test_hook_event_registry_exposes_expected_events():
@@ -119,7 +118,7 @@ async def _load_snapshot(registry, path):
 
 
 def test_hook_config_manager_loads_yaml(tmp_path: Path):
-    hooks_path = tmp_path / ".vtx" / "hooks.yml"
+    hooks_path = tmp_path / ".ctx" / "hooks.yml"
     hooks_path.parent.mkdir(parents=True)
     hooks_path.write_text(
         "\n".join(
@@ -266,7 +265,7 @@ def test_hook_context_builder_helpers_build_expected_payloads():
 
 def test_post_tool_use_command_hook_output_rewrite():
     """A command PostToolUse hook can rewrite the tool's LLM-visible output."""
-    from vtx.agent.hooks.bridge import _make_handler_for_config
+    from ctx.agent.hooks.bridge import _make_handler_for_config
 
     cfg = HookConfig(event="PostToolUse", type="command", command="echo rewritten-output")
     handler = _make_handler_for_config(cfg)
@@ -276,8 +275,8 @@ def test_post_tool_use_command_hook_output_rewrite():
 
 def test_hook_if_condition_gates_execution():
     """A hook with a false if_condition does not run."""
-    from vtx.agent.hooks.bridge import _make_handler_for_config
-    from vtx.agent.hooks.runtime import HookRuntime
+    from ctx.agent.hooks.bridge import _make_handler_for_config
+    from ctx.agent.hooks.runtime import HookRuntime
 
     registry = HookRegistry()
 
@@ -307,7 +306,7 @@ def test_hook_if_condition_gates_execution():
 
 def test_hook_prompt_and_agent_handlers():
     """prompt/agent hooks return their instruction text without executing."""
-    from vtx.agent.hooks.bridge import _make_handler_for_config
+    from ctx.agent.hooks.bridge import _make_handler_for_config
 
     prompt_cfg = HookConfig(event="PostToolUse", type="prompt", prompt_text="do-x")
     agent_cfg = HookConfig(event="PostToolUse", type="agent", agent_instructions="spawn-x")
@@ -324,7 +323,7 @@ def test_hook_prompt_and_agent_handlers():
 
 def test_hook_http_handler_requires_httpx(monkeypatch):
     """An http hook reports a clear error when httpx is unavailable."""
-    from vtx.agent.hooks.bridge import _make_handler_for_config
+    from ctx.agent.hooks.bridge import _make_handler_for_config
 
     cfg = HookConfig(event="PostToolUse", type="http", url="http://localhost/x")
     handler = _make_handler_for_config(cfg)

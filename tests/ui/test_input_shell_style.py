@@ -1,4 +1,4 @@
-from vtx.tui.input import InputBox
+from ctx.tui.input import InputBox
 
 
 class _FakeTextArea:

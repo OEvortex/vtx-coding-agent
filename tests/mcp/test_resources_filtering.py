@@ -7,8 +7,7 @@ module can mark every test asyncio without marking these two wrongly.
 from __future__ import annotations
 
 import pytest
-
-from vtx.mcp.resources import is_mcp_app_resource, listed
+from ctx.mcp.resources import is_mcp_app_resource, listed
 
 
 @pytest.mark.parametrize(

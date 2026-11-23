@@ -1,8 +1,8 @@
 import subprocess
 
-from vtx.agent.context import Context
-from vtx.agent.prompts import build_system_prompt
-from vtx.core.config import Config, reset_config, set_config
+from ctx.agent.context import Context
+from ctx.agent.prompts import build_system_prompt
+from ctx.core.config import Config, reset_config, set_config
 
 
 def _run(cmd: list[str], cwd: str) -> None:
@@ -14,8 +14,8 @@ def test_system_prompt_git_context_for_git_repo(tmp_path):
     repo.mkdir()
 
     _run(["git", "init"], str(repo))
-    _run(["git", "config", "user.email", "vtx@example.com"], str(repo))
-    _run(["git", "config", "user.name", "Vtx"], str(repo))
+    _run(["git", "config", "user.email", "ctx@example.com"], str(repo))
+    _run(["git", "config", "user.name", "Ctx"], str(repo))
     (repo / "a.txt").write_text("hello\n", encoding="utf-8")
     _run(["git", "add", "a.txt"], str(repo))
     _run(["git", "commit", "-m", "init"], str(repo))

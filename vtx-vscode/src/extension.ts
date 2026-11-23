@@ -74,6 +74,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("vtx.runSetup", () => chat.runSetup()),
     vscode.commands.registerCommand("vtx.showInfo", () => chat.showInfo()),
     vscode.commands.registerCommand("vtx.openSettings", () => SettingsPanel.show(context)),
+    vscode.commands.registerCommand("vtx.openFolder", () => vscode.commands.executeCommand("workbench.action.files.openFolder")),
     // Reachable from the editor and the explorer, so a question about the code in
     // front of you does not start with finding the panel and describing where you are.
     vscode.commands.registerCommand("vtx.explainSelection", () => chat.explainSelection()),

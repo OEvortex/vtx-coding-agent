@@ -1,4 +1,4 @@
-from vtx.ai.models import get_model
+from ctx.ai.models import get_model
 
 
 def test_get_model_prefers_provider_when_specified():

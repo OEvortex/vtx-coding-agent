@@ -7,9 +7,9 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from vtx.mcp.jsonrpc import JSON_RPC_METHOD_NOT_FOUND, McpError, is_jsonrpc_request
-from vtx.mcp.transports.in_memory import InMemoryTransport, create_in_memory_transport_pair
-from vtx.mcp.types import LATEST_PROTOCOL_VERSION
+from ctx.mcp.jsonrpc import JSON_RPC_METHOD_NOT_FOUND, McpError, is_jsonrpc_request
+from ctx.mcp.transports.in_memory import InMemoryTransport, create_in_memory_transport_pair
+from ctx.mcp.types import LATEST_PROTOCOL_VERSION
 
 Handler = Callable[[dict[str, Any]], Any]
 
@@ -89,7 +89,7 @@ async def create_server() -> tuple[InMemoryTransport, TestServer]:
 
 async def connect(**options: Any):
     client_transport, server = await create_server()
-    from vtx.mcp import McpClient, McpClientOptions
+    from ctx.mcp import McpClient, McpClientOptions
 
     client = McpClient(McpClientOptions(name="test-client", version="2.0.0", **options))
     await client.connect(client_transport)

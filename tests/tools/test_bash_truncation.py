@@ -2,8 +2,7 @@ import asyncio
 import tempfile
 
 import pytest
-
-from vtx.coding_agent.tools.bash import MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES, BashParams, BashTool
+from ctx.coding_agent.tools.bash import MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES, BashParams, BashTool
 
 
 class _FakeProcess:
@@ -47,9 +46,9 @@ async def test_inline_output_truncates_without_temp_file_path(monkeypatch):
 async def test_default_truncates_with_temp_file_path(monkeypatch):
     line_count = 5000
     _patch_subprocess(monkeypatch, _FakeProcess(_stdout_with_lines(line_count)))
-    fake_path = f"{tempfile.gettempdir()}/vtx-bash-fake.log"
+    fake_path = f"{tempfile.gettempdir()}/ctx-bash-fake.log"
     monkeypatch.setattr(
-        "vtx.coding_agent.tools.bash._write_full_output_to_temp", lambda _: fake_path
+        "ctx.coding_agent.tools.bash._write_full_output_to_temp", lambda _: fake_path
     )
 
     result = await BashTool().execute(BashParams(command="ignored"))
@@ -107,7 +106,7 @@ async def test_ansi_color_kept_for_display_but_stripped_from_result(monkeypatch)
 
 
 def test_sanitize_color_output_keeps_sgr_and_drops_cursor_codes():
-    from vtx.coding_agent.tools.bash import _sanitize_color_output, _sanitize_output
+    from ctx.coding_agent.tools.bash import _sanitize_color_output, _sanitize_output
 
     raw = "\x1b[32mPASS\x1b[0m\n\x1b[2K\x1b[Aline\n"
     # SGR (colour) kept; cursor move / clear sequences dropped.

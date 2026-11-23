@@ -5,17 +5,15 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
-
-from vtx.agent.context_governance import _MAX_TOOL_RESULT_CHARS
-from vtx.agent.loop import Agent
-from vtx.agent.session import Session
-from vtx.agent.tools.base import BaseTool
-from vtx.agent.turn import prepare_for_model, run_single_turn
-from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.tools import BashTool, ReadTool
-from vtx.core import (
+from ctx.agent.context_governance import _MAX_TOOL_RESULT_CHARS
+from ctx.agent.loop import Agent
+from ctx.agent.session import Session
+from ctx.agent.tools.base import BaseTool
+from ctx.agent.turn import prepare_for_model, run_single_turn
+from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig
+from ctx.ai.providers.mock import MockProvider
+from ctx.coding_agent.tools import BashTool, ReadTool
+from ctx.core import (
     AgentEndEvent,
     AgentStartEvent,
     ErrorEvent,
@@ -36,8 +34,8 @@ from vtx.core import (
     TurnStartEvent,
     WarningEvent,
 )
-from vtx.core.config import Config, reset_config, set_config
-from vtx.protocol.types import (
+from ctx.core.config import Config, reset_config, set_config
+from ctx.protocol.types import (
     AssistantMessage,
     Message,
     StopReason,
@@ -52,6 +50,7 @@ from vtx.protocol.types import (
     ToolResultMessage,
     UserMessage,
 )
+from pydantic import BaseModel
 
 
 @pytest.fixture
@@ -271,7 +270,7 @@ async def test_agent_with_thinking(tools, in_memory_session, max_turns_one):
 
 @pytest.mark.asyncio
 async def test_agent_with_images(tools, in_memory_session):
-    from vtx.protocol.types import ImageContent
+    from ctx.protocol.types import ImageContent
 
     provider = MockProvider(scenario="simple_text")
     images = [ImageContent(data="base64data", mime_type="image/png")]
@@ -295,7 +294,7 @@ async def test_agent_with_images(tools, in_memory_session):
 
 @pytest.mark.asyncio
 async def test_agent_with_image_only_prompt_omits_empty_text(tools, in_memory_session):
-    from vtx.protocol.types import ImageContent, TextContent
+    from ctx.protocol.types import ImageContent, TextContent
 
     provider = MockProvider(scenario="simple_text")
     images = [ImageContent(data="base64data", mime_type="image/png")]
@@ -907,7 +906,7 @@ async def test_session_runtime_checkpoint_roundtrip(in_memory_session):
 @pytest.mark.asyncio
 async def test_agent_restores_checkpoint_on_resume(in_memory_session):
     """A stale active checkpoint becomes a continuation prompt on next run."""
-    from vtx.agent.loop import Agent
+    from ctx.agent.loop import Agent
 
     in_memory_session.append_runtime_checkpoint(
         partial_content=[],
@@ -982,7 +981,7 @@ async def test_context_governance_budgets_oversized_result():
 @pytest.mark.asyncio
 async def test_agent_hook_lifecycle_fires(sample_messages, tools):
     """AgentHook lifecycle methods fire around a turn; finalize can rewrite."""
-    from vtx.agent.hooks.agent_hook import AgentHook, CompositeHook
+    from ctx.agent.hooks.agent_hook import AgentHook, CompositeHook
 
     fired: list[str] = []
 
@@ -1027,7 +1026,7 @@ async def test_agent_hook_lifecycle_fires(sample_messages, tools):
 @pytest.mark.asyncio
 async def test_agent_hook_error_isolation(sample_messages, tools):
     """A failing hook is isolated and does not crash the turn."""
-    from vtx.agent.hooks.agent_hook import AgentHook, CompositeHook
+    from ctx.agent.hooks.agent_hook import AgentHook, CompositeHook
 
     class Boom(AgentHook):
         async def before_iteration(self, ctx):
@@ -1048,8 +1047,8 @@ def test_hook_bridge_end_to_end_post_tool_use_rewrite(tmp_path):
     This is the integration contract the refactor must preserve: bus → bridge
     → command hook → turn's PostToolUse output rewrite feeds the model.
     """
-    from vtx.agent.hooks.bridge import HookBridge
-    from vtx.plugins.bus import EventBus
+    from ctx.agent.hooks.bridge import HookBridge
+    from ctx.plugins.bus import EventBus
 
     hooks_yml = tmp_path / "hooks.yml"
     hooks_yml.write_text(

@@ -11,11 +11,10 @@ model then answered as if the work had never happened.
 from __future__ import annotations
 
 import pytest
-
-from vtx.tui.agent_runner import _BACKGROUND_WAKEUP_PROMPT, MAX_BACKGROUND_WAKEUPS
-from vtx.tui.app import Vtx
-from vtx.tui.chat import ChatLog
-from vtx.tui.subagents import REGISTRY
+from ctx.tui.agent_runner import _BACKGROUND_WAKEUP_PROMPT, MAX_BACKGROUND_WAKEUPS
+from ctx.tui.app import Ctx
+from ctx.tui.chat import ChatLog
+from ctx.tui.subagents import REGISTRY
 
 
 @pytest.fixture
@@ -28,7 +27,7 @@ def clean_registry():
 class _Record:
     """The fields ``_on_background_task_settled`` reads off a task record."""
 
-    def __init__(self, status: str = "completed", description: str = "Rate the VTX codebase"):
+    def __init__(self, status: str = "completed", description: str = "Rate the CTX codebase"):
         self.status = status
         self.description = description
         self.parent_session_id = None
@@ -36,7 +35,7 @@ class _Record:
 
 @pytest.mark.asyncio
 async def test_settled_subagent_resumes_the_session(tmp_path, monkeypatch) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     started: list[str] = []
 
     async def _fake_run(prompt: str, images=None) -> None:
@@ -52,14 +51,14 @@ async def test_settled_subagent_resumes_the_session(tmp_path, monkeypatch) -> No
         # And the user can see why the session started moving on its own.
         chat = app.query_one("#chat-log", ChatLog)
         assert any(
-            "Rate the VTX codebase" in str(getattr(child, "content", ""))
+            "Rate the CTX codebase" in str(getattr(child, "content", ""))
             for child in chat.children
         )
 
 
 @pytest.mark.asyncio
 async def test_wakeup_is_silent_while_a_turn_is_already_running(tmp_path) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     started: list[str] = []
 
     async def _fake_run(prompt: str, images=None) -> None:
@@ -78,7 +77,7 @@ async def test_wakeup_is_silent_while_a_turn_is_already_running(tmp_path) -> Non
 
 @pytest.mark.asyncio
 async def test_cancelled_task_does_not_wake_the_session(tmp_path) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     started: list[str] = []
 
     async def _fake_run(prompt: str, images=None) -> None:
@@ -94,7 +93,7 @@ async def test_cancelled_task_does_not_wake_the_session(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_a_failed_subagent_still_wakes_the_session(tmp_path) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     started: list[str] = []
 
     async def _fake_run(prompt: str, images=None) -> None:
@@ -116,7 +115,7 @@ async def test_a_failed_subagent_still_wakes_the_session(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_wakeups_stop_chaining_and_say_so(tmp_path) -> None:
     """A wake-up turn that dispatches again must not cascade forever."""
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     started: list[str] = []
 
     async def _fake_run(prompt: str, images=None) -> None:
@@ -150,7 +149,7 @@ async def test_wakeups_stop_chaining_and_say_so(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_watching_subscribes_once_and_unsubscribes(tmp_path) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     async with app.run_test(size=(100, 30)):
         app.watch_background_tasks()
         first = app._bg_unsubscribe

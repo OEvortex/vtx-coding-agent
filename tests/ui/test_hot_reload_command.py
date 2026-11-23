@@ -16,18 +16,17 @@ from pathlib import Path
 
 import pytest
 import yaml
+from ctx.tui.chat import ChatLog
+from ctx.tui.commands.reload import ReloadCommands
+from ctx.tui.input import InputBox
+from ctx.tui.widgets import InfoBar
 from textual.app import App, ComposeResult
-
-from vtx.tui.chat import ChatLog
-from vtx.tui.commands.reload import ReloadCommands
-from vtx.tui.input import InputBox
-from vtx.tui.widgets import InfoBar
 
 
 class _ReloadApp(ReloadCommands, App):
     """Minimal host for the reload command.
 
-    The real ``Vtx`` is not built here: the command only needs a chat log, a
+    The real ``Ctx`` is not built here: the command only needs a chat log, a
     runtime, a cwd, and a session, and standing up the full app would drag in
     the model catalog and provider config for no extra coverage.
     """
@@ -45,7 +44,7 @@ class _ReloadApp(ReloadCommands, App):
         self._loaded_extensions = None
         self.applied_themes: list[str] = []
         # What the reload command expects of a full host: the three surfaces it
-        # re-binds after the extension surface is rebuilt. The real Vtx installs
+        # re-binds after the extension surface is rebuilt. The real Ctx installs
         # these; a double records the calls so the wiring is still covered.
         self.surface_installs = 0
         self.action_binds = 0
@@ -68,7 +67,7 @@ class _ReloadApp(ReloadCommands, App):
         self.action_binds += 1
 
     def _config_provider_settings(self) -> tuple[str | None, str, str]:
-        from vtx.core.config import config
+        from ctx.core.config import config
 
         return (
             config.llm.default_base_url or None,
@@ -87,15 +86,15 @@ def config_file(tmp_path: Path, monkeypatch):
     """
     from importlib import resources
 
-    import vtx.core.config as config_mod
+    import ctx.core.config as config_mod
 
     xdg = tmp_path / "xdg"
-    (xdg / "vtx").mkdir(parents=True)
+    (xdg / "ctx").mkdir(parents=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     config_mod.reset_config()
-    path = xdg / "vtx" / "config.yml"
+    path = xdg / "ctx" / "config.yml"
     defaults = yaml.safe_load(
-        resources.files("vtx.core.defaults").joinpath("config.yml").read_text("utf-8")
+        resources.files("ctx.core.defaults").joinpath("config.yml").read_text("utf-8")
     )
     path.write_text(yaml.safe_dump(defaults), encoding="utf-8")
     yield path
@@ -115,12 +114,12 @@ def _edit_config(path: Path, **overrides) -> None:
 
 @pytest.fixture
 def reload_app(tmp_path: Path):
-    from vtx.agent.hooks.bridge import HookBridge
-    from vtx.agent.runtime import ConversationRuntime
-    from vtx.agent.session import Session
-    from vtx.plugins import boot, reset
-    from vtx.plugins.extensions import load_for_runtime
-    from vtx.plugins.tui import install as install_ui
+    from ctx.agent.hooks.bridge import HookBridge
+    from ctx.agent.runtime import ConversationRuntime
+    from ctx.agent.session import Session
+    from ctx.plugins import boot, reset
+    from ctx.plugins.extensions import load_for_runtime
+    from ctx.plugins.tui import install as install_ui
 
     workdir = tmp_path / "work"
     workdir.mkdir(parents=True, exist_ok=True)
@@ -137,7 +136,7 @@ def reload_app(tmp_path: Path):
     # against the same bus the reloaded extensions register on.
     app._hook_bridge = HookBridge(
         load_for_runtime(cwd=str(workdir)).bus,
-        project_path=workdir / ".vtx" / "hooks.yml",
+        project_path=workdir / ".ctx" / "hooks.yml",
         global_path=tmp_path / "global-hooks.yml",
     )
     yield app, runtime
@@ -196,7 +195,7 @@ class TestEverythingIsReloaded:
         # hooks.yml is not part of config.yml, so /reload is the only thing that
         # picks up an edit to it.
         app, _runtime = reload_app
-        hooks = Path(app._cwd) / ".vtx" / "hooks.yml"
+        hooks = Path(app._cwd) / ".ctx" / "hooks.yml"
         hooks.parent.mkdir(parents=True, exist_ok=True)
         hooks.write_text(
             "session_start:\n  - event: SessionStart\n    type: command\n    command: echo hi\n",
@@ -215,13 +214,13 @@ class TestEverythingIsReloaded:
 
     @pytest.mark.asyncio
     async def test_a_custom_provider_file_is_picked_up(self, config_file, reload_app, monkeypatch):
-        from vtx.ai.provider_catalog import custom_provider_slugs
+        from ctx.ai.provider_catalog import custom_provider_slugs
 
         app, _runtime = reload_app
         xdg = Path(app._cwd) / "xdg"
         monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
-        (xdg / "vtx" / "providers").mkdir(parents=True, exist_ok=True)
-        (xdg / "vtx" / "providers" / "probe.yaml").write_text(
+        (xdg / "ctx" / "providers").mkdir(parents=True, exist_ok=True)
+        (xdg / "ctx" / "providers" / "probe.yaml").write_text(
             "slug: probe-gw\ndisplay_name: Probe\nfamily: openai_compat\n"
             "base_url: https://probe.example/v1\napi_key_env: PROBE_KEY\n",
             encoding="utf-8",
@@ -349,7 +348,7 @@ class TestReloadIsSafe:
         path = ext_dir / "probe_ext.py"
         path.write_text(
             "from pydantic import BaseModel\n"
-            "from vtx.agent.tools.base import BaseTool, ToolResult\n"
+            "from ctx.agent.tools.base import BaseTool, ToolResult\n"
             "class P(BaseModel):\n    pass\n"
             "def register(api):\n"
             "    class T(BaseTool):\n"
@@ -363,8 +362,8 @@ class TestReloadIsSafe:
             encoding="utf-8",
         )
 
-        import vtx.core.config as config_mod
-        from vtx.tui.commands import reload as reload_mod
+        import ctx.core.config as config_mod
+        from ctx.tui.commands import reload as reload_mod
 
         monkeypatch.setattr(reload_mod, "reload_config", lambda: None)
         monkeypatch.setattr(config_mod.config._parsed, "extensions", [str(ext_dir)], raising=False)

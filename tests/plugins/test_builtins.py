@@ -1,17 +1,16 @@
-"""The point of the whole package: VTX's own subsystems, as replaceable rows."""
+"""The point of the whole package: CTX's own subsystems, as replaceable rows."""
 
 from __future__ import annotations
 
 import pytest
+from ctx.plugins import ConfigError, PluginHost, boot, load_profile, plugin
+from ctx.plugins.builtins import BUNDLES
+from ctx.plugins.builtins.commands import CommandService
+from ctx.plugins.builtins.ui import UIService
+from ctx.plugins.loader import Row
+from ctx.plugins.profile import init_profile
+from ctx.plugins.services import PermissionService, PromptService, ToolService
 from pydantic import BaseModel
-
-from vtx.plugins import ConfigError, PluginHost, boot, load_profile, plugin
-from vtx.plugins.builtins import BUNDLES
-from vtx.plugins.builtins.commands import CommandService
-from vtx.plugins.builtins.ui import UIService
-from vtx.plugins.loader import Row
-from vtx.plugins.profile import init_profile
-from vtx.plugins.services import PermissionService, PromptService, ToolService
 
 EVERY_SERVICE = {
     "agents",
@@ -39,7 +38,7 @@ def mounted():
 
 
 def _profile(tmp_path, monkeypatch, bundles: str, patch: str = "") -> PluginHost:
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     directory = tmp_path / "profiles" / "custom"
     directory.mkdir(parents=True)
     (directory / "bundle.txt").write_text(bundles + "\n", encoding="utf-8")
@@ -56,7 +55,7 @@ def test_the_default_profile_mounts_every_service(tmp_path, monkeypatch):
     host.dispose()
 
 
-def test_vtxs_own_tools_come_from_rows(mounted):
+def test_ctxs_own_tools_come_from_rows(mounted):
     names = mounted.base.tools.names()
     for expected in (
         "read",
@@ -97,7 +96,7 @@ def test_parent_only_tools_stay_parent_only(mounted):
 
 
 def test_a_third_party_row_mounts_as_a_peer_of_a_builtin(tmp_path, monkeypatch):
-    from vtx.agent.tools import unregister_tool
+    from ctx.agent.tools import unregister_tool
 
     class StubTool:
         name = "stub"
@@ -107,7 +106,7 @@ def test_a_third_party_row_mounts_as_a_peer_of_a_builtin(tmp_path, monkeypatch):
     # ``mount_tool`` rather than ``ctx.tools.register`` so the row's teardown
     # removes the tool again — the difference is exactly what the helper exists
     # to hide from a plugin author.
-    from vtx.plugins.builtins.tools._register import mount_tool
+    from ctx.plugins.builtins.tools._register import mount_tool
 
     third_party = plugin(name="tool-stub", inject=("tools",))(
         lambda ctx, config: mount_tool(ctx, StubTool())
@@ -288,7 +287,7 @@ def test_headless_bundle_is_empty_by_design():
 
 
 def test_init_profile_is_idempotent_about_the_patch_file(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     first = init_profile("p")
     (first / "cordis.yml").write_text(
         "- override:\n    - id: tool-grep\n      disabled: true\n", encoding="utf-8"
@@ -322,14 +321,14 @@ def test_invalid_row_config_fails_loud():
 
 
 def test_a_sandbox_without_a_runner_refuses_rather_than_guessing():
-    from vtx.plugins.services import SandboxService, ServiceMissingError
+    from ctx.plugins.services import SandboxService, ServiceMissingError
 
     with pytest.raises(ServiceMissingError, match="no sandbox runner"):
         SandboxService().run("print(1)")
 
 
 def test_a_sandbox_provider_installs_its_runner():
-    from vtx.plugins.services import SandboxService
+    from ctx.plugins.services import SandboxService
 
     service = SandboxService()
     service.set_runner(lambda script: f"ran {script}")
@@ -337,8 +336,8 @@ def test_a_sandbox_provider_installs_its_runner():
 
 
 def test_forget_drops_a_tool_from_the_view_but_not_the_registry():
-    from vtx.agent.tools import get_all_tools
-    from vtx.coding_agent.tools.bash import BashTool
+    from ctx.agent.tools import get_all_tools
+    from ctx.coding_agent.tools.bash import BashTool
 
     service = ToolService()
     service.register(BashTool())
@@ -353,8 +352,8 @@ def test_forget_drops_a_tool_from_the_view_but_not_the_registry():
 
 
 def test_unregister_removes_from_both_the_view_and_the_registry():
-    from vtx.agent.tools import get_all_tools
-    from vtx.coding_agent.tools.bash import BashTool
+    from ctx.agent.tools import get_all_tools
+    from ctx.coding_agent.tools.bash import BashTool
 
     service = ToolService()
     service.register(BashTool())
@@ -366,9 +365,9 @@ def test_unregister_removes_from_both_the_view_and_the_registry():
 def test_unmounting_the_tools_row_leaves_the_global_registry_intact(tmp_path, monkeypatch):
     """The regression this guards: booting and disposing a composition must not
     empty the module-level registry other consumers read."""
-    from vtx.agent.tools import get_all_tools
+    from ctx.agent.tools import get_all_tools
 
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     before = set(get_all_tools())
     host = boot()
     host.dispose()
@@ -378,9 +377,9 @@ def test_unmounting_the_tools_row_leaves_the_global_registry_intact(tmp_path, mo
 
 
 def test_boot_makes_the_host_reachable(tmp_path, monkeypatch):
-    from vtx.plugins import active_host, reset
+    from ctx.plugins import active_host, reset
 
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     host = boot()
     try:
         assert active_host() is host

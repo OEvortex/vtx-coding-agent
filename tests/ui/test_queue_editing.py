@@ -1,8 +1,8 @@
 from collections import deque
 from typing import Any, cast
 
-from vtx.protocol.types import ImageContent
-from vtx.tui.queue_ui import QueueUIMixin
+from ctx.protocol.types import ImageContent
+from ctx.tui.queue_ui import QueueUIMixin
 
 
 class FakeQueueDisplay:
@@ -38,7 +38,7 @@ class FakeInputBox:
         self.focused = True
 
 
-class FakeVtx:
+class FakeCtx:
     def __init__(self) -> None:
         self._pending_queue: deque[tuple[str, str, list[ImageContent] | None]] = deque()
         self._steer_queue: deque[tuple[str, str, list[ImageContent] | None]] = deque()
@@ -86,7 +86,7 @@ def _queue(*items: str) -> deque[tuple[str, str, list[ImageContent] | None]]:
 
 
 def test_editing_last_queue_item_keeps_visible_editing_placeholder() -> None:
-    app = FakeVtx()
+    app = FakeCtx()
     app._pending_queue = _queue("one", "two", "three")
     app._queue_selection = (False, 2)
 
@@ -108,7 +108,7 @@ def test_editing_last_queue_item_keeps_visible_editing_placeholder() -> None:
 
 
 def test_finish_queue_edit_restores_updated_item_at_original_position() -> None:
-    app = FakeVtx()
+    app = FakeCtx()
     app._pending_queue = _queue("one", "two", "three")
     app._queue_selection = (False, 2)
     app.start_queue_edit()
@@ -127,7 +127,7 @@ def test_finish_queue_edit_restores_updated_item_at_original_position() -> None:
 
 
 def test_cancel_queue_edit_restores_original_item_and_clears_editor() -> None:
-    app = FakeVtx()
+    app = FakeCtx()
     app._pending_queue = _queue("one", "two", "three")
     app._queue_selection = (False, 1)
     app.start_queue_edit()
@@ -146,7 +146,7 @@ def test_cancel_queue_edit_restores_original_item_and_clears_editor() -> None:
 
 
 def test_ctrl_d_delete_removes_selected_queue_item() -> None:
-    app = FakeVtx()
+    app = FakeCtx()
     app._pending_queue = _queue("one", "two", "three")
     app._queue_selection = (False, 1)
 

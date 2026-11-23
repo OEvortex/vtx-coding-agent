@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from vtx.core.config import get_config, reset_config
+from ctx.core.config import get_config, reset_config
 
 
 def test_notifications_disabled_by_default(tmp_path, monkeypatch):
@@ -16,7 +16,7 @@ def test_notifications_disabled_by_default(tmp_path, monkeypatch):
 
 def test_notifications_can_be_enabled(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     (config_dir / "config.yml").write_text(
         """meta:

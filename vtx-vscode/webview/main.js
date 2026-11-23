@@ -23,11 +23,17 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     titleCode: $("title-code"),
     panelToggle: $("panel-toggle"),
     headerDivider: $("header-divider"),
-    newSessionDd: $("new-session-dd"),
     sessionsResizer: $("sessions-resizer"),
     listSearchBtn: $("list-search-btn"),
     listFilterBtn: $("list-filter-btn"),
-    settingsBtn: $("settings-btn"),
+    refreshBtn: $("refresh-btn"),
+    viewPanelBtn: $("view-panel-btn"),
+    landingPet: $("landing-pet"),
+    contextPill: $("context-pill"),
+    optionsBtn: $("options-btn"),
+    micBtn: $("mic-btn"),
+    permissionPill: $("permission-pill"),
+    permissionLabel: $("permission-label"),
     terminateBtn: $("terminate-btn"),
     shareBtn: $("share-btn"),
     detachBtn: $("detach-btn"),
@@ -103,6 +109,27 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   let fileQueryToken = null;
   let currentTitle = "Chat";
   let lastUserText = "";
+  // Session target / permission pickers in the input footer. Vtx always runs
+  // locally, so the target is a label; permissions follow the agent's mode.
+  let availableModes = [];
+  let currentMode = "";
+  let permPickerFloater = null;
+  function permissionLabel(mode) {
+    const value = mode && (mode.value || mode);
+    const known = {
+      default: "Default permissions",
+      "accept-edits": "Default permissions",
+      ask: "Ask first",
+      plan: "Plan",
+      bypass: "Bypass"
+    };
+    return known[value] || (mode && mode.name) || "Default permissions";
+  }
+  function updatePermissionLabel() {
+    if (!el.permissionLabel) return;
+    el.permissionLabel.textContent = permissionLabel(currentMode);
+    el.permissionPill.title = `Permissions: ${el.permissionLabel.textContent}`;
+  }
 
   // The mode picker wears the person glyph upstream gives its agent/participant
   // chooser, the control that decides who answers.
@@ -713,10 +740,11 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     // The composer lives outside the body panels, so mark the list view so its
     // session-scoped widgets (working set, context ring) hide while browsing.
     el.composer.classList.toggle("list-mode", list);
-    el.input.placeholder = list ? "Start a new chat\u2026" : "Ask Vtx, or type @ to add a file";
+    el.input.placeholder = list ? "Describe what to build" : "Ask Vtx, or type @ to add a file";
     // An explicit label wins over the placeholder, so it has to say the same thing:
     // in the list the box starts a chat, in a chat it continues one.
-    el.input.setAttribute("aria-label", list ? "Start a new chat" : "Ask Vtx");
+    el.input.setAttribute("aria-label", list ? "Describe what to build" : "Ask Vtx");
+    updateLandingPet();
     // Only on the way in. Handing the composer back to the "new chat" box empties
     // it, and the panel is told it is a list more than once: on open, and again
     // once the CLI health check finishes. Doing it every time wiped the draft that
@@ -727,6 +755,13 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     updateTerminateBtn();
     updateScrollDownButton();
     reportListVisible();
+  }
+
+  // The companion waits in the empty sessions view only. Once there is a chat to
+  // open it steps aside, the way Copilot's pet stays out of a live conversation.
+  function updateLandingPet() {
+    if (!el.landingPet) return;
+    el.landingPet.classList.toggle("hidden", body !== "list" || lastSessions.length > 0);
   }
 
   // Whether a session list is on screen anywhere here: the full list, the docked
@@ -763,12 +798,12 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
 
   function renderHeader() {
     const list = body === "list";
-    // List-mode cluster, all on the right of the "Sessions" title. The list keeps
-    // itself up to date, so there is nothing to refresh by hand.
-    el.newSessionDd.classList.toggle("hidden", !list);
+    // List-mode actions: refresh, search, filter and the sessions panel. New
+    // session and settings live in the native view title above this bar.
     el.listSearchBtn.classList.toggle("hidden", !list);
     el.listFilterBtn.classList.toggle("hidden", !list);
-    el.settingsBtn.classList.toggle("hidden", !list);
+    el.refreshBtn.classList.toggle("hidden", !list);
+    el.viewPanelBtn.classList.toggle("hidden", inEditor());
     // Thread-mode clusters. A tab has no list to go back to.
     el.historyBtn.classList.toggle("hidden", list || inEditor());
     updateHeaderDivider();
@@ -971,8 +1006,6 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     wrap.append(main, more);
     return wrap;
   }
-  el.newSessionDd.appendChild(buildNewSessionButton());
-
   // Drag the divider between the sessions sidebar and the chat content to
   // resize the panel freely. On the right the drag direction is mirrored: moving
   // left grows the panel.
@@ -1050,7 +1083,42 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
   });
   el.listSearchBtn.addEventListener("click", (e) => { e.stopPropagation(); if (listCtrl) listCtrl.toggleSearch(el.listSearchBtn); });
   el.listFilterBtn.addEventListener("click", (e) => { e.stopPropagation(); if (listCtrl) listCtrl.toggleFilter(el.listFilterBtn); });
-  el.settingsBtn.addEventListener("click", () => vscode.postMessage({ type: "openSettings" }));
+  el.refreshBtn.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "refreshSessions" }); });
+  // In a thread this is the docked panel toggle. In the sessions view there is
+  // no panel to toggle, so the button focuses the new-chat box instead.
+  el.viewPanelBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (body === "thread") toggleSessionsPanel();
+    else { el.input.focus(); reportListVisible(); }
+  });
+  el.optionsBtn.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "openSettings" }); });
+  el.micBtn.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "voiceInput" }); });
+
+  // The permission pill is the sessions-view face of the mode picker. It opens
+  // the same choices, anchored where the picker sits in Copilot's input footer.
+  el.permissionPill.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (permPickerFloater) { permPickerFloater.close(); return; }
+    if (!availableModes.length) return;
+    const menu = document.createElement("div");
+    menu.className = "dv-menu";
+    for (const mode of availableModes) {
+      const row = document.createElement("button");
+      row.className = "dv-menu-item radio" + (mode.value === currentMode ? " checked" : "");
+      const chk = mkIcon(mode.value === currentMode ? "check" : "blank");
+      chk.classList.add("dv-menu-check");
+      row.append(chk, Object.assign(document.createElement("span"), { textContent: permissionLabel(mode) }));
+      row.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        currentMode = mode.value;
+        updatePermissionLabel();
+        vscode.postMessage({ type: "setMode", mode: mode.value });
+        if (permPickerFloater) permPickerFloater.close();
+      });
+      menu.appendChild(row);
+    }
+    permPickerFloater = makeFloater(el.permissionPill, menu, "left", () => { permPickerFloater = null; });
+  });
 
   // Indeterminate loading bar along the top edge of the body, using the same
   // travelling accent as the composer's working border. Replaces the spinners
@@ -6774,7 +6842,9 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     function renderBody() {
       bodyEl.innerHTML = "";
       if (!lastSessions.length) {
-        bodyEl.innerHTML = '<div class="sessions-empty"><i class="codicon codicon-comment-discussion"></i><div>No chats yet.</div></div>';
+        // The empty sessions view stays quiet: the companion and the new-chat
+        // composer below are the whole welcome, as in Copilot's chat view.
+        bodyEl.innerHTML = "";
         return;
       }
       const filtered = sortSessions(filterSessions(lastSessions, state.q, state.status), state.sort);
@@ -6932,6 +7002,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     if (panelCtrl && sessionsPanelOpen) {
       panelCtrl.refresh();
     }
+    updateLandingPet();
     // Refresh the in-session header so the subtitle (session code) fills in once
     // this session's metadata arrives.
     if (body === "thread") renderHeader();
@@ -7036,6 +7107,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     lastUsage = null;
     el.usage.classList.add("hidden");
     el.usage.innerHTML = "";
+    setContextPill(null);
     closeUsagePopup();
     planCollapsePref = null;
     wsCollapsePref = null;
@@ -7411,6 +7483,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     el.inputBox.classList.toggle("busy", busy && caps.progressBorder);
     if (!caps.contextUsage) {
       el.usage.classList.add("hidden");
+      setContextPill(null);
       closeUsagePopup();
     }
     // Drive the streaming entrance animation from the setting.
@@ -7685,10 +7758,25 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     );
   }
 
+  // The context window size reads as a short pill in the composer, the way
+  // Copilot shows it. The ring on the row below keeps the used percentage.
+  function setContextPill(m) {
+    if (!el.contextPill) return;
+    if (!m || !m.size) {
+      el.contextPill.textContent = "";
+      el.contextPill.classList.add("hidden");
+      return;
+    }
+    el.contextPill.textContent = fmtTokens(m.size).toUpperCase();
+    el.contextPill.title = `Context window: ${fmtTokens(m.used)} / ${fmtTokens(m.size)} used`;
+    el.contextPill.classList.remove("hidden");
+  }
+
   function renderUsage(m) {
-    if (!caps.contextUsage) { el.usage.classList.add("hidden"); lastUsage = null; return; }
-    if (!m.used || !m.size) { el.usage.classList.add("hidden"); lastUsage = null; closeUsagePopup(); return; }
+    if (!caps.contextUsage) { el.usage.classList.add("hidden"); lastUsage = null; setContextPill(null); return; }
+    if (!m.size) { el.usage.classList.add("hidden"); lastUsage = null; setContextPill(null); closeUsagePopup(); return; }
     lastUsage = m;
+    setContextPill(m);
     const pct = Math.round((m.used / m.size) * 100);
     el.usage.innerHTML = ringSvg(pct) + `<span class="usage-pct">${pct}%</span>`;
     el.usage.title = "Context used, click for details";
@@ -7846,7 +7934,11 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         break;
       case "workspace": break;
       case "options": {
-        modeDropdown.set((m.modes || []).map((mode) => mode.value === "bypass" ? { ...mode, name: "Bypass" } : mode), m.currentMode);
+        const modes = (m.modes || []).map((mode) => mode.value === "bypass" ? { ...mode, name: "Bypass" } : mode);
+        availableModes = modes;
+        currentMode = m.currentMode || "";
+        updatePermissionLabel();
+        modeDropdown.set(modes, m.currentMode);
         // Model groups are merged rather than replaced: the server reports the
         // options of the active model, so a normal model's response can omit the
         // Fusion group entirely, and losing it would empty the Fusion picker.
@@ -7974,6 +8066,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
         el.usage.classList.add("hidden");
         el.usage.innerHTML = "";
         lastUsage = null;
+        setContextPill(null);
         closeUsagePopup();
         // `pendingSend` means a user message is about to render (new chat from
         // the list), so do not flash the welcome screen in the gap.
@@ -8054,7 +8147,13 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
       // (canEditTurn/canRestoreTurn gate on !busy), so rebuild them all.
       case "busy": setBusy(m.value); refreshTurnChrome(); break;
       case "cancelPrompts": cancelPrompts(); break;
-      case "mode": if (m.mode) modeDropdown.setCurrent(m.mode); break;
+      case "mode":
+        if (m.mode) {
+          modeDropdown.setCurrent(m.mode);
+          currentMode = m.mode;
+          updatePermissionLabel();
+        }
+        break;
       case "model": if (m.model && !pendingModelChange) selectModelUid(m.model); break;
       case "modelConfigApplied":
         if (m.requestId !== pendingModelChange || !pendingModelChange) break;

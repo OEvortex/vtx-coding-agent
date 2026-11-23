@@ -9,8 +9,8 @@ and not consumed by the TextArea.
 import asyncio
 from typing import Any
 
-from vtx.core import AskUserOption
-from vtx.tui.input import _is_ask_user_picker_key
+from ctx.core import AskUserOption
+from ctx.tui.input import _is_ask_user_picker_key
 
 
 class FakeFuture:
@@ -55,7 +55,7 @@ class _StubOnKey:
         self.app = app
 
     async def _on_key(self, event: Any) -> None:
-        # Mirror the logic from input.py:Vtx._on_key
+        # Mirror the logic from input.py:Ctx._on_key
         future = getattr(self.app, "_approval_future", None)
         approval_keys = ("y", "Y", "n", "N")
         if not self.text:
@@ -117,7 +117,7 @@ def test_picker_key_rejects_multidigit() -> None:
 
 
 # -----------------------------------------------------------------
-# Chat input _on_key forwarding (mirrors input.py:Vtx._on_key)
+# Chat input _on_key forwarding (mirrors input.py:Ctx._on_key)
 # -----------------------------------------------------------------
 
 

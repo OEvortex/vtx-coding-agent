@@ -1,4 +1,4 @@
-"""``/reload`` — hot reload without restarting vtx.
+"""``/reload`` — hot reload without restarting ctx.
 
 Two properties are worth more than the feature list:
 
@@ -23,23 +23,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-from vtx.plugins.api import ExtensionActions, ExtensionAPI, ExtensionRecord
-from vtx.plugins.context import Context
-from vtx.plugins.extensions import (
+from ctx.plugins.api import ExtensionActions, ExtensionAPI, ExtensionRecord
+from ctx.plugins.context import Context
+from ctx.plugins.extensions import (
     ExtensionLoadError,
     invalidate_extension_bytecode,
     load_for_runtime,
     load_module,
 )
-from vtx.tui.autocomplete import DEFAULT_COMMANDS
+from ctx.tui.autocomplete import DEFAULT_COMMANDS
 
 # A minimal but real extension: a tool whose return value comes from the file,
 # so a reload is observable as a changed tool result.
 _EXT_TEMPLATE = """\
 from pydantic import BaseModel
 
-from vtx.agent.tools.base import BaseTool, ToolResult
+from ctx.agent.tools.base import BaseTool, ToolResult
 
 VERSION = {version!r}
 {probe_import}
@@ -101,7 +100,7 @@ def _probe_ctx(record: ExtensionRecord, actions: ExtensionActions) -> Any:
     real composition would tie the module to whichever host happens to be
     loaded.
     """
-    from vtx.plugins.services import ToolService
+    from ctx.plugins.services import ToolService
 
     tools = ToolService()
     tools._owned = record.tools
@@ -133,7 +132,7 @@ def _probe(ext) -> str:
 
 
 def _header(cwd: Path, *, system_prompt: str | None, tools: list[str] | None):
-    from vtx.agent.session import SessionHeader
+    from ctx.agent.session import SessionHeader
 
     return SessionHeader(
         id="s1", timestamp="t", cwd=str(cwd), system_prompt=system_prompt, tools=tools
@@ -146,7 +145,7 @@ def _invalidate_modules() -> None:
     import sys
 
     importlib.invalidate_caches()
-    for name in [n for n in sys.modules if n.startswith("vtx_ext_")]:
+    for name in [n for n in sys.modules if n.startswith("ctx_ext_")]:
         sys.modules.pop(name, None)
 
 
@@ -221,7 +220,7 @@ class TestReloadIsWired:
         assert any(c.name == "reload" for c in DEFAULT_COMMANDS)
 
     def test_dispatch_reaches_the_handler(self):
-        from vtx.tui.commands import CommandsMixin
+        from ctx.tui.commands import CommandsMixin
 
         assert hasattr(CommandsMixin, "_handle_reload_command")
         assert any(base.__name__ == "ReloadCommands" for base in CommandsMixin.__mro__)
@@ -233,11 +232,11 @@ class TestReloadIsWired:
 
 class TestRuntimeRebind:
     def test_rebind_swaps_tools_and_keeps_the_session(self, tmp_path: Path):
-        from vtx.agent.runtime import ConversationRuntime
-        from vtx.agent.tools import get_tools_with_extensions
+        from ctx.agent.runtime import ConversationRuntime
+        from ctx.agent.tools import get_tools_with_extensions
 
         runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
-        from vtx.agent.session import Session
+        from ctx.agent.session import Session
 
         session = Session("s-keep", str(tmp_path), persist=False)
         runtime.session = session
@@ -251,8 +250,8 @@ class TestRuntimeRebind:
     def test_rebind_clears_the_cached_header_prompt(self, tmp_path: Path):
         """resolve_system_prompt prefers the header prompt over a fresh build, so
         a stale one would keep being sent after a reload."""
-        from vtx.agent.runtime import ConversationRuntime
-        from vtx.agent.session import Session
+        from ctx.agent.runtime import ConversationRuntime
+        from ctx.agent.session import Session
 
         runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
         session = Session("s-reload", str(tmp_path), persist=False)
@@ -264,9 +263,9 @@ class TestRuntimeRebind:
         assert session.system_prompt is None
 
     def test_rebind_records_the_new_tool_names(self, tmp_path: Path):
-        from vtx.agent.runtime import ConversationRuntime
-        from vtx.agent.session import Session
-        from vtx.agent.tools import get_tools_with_extensions
+        from ctx.agent.runtime import ConversationRuntime
+        from ctx.agent.session import Session
+        from ctx.agent.tools import get_tools_with_extensions
 
         runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
         session = Session("s-reload", str(tmp_path), persist=False)
@@ -277,7 +276,7 @@ class TestRuntimeRebind:
         assert session.tools == ["read", "bash"]
 
     def test_set_system_prompt_is_a_noop_without_a_header(self, tmp_path: Path):
-        from vtx.agent.session import Session
+        from ctx.agent.session import Session
 
         Session("s-reload", str(tmp_path), persist=False).set_system_prompt("x")
 
@@ -290,8 +289,8 @@ class TestRebindToolSurface:
     """
 
     def test_rebind_keeps_the_rebuilt_surface(self, tmp_path: Path):
-        from vtx.agent.runtime import ConversationRuntime
-        from vtx.agent.tools import get_tools_with_extensions
+        from ctx.agent.runtime import ConversationRuntime
+        from ctx.agent.tools import get_tools_with_extensions
 
         runtime = ConversationRuntime(cwd=str(tmp_path), tools=[])
         rebuilt = get_tools_with_extensions()

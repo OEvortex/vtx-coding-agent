@@ -5,11 +5,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-
-from vtx.core.self_update import _installer_choice
-from vtx.tui.autocomplete import DEFAULT_COMMANDS
-from vtx.tui.commands import CommandsMixin
-from vtx.tui.commands.update import UpdateCommands
+from ctx.core.self_update import _installer_choice
+from ctx.tui.autocomplete import DEFAULT_COMMANDS
+from ctx.tui.commands import CommandsMixin
+from ctx.tui.commands.update import UpdateCommands
 
 
 class FakeChat:
@@ -39,7 +38,7 @@ def test_update_in_default_commands():
     """Verify /update is registered in DEFAULT_COMMANDS autocomplete list."""
     commands = {cmd.name: cmd.description for cmd in DEFAULT_COMMANDS}
     assert "update" in commands
-    assert "update" in commands["update"].lower() or "vtx" in commands["update"].lower()
+    assert "update" in commands["update"].lower() or "ctx" in commands["update"].lower()
 
 
 def test_commands_mixin_dispatches_update(monkeypatch):
@@ -74,7 +73,7 @@ async def test_do_update_success_already_up_to_date(monkeypatch):
     """_do_update displays already up to date notice when up to date."""
     app = FakeApp()
     monkeypatch.setattr(
-        "vtx.tui.commands.update.self_update", lambda: (True, "Already up to date (uv tool).")
+        "ctx.tui.commands.update.self_update", lambda: (True, "Already up to date (uv tool).")
     )
 
     await app._do_update()
@@ -90,7 +89,7 @@ async def test_do_update_success_upgraded(monkeypatch):
     """_do_update prompts to restart when upgraded successfully."""
     app = FakeApp()
     monkeypatch.setattr(
-        "vtx.tui.commands.update.self_update", lambda: (True, "Updated successfully via uv tool.")
+        "ctx.tui.commands.update.self_update", lambda: (True, "Updated successfully via uv tool.")
     )
 
     await app._do_update()
@@ -98,7 +97,7 @@ async def test_do_update_success_upgraded(monkeypatch):
     assert len(app.chat.messages) == 1
     msg, err = app.chat.messages[0]
     assert "Updated successfully via uv tool." in msg
-    assert "restart vtx" in msg
+    assert "restart ctx" in msg
     assert err is False
 
 
@@ -107,7 +106,7 @@ async def test_do_update_failure(monkeypatch):
     """_do_update displays error message when self_update fails."""
     app = FakeApp()
     monkeypatch.setattr(
-        "vtx.tui.commands.update.self_update", lambda: (False, "network unreachable")
+        "ctx.tui.commands.update.self_update", lambda: (False, "network unreachable")
     )
 
     await app._do_update()
@@ -119,8 +118,8 @@ async def test_do_update_failure(monkeypatch):
 
 
 def test_installer_choice_prefers_pip_with_env(monkeypatch):
-    """VTX_UPDATE_USE_PIP forces pip."""
-    monkeypatch.setenv("VTX_UPDATE_USE_PIP", "1")
+    """CTX_UPDATE_USE_PIP forces pip."""
+    monkeypatch.setenv("CTX_UPDATE_USE_PIP", "1")
     installer, cmd = _installer_choice()
     assert installer == "pip"
     assert "pip" in cmd
@@ -128,22 +127,22 @@ def test_installer_choice_prefers_pip_with_env(monkeypatch):
 
 def test_installer_choice_detects_uv_tool(monkeypatch):
     """uv tool is chosen when uv and package are in uv tool list."""
-    monkeypatch.delenv("VTX_UPDATE_USE_PIP", raising=False)
-    monkeypatch.setattr("vtx.core.self_update._find_executable", lambda name: name == "uv")
-    monkeypatch.setattr("vtx.core.self_update._is_uv_tool", lambda pkg: True)
+    monkeypatch.delenv("CTX_UPDATE_USE_PIP", raising=False)
+    monkeypatch.setattr("ctx.core.self_update._find_executable", lambda name: name == "uv")
+    monkeypatch.setattr("ctx.core.self_update._is_uv_tool", lambda pkg: True)
 
     installer, cmd = _installer_choice()
     assert installer == "uv tool"
-    assert cmd == ["uv", "tool", "upgrade", "vtx-coding-agent"]
+    assert cmd == ["uv", "tool", "upgrade", "ctx-code"]
 
 
 def test_installer_choice_detects_pipx(monkeypatch):
     """pipx is chosen when pipx and package are in pipx list."""
-    monkeypatch.delenv("VTX_UPDATE_USE_PIP", raising=False)
-    monkeypatch.setattr("vtx.core.self_update._find_executable", lambda name: name == "pipx")
-    monkeypatch.setattr("vtx.core.self_update._is_uv_tool", lambda pkg: False)
-    monkeypatch.setattr("vtx.core.self_update._is_pipx_tool", lambda pkg: True)
+    monkeypatch.delenv("CTX_UPDATE_USE_PIP", raising=False)
+    monkeypatch.setattr("ctx.core.self_update._find_executable", lambda name: name == "pipx")
+    monkeypatch.setattr("ctx.core.self_update._is_uv_tool", lambda pkg: False)
+    monkeypatch.setattr("ctx.core.self_update._is_pipx_tool", lambda pkg: True)
 
     installer, cmd = _installer_choice()
     assert installer == "pipx"
-    assert cmd == ["pipx", "upgrade", "vtx-coding-agent"]
+    assert cmd == ["pipx", "upgrade", "ctx-code"]

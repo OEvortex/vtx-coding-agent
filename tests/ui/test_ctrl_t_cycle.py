@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from vtx.tui.app import Vtx
+from ctx.tui.app import Ctx
 
 _PROVIDER = object()
 
@@ -25,7 +25,7 @@ class FakeRuntime:
 
 
 class FakeApp:
-    action_cycle_thinking_level = Vtx.action_cycle_thinking_level
+    action_cycle_thinking_level = Ctx.action_cycle_thinking_level
 
     def __init__(self, runtime: FakeRuntime) -> None:
         self._runtime = runtime

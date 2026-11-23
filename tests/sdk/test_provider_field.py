@@ -2,9 +2,9 @@
 
 The ``provider`` field on :class:`Agent` accepts three shapes:
 
-* A Vtx ``BaseProvider`` instance.
+* A Ctx ``BaseProvider`` instance.
 * A dict with ``name`` (and optional ``api_key``, etc.). If ``name``
-  is a Vtx built-in provider, the SDK uses Vtx's provider catalog
+  is a Ctx built-in provider, the SDK uses Ctx's provider catalog
   to resolve the transport.
 * A dict with ``name``, ``sdk``, ``base_url`` (and optional
   ``api_key``) for a custom / non-builtin provider.
@@ -16,10 +16,9 @@ from __future__ import annotations
 from dataclasses import fields
 
 import pytest
-
-from vtx.agent.sdk import Agent, Runner
-from vtx.agent.sdk.agent import _PROVIDER_DICT_KEYS
-from vtx.ai.providers.mock import MockProvider
+from ctx.agent.sdk import Agent, Runner
+from ctx.agent.sdk.agent import _PROVIDER_DICT_KEYS
+from ctx.ai.providers.mock import MockProvider
 
 # ---------------------------------------------------------------------------
 # Field shape
@@ -73,7 +72,7 @@ def test_agent_accepts_baseprovider_instance() -> None:
 
 def test_agent_accepts_builtin_provider_dict_minimal() -> None:
     """A built-in provider needs only ``name``; the SDK looks up the
-    rest from Vtx's provider catalog.
+    rest from Ctx's provider catalog.
     """
     agent = Agent(
         name="Bot", model="gpt-4o-mini", provider={"name": "openai", "api_key": "sk-test"}

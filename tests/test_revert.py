@@ -10,12 +10,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-from vtx.agent import revert as rv
-from vtx.agent import snapshot as snapshot_module
-from vtx.agent.session import Session
-from vtx.agent.snapshot import MAX_BLOB_BYTES, SnapshotStore, _run, _text, get_store
-from vtx.protocol.types import FileChanges, TextContent, ToolResultMessage, UserMessage
+from ctx.agent import revert as rv
+from ctx.agent import snapshot as snapshot_module
+from ctx.agent.session import Session
+from ctx.agent.snapshot import MAX_BLOB_BYTES, SnapshotStore, _run, _text, get_store
+from ctx.protocol.types import FileChanges, TextContent, ToolResultMessage, UserMessage
 
 
 def _git(cwd: Path, *args: str) -> None:

@@ -1,8 +1,7 @@
 from pathlib import Path
 
 import yaml
-
-from vtx.core.config import (
+from ctx.core.config import (
     CURRENT_CONFIG_VERSION,
     consume_config_warnings,
     get_config,
@@ -12,7 +11,7 @@ from vtx.core.config import (
 
 def test_old_config_is_migrated_and_backed_up(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(
@@ -58,7 +57,7 @@ def test_v4_config_migrates_notification_volume_without_overwriting_existing_val
     tmp_path, monkeypatch
 ):
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(
@@ -90,7 +89,7 @@ notifications:
 
 def test_v4_config_migrates_missing_notification_volume(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(
@@ -123,7 +122,7 @@ ui:
 
 def test_current_version_config_is_not_rewritten(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     original_text = (
@@ -153,7 +152,7 @@ def test_current_version_config_is_not_rewritten(tmp_path, monkeypatch):
 
 def test_v5_config_replaces_system_prompt_with_current_default(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(
@@ -194,7 +193,7 @@ llm:
 
 def test_v1_llm_system_prompt_keys_migrate_to_nested_section(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(
@@ -233,7 +232,7 @@ def test_v13_mode_key_is_dropped(tmp_path, monkeypatch):
     config suggesting a choice that no longer exists.
     """
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text("meta:\n  config_version: 13\n\nmode: rlm\n", encoding="utf-8")
@@ -255,7 +254,7 @@ def test_v13_mode_key_is_dropped(tmp_path, monkeypatch):
 def test_v15_refine_block_is_dropped(tmp_path, monkeypatch):
     """v16 removes the refine block; an old config still loads without it."""
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(
@@ -278,7 +277,7 @@ def test_v15_refine_block_is_dropped(tmp_path, monkeypatch):
 def test_v16_session_retention_defaults_are_added(tmp_path, monkeypatch):
     """v17 adds the retention block; a pre-v17 config gets the defaults."""
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(
@@ -300,7 +299,7 @@ def test_v16_session_retention_defaults_are_added(tmp_path, monkeypatch):
 def test_v12_config_migrates_all_the_way(tmp_path, monkeypatch):
     """A pre-refine config loses both retired keys in one load."""
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(
@@ -330,7 +329,7 @@ def test_current_version_config_ignores_a_stale_mode_key(tmp_path, monkeypatch):
     such field, so it is dropped on read rather than becoming an error.
     """
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text(

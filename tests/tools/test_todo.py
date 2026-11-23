@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.coding_agent.tools.todo import TaskRecord, TodoParams, TodoTool, format_todo_tree
-from vtx.tui.task_ui import SPINNER
-from vtx.tui.todo_block import TodoToolBlock, _Record
-from vtx.tui.todo_ui import task_row
+from ctx.coding_agent.tools.todo import TaskRecord, TodoParams, TodoTool, format_todo_tree
+from ctx.tui.task_ui import SPINNER
+from ctx.tui.todo_block import TodoToolBlock, _Record
+from ctx.tui.todo_ui import task_row
 
 
 def _todo(content: str, status: str = "pending", **kw) -> dict:
@@ -242,6 +241,6 @@ def test_block_header_says_which_way_the_plan_moved():
 
 
 def test_todo_plugin_mounted():
-    from vtx.coding_agent.tools.todo import PLUGIN
+    from ctx.coding_agent.tools.todo import PLUGIN
 
     assert PLUGIN is not None

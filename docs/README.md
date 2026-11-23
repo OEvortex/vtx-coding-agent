@@ -1,24 +1,24 @@
-# Vtx
+# Ctx
 
-Vtx is a coding agent that runs in your terminal and works with the files on your
+Ctx is a coding agent that runs in your terminal and works with the files on your
 machine. Give it a goal and a working folder, and it reads files, runs commands, edits
 code, and works through multi-step tasks - asking before it runs a mutating tool unless
 you have relaxed the permission mode.
 
-Vtx is a harness: the tool registry, the provider seam, the permission gate, and the
+Ctx is a harness: the tool registry, the provider seam, the permission gate, and the
 agent loop are all composable rows, so the same core runs interactive in a TUI,
 headless in CI, or embedded as an SDK.
 
 ## Start here
 
-New to Vtx? Follow the [Quickstart](quickstart.md) to install, connect a model, and
+New to Ctx? Follow the [Quickstart](quickstart.md) to install, connect a model, and
 finish a first task.
 
-If Vtx is already installed, pick what you need:
+If Ctx is already installed, pick what you need:
 
-- [Use Vtx interactively](cli.md) - the flags, prompts, and one-off runs.
+- [Use Ctx interactively](cli.md) - the flags, prompts, and one-off runs.
 - [Tools](tools.md) - every tool the model can call, with exact schemas and examples.
-- [How Vtx works](how-vtx-works.md) - the plugin composition, the agent loop, and how
+- [How Ctx works](how-ctx-works.md) - the plugin composition, the agent loop, and how
   a tool reaches the model.
 - [Sessions](sessions.md) - resume work, branch a session, and revert a change.
 
@@ -33,7 +33,7 @@ If Vtx is already installed, pick what you need:
 
 ## Extend it
 
-Vtx expects to be changed. Three surfaces, smallest first:
+Ctx expects to be changed. Three surfaces, smallest first:
 
 - [Skills](skills.md) - a directory of instructions the model loads on demand.
 - [Plugins](plugins.md) - a row in the composition that can register a tool, a
@@ -46,7 +46,7 @@ Vtx expects to be changed. Three surfaces, smallest first:
 ## Automate or embed
 
 - [Headless](headless.md) - one prompt in, one exit code out, for CI.
-- [SDK](sdk.md) - run Vtx inside your own application.
+- [SDK](sdk.md) - run Ctx inside your own application.
 - [MCP](mcp.md) - connect external tool servers.
 - [Codemode](codemode.md) - the confined sandbox the model runs Python in.
 
@@ -54,4 +54,4 @@ Vtx expects to be changed. Three surfaces, smallest first:
 
 - [Development](development.md) - repo layout, the lint and test commands, and how to
   add a tool or a plugin row.
-- [Storage layout](storage-layout.md) - every path Vtx writes to on disk.
+- [Storage layout](storage-layout.md) - every path Ctx writes to on disk.

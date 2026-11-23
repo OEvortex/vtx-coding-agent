@@ -1,12 +1,11 @@
 import pytest
+from ctx.core.config import config
+from ctx.protocol.types import FileChanges
+from ctx.tui.blocks import RunSummaryBlock, ThinkingBlock, ToolBlock
+from ctx.tui.chat import ChatLog
+from ctx.tui.run_summary import RunSummaryStats, format_merged_summary_text
+from ctx.tui.styles import get_styles
 from textual.app import App, ComposeResult
-
-from vtx.core.config import config
-from vtx.protocol.types import FileChanges
-from vtx.tui.blocks import RunSummaryBlock, ThinkingBlock, ToolBlock
-from vtx.tui.chat import ChatLog
-from vtx.tui.run_summary import RunSummaryStats, format_merged_summary_text
-from vtx.tui.styles import get_styles
 
 
 class MergedSummaryTestApp(App):

@@ -6,8 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-
-from vtx.ai import (
+from ctx.ai import (
     DYNAMIC_PROVIDERS,
     DynamicProviderConfig,
     get_dynamic_models,
@@ -16,7 +15,7 @@ from vtx.ai import (
     refresh_provider,
     register_dynamic_provider,
 )
-from vtx.ai.dynamic_models import (
+from ctx.ai.dynamic_models import (
     CachedCatalog,
     DynamicModelEntry,
     _cache_path,
@@ -28,12 +27,12 @@ from vtx.ai.dynamic_models import (
     get_cache_dir,
     get_dynamic_provider_headers,
 )
-from vtx.ai.models import Model
+from ctx.ai.models import Model
 
 
 @pytest.fixture(autouse=True)
 def isolated_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     # Clear all in-memory dynamic models from previous tests so cache lookups
     # start clean. We do this by re-pointing at an empty tmp dir.
     for path in tmp_path.glob("*.json"):
@@ -196,10 +195,10 @@ def test_read_models_dev_merges_effort_metadata(monkeypatch, tmp_path: Path) -> 
     """
     import json
 
-    from vtx.ai.dynamic_models import _read_models_dev_sync
+    from ctx.ai.dynamic_models import _read_models_dev_sync
 
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     (tmp_path / "models_dev.json").write_text(
         json.dumps(
             {
@@ -252,10 +251,10 @@ def test_read_models_dev_survives_missing_limits_cache(monkeypatch, tmp_path: Pa
     """A missing limits cache is not fatal: the flat specs still parse."""
     import json
 
-    from vtx.ai.dynamic_models import _read_models_dev_sync
+    from ctx.ai.dynamic_models import _read_models_dev_sync
 
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     (tmp_path / "models_dev.json").write_text(
         json.dumps({"xai/grok-4.5": {"id": "xai/grok-4.5", "reasoning": True}}), encoding="utf-8"
     )
@@ -307,7 +306,7 @@ def test_read_cache_discards_corrupt_json(tmp_path: Path, caplog):
 
 
 def test_get_cache_dir_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path / "models"))
     assert get_cache_dir() == tmp_path / "models"
 
 
@@ -346,7 +345,7 @@ def _stub_http_client(monkeypatch: pytest.MonkeyPatch, payload: object, status: 
 
 @pytest.mark.asyncio
 async def test_async_fetch_writes_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KILO_API_KEY", "test-key")
     payload = {
         "data": [
@@ -360,7 +359,7 @@ async def test_async_fetch_writes_cache(monkeypatch: pytest.MonkeyPatch, tmp_pat
     }
     _stub_http_client(monkeypatch, payload)
 
-    from vtx.ai.dynamic_models import _async_fetch_catalog
+    from ctx.ai.dynamic_models import _async_fetch_catalog
 
     catalog = await _async_fetch_catalog(DYNAMIC_PROVIDERS["kilo"], api_key="test-key", force=True)
     assert len(catalog.models) == 1
@@ -373,7 +372,7 @@ async def test_async_fetch_writes_cache(monkeypatch: pytest.MonkeyPatch, tmp_pat
 async def test_async_fetch_falls_back_to_stale_cache_on_5xx(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     # Seed a stale cache
     _write_cache(
         CachedCatalog(
@@ -398,7 +397,7 @@ async def test_async_fetch_falls_back_to_stale_cache_on_5xx(
 
     monkeypatch.setattr(httpx, "AsyncClient", _StubClient)
 
-    from vtx.ai.dynamic_models import _async_fetch_catalog
+    from ctx.ai.dynamic_models import _async_fetch_catalog
 
     catalog = await _async_fetch_catalog(DYNAMIC_PROVIDERS["kilo"], api_key="k", force=True)
     assert catalog.models[0].id == "stale"
@@ -406,7 +405,7 @@ async def test_async_fetch_falls_back_to_stale_cache_on_5xx(
 
 @pytest.mark.asyncio
 async def test_async_fetch_auth_error_uses_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     _write_cache(
         CachedCatalog(
             provider="kilo", fetched_at=0.0, models=[DynamicModelEntry(id="cached", name="Cached")]
@@ -430,14 +429,14 @@ async def test_async_fetch_auth_error_uses_cache(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(httpx, "AsyncClient", _StubClient)
 
-    from vtx.ai.dynamic_models import _async_fetch_catalog
+    from ctx.ai.dynamic_models import _async_fetch_catalog
 
     catalog = await _async_fetch_catalog(DYNAMIC_PROVIDERS["kilo"], api_key="k", force=True)
     assert catalog.models[0].id == "cached"
 
 
 def test_ttl_skips_network_when_cache_fresh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     _write_cache(
         CachedCatalog(
             provider="kilo",
@@ -464,7 +463,7 @@ def test_get_provider_models_returns_empty_for_unknown():
 
 
 def test_refresh_provider_writes_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KILO_API_KEY", "test-key")
     payload = {"data": [{"id": "m", "name": "M"}]}
     _stub_http_client(monkeypatch, payload)
@@ -479,7 +478,7 @@ def test_refresh_provider_unknown_raises():
 
 
 def test_refresh_all_providers_skips_failures(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("KILO_API_KEY", "test-key")
     payload = {"data": [{"id": "m", "name": "M"}]}
     _stub_http_client(monkeypatch, payload)
@@ -494,7 +493,7 @@ def test_refresh_all_providers_skips_failures(monkeypatch: pytest.MonkeyPatch, t
 
 
 def test_find_dynamic_model_uses_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     _write_cache(
         CachedCatalog(
             provider="kilo",
@@ -516,7 +515,7 @@ def test_find_dynamic_model_returns_none_when_missing(tmp_path: Path):
 
 def test_get_dynamic_provider_headers():
     headers = get_dynamic_provider_headers("kilo")
-    assert headers["X-KILOCODE-EDITORNAME"] == "vtx"
+    assert headers["X-KILOCODE-EDITORNAME"] == "ctx"
     assert get_dynamic_provider_headers("airouter") == {}
     assert get_dynamic_provider_headers("unknown") == {}
 
@@ -527,8 +526,8 @@ def test_get_dynamic_provider_headers():
 
 
 def test_get_dynamic_models_returns_static_shape(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr("vtx.ai.dynamic_models._read_models_dev_sync", lambda: {})
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("ctx.ai.dynamic_models._read_models_dev_sync", lambda: {})
     _write_cache(
         CachedCatalog(
             provider="kilo",
@@ -561,10 +560,10 @@ def test_get_all_models_dedupes_dynamic_overlap(monkeypatch: pytest.MonkeyPatch,
     cache. The merged result used to contain every dynamic model twice,
     which made the /model picker show each model with a duplicate row.
     """
-    from vtx.ai import get_all_models
+    from ctx.ai import get_all_models
 
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr("vtx.ai.dynamic_models._read_models_dev_sync", lambda: {})
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("ctx.ai.dynamic_models._read_models_dev_sync", lambda: {})
     _write_cache(
         CachedCatalog(
             provider="kilo",
@@ -598,7 +597,7 @@ def test_get_all_models_dedupes_dynamic_overlap(monkeypatch: pytest.MonkeyPatch,
 
 
 def test_dedupe_models_preserves_first_occurrence():
-    from vtx.ai.models import ApiType, dedupe_models
+    from ctx.ai.models import ApiType, dedupe_models
 
     a = Model(
         id="a",
@@ -635,9 +634,9 @@ def test_legacy_cache_format_deserialization(monkeypatch: pytest.MonkeyPatch, tm
     """Ensure caches with legacy keys (context_length, etc.) load correctly."""
     import json
 
-    from vtx.ai.dynamic_models import _read_cache
+    from ctx.ai.dynamic_models import _read_cache
 
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     legacy_file = tmp_path / "legacyprov.json"
     legacy_data = {
         "fetched_at": 100.0,
@@ -669,10 +668,10 @@ def test_stale_cache_not_discarded_offline(monkeypatch: pytest.MonkeyPatch, tmp_
     """Ensure caches older than cooldown/TTL are not discarded when reading models offline."""
     import json
 
-    from vtx.ai.model_fetcher import get_fetched_models
-    from vtx.ai.provider_catalog import ProviderInfo
+    from ctx.ai.model_fetcher import get_fetched_models
+    from ctx.ai.provider_catalog import ProviderInfo
 
-    monkeypatch.setenv("VTX_MODELS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("CTX_MODELS_CACHE_DIR", str(tmp_path))
     cache_file = tmp_path / "oldprov.json"
     cache_data = {
         "fetched_at": 100.0,  # very old timestamp

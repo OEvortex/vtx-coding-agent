@@ -1,8 +1,7 @@
-"""Tests for the Task tool UI renderers (vtx.tui.task_ui)."""
+"""Tests for the Task tool UI renderers (ctx.tui.task_ui)."""
 
+from ctx.tui import task_ui
 from rich.text import Text
-
-from vtx.tui import task_ui
 
 
 def test_format_tokens_compact() -> None:
@@ -32,7 +31,7 @@ def test_extract_summary_line() -> None:
 
 
 def test_detect_files_referenced() -> None:
-    text = "Modified src/vtx/tui/app.py and tests/ui/test_task_ui.py."
+    text = "Modified src/ctx/tui/app.py and tests/ui/test_task_ui.py."
     assert task_ui.detect_files_referenced(text) == 2
 
 

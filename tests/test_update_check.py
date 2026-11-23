@@ -1,6 +1,5 @@
 import pytest
-
-from vtx.core.update_check import get_newer_pypi_version, is_newer_version
+from ctx.core.update_check import get_newer_pypi_version, is_newer_version
 
 
 def test_is_newer_version_basic_semver_cases() -> None:
@@ -19,12 +18,12 @@ def test_is_newer_version_returns_false_for_non_semver_values() -> None:
 @pytest.mark.asyncio
 async def test_get_newer_pypi_version_returns_newer_value(monkeypatch) -> None:
     async def fake_fetch(package_name: str) -> str | None:
-        assert package_name == "vtx-coding-agent"
+        assert package_name == "ctx-code"
         return "9.9.9"
 
-    monkeypatch.setattr("vtx.core.update_check.fetch_latest_pypi_version", fake_fetch)
+    monkeypatch.setattr("ctx.core.update_check.fetch_latest_pypi_version", fake_fetch)
 
-    result = await get_newer_pypi_version("vtx-coding-agent", "0.1.0")
+    result = await get_newer_pypi_version("ctx-code", "0.1.0")
     assert result == "9.9.9"
 
 
@@ -33,7 +32,7 @@ async def test_get_newer_pypi_version_returns_none_when_not_newer(monkeypatch) -
     async def fake_fetch(_: str) -> str | None:
         return "0.1.0"
 
-    monkeypatch.setattr("vtx.core.update_check.fetch_latest_pypi_version", fake_fetch)
+    monkeypatch.setattr("ctx.core.update_check.fetch_latest_pypi_version", fake_fetch)
 
-    result = await get_newer_pypi_version("vtx-coding-agent", "0.1.0")
+    result = await get_newer_pypi_version("ctx-code", "0.1.0")
     assert result is None

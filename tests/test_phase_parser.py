@@ -9,10 +9,8 @@ multi-turn round-trip from provider → ThinkingContent → wire format.
 
 from __future__ import annotations
 
-from openai.types.completion_usage import CompletionUsage
-
-from vtx.ai.base import ProviderConfig
-from vtx.ai.phase_parser import (
+from ctx.ai.base import ProviderConfig
+from ctx.ai.phase_parser import (
     INLINE_THINK_SIGNATURE,
     ResponseDelta,
     ResponseEnd,
@@ -22,9 +20,10 @@ from vtx.ai.phase_parser import (
     ThinkingPhaseParser,
     ThinkStart,
 )
-from vtx.ai.providers.openai_sdk import OpenAISDKProvider
-from vtx.ai.sdk.openai import _normalize_usage, _openai_stream_chunks
-from vtx.protocol.types import AssistantMessage, TextContent, ThinkingContent
+from ctx.ai.providers.openai_sdk import OpenAISDKProvider
+from ctx.ai.sdk.openai import _normalize_usage, _openai_stream_chunks
+from ctx.protocol.types import AssistantMessage, TextContent, ThinkingContent
+from openai.types.completion_usage import CompletionUsage
 
 # =================================================================================================
 # Test helpers
@@ -530,7 +529,7 @@ def test_responses_stream_peels_cached_out_of_input():
     Same invariant as ``_normalize_usage``: cache counts must be siblings of
     input, or every total that sums them double counts the cached prefix.
     """
-    from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
+    from ctx.ai.sdk.openai_responses import OpenAIResponsesSDK
 
     state = OpenAIResponsesSDK._new_stream_state()
     chunks = OpenAIResponsesSDK._stream_step(

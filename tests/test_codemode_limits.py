@@ -12,10 +12,9 @@ import asyncio
 import re
 
 import pytest
-
-from vtx.codemode import CodemodeSandbox, Limits, ToolError, truncate_middle
-from vtx.codemode import CodemodeTool as SandboxTool
-from vtx.codemode.governance import ToolGovernance
+from ctx.codemode import CodemodeSandbox, Limits, ToolError, truncate_middle
+from ctx.codemode import CodemodeTool as SandboxTool
+from ctx.codemode.governance import ToolGovernance
 
 pytestmark = pytest.mark.asyncio
 
@@ -51,7 +50,7 @@ async def test_a_script_cannot_widen_the_host_deadline():
     # The tool path used to pass a script's `timeout_ms` through as a
     # *replacement*, so a script could raise the host's deadline up to the
     # parser's ceiling. A budget a model can inflate is not a budget.
-    from vtx.codemode import clamp_int, clamp_timeout
+    from ctx.codemode import clamp_int, clamp_timeout
 
     assert clamp_timeout(600_000, 1_000) == 1_000
     assert clamp_timeout(500, 1_000) == 500
@@ -70,14 +69,14 @@ async def test_an_unknown_option_field_is_an_error():
     # Silently dropping one would let a model believe it had configured
     # something. The options line is the host's to read, so this is where it is
     # rejected -- the sandbox never sees the field.
-    from vtx.codemode import CodemodeSourceError, parse_source
+    from ctx.codemode import CodemodeSourceError, parse_source
 
     with pytest.raises(CodemodeSourceError, match="Unknown options field"):
         parse_source('# @options: {"max_calls": 3}\nreturn 1')
 
 
 async def test_an_out_of_range_option_is_an_error():
-    from vtx.codemode import CodemodeSourceError, parse_source
+    from ctx.codemode import CodemodeSourceError, parse_source
 
     for bad in ('{"timeout_ms": 10}', '{"max_tool_calls": 0}', '{"max_output_tokens": -5}'):
         with pytest.raises(CodemodeSourceError, match="must be between"):
@@ -85,7 +84,7 @@ async def test_an_out_of_range_option_is_an_error():
 
 
 async def test_the_new_option_fields_parse():
-    from vtx.codemode import parse_source
+    from ctx.codemode import parse_source
 
     options = parse_source(
         '# @options: {"timeout_ms": 5000, "max_tool_calls": 4, "max_output_tokens": 900}\nreturn 1'
@@ -295,16 +294,15 @@ class _Recorder:
 
 
 def _host_tool(name: str = "writer", *, mutating: bool = True):
+    from ctx.agent.tools.base import BaseTool
     from pydantic import BaseModel
-
-    from vtx.agent.tools.base import BaseTool
 
     class Params(BaseModel):
         text: str = ""
 
     class Writer(BaseTool):
         async def execute(self, params, cancel_event=None):
-            from vtx.protocol.types import ToolResult
+            from ctx.protocol.types import ToolResult
 
             return ToolResult(success=True, result="written")
 
@@ -317,7 +315,7 @@ def _host_tool(name: str = "writer", *, mutating: bool = True):
 
 
 async def test_a_nested_call_emits_the_same_hooks_a_direct_one_does():
-    from vtx.protocol.types import ToolResult
+    from ctx.protocol.types import ToolResult
 
     bus = _Recorder()
     calls: list[str] = []
@@ -356,7 +354,7 @@ async def test_an_extension_can_rewrite_a_nested_calls_arguments():
     # The other half of the `tool_call` contract. An extension that rewrites
     # arguments for the model must have rewritten them for the script too, or
     # the two paths disagree about what a tool may be handed.
-    from vtx.protocol.types import ToolResult
+    from ctx.protocol.types import ToolResult
 
     class Rewriting:
         async def emit(self, event: str, **_payload):
@@ -379,7 +377,7 @@ async def test_a_prompt_verdict_becomes_a_refusal_not_a_silent_allow():
     # The gate answers ALLOW or PROMPT, and PROMPT means "ask the user" -- which
     # a script has nobody to ask. Auto-approving here would make a script a way
     # to run a gated call the user never saw.
-    from vtx.core.permissions import PermissionDecision
+    from ctx.core.permissions import PermissionDecision
 
     async def run(tool, args):  # pragma: no cover - must not be reached
         raise AssertionError("a gated call must not run")
@@ -392,8 +390,8 @@ async def test_a_prompt_verdict_becomes_a_refusal_not_a_silent_allow():
 
 
 async def test_a_read_only_tool_is_allowed_through_the_gate():
-    from vtx.core.permissions import PermissionDecision
-    from vtx.protocol.types import ToolResult
+    from ctx.core.permissions import PermissionDecision
+    from ctx.protocol.types import ToolResult
 
     async def run(tool, args):
         return ToolResult(success=True, result="ok")
@@ -422,13 +420,12 @@ async def test_a_gated_tool_is_refused_from_a_real_script():
     # the wrapper alone: before, `adapt_tool` called `tool.execute` directly, so
     # one approved `codemode` call could do anything any exposed tool could, with
     # no second look and nothing shown to the user.
+    from ctx.agent.tools.base import BaseTool
+    from ctx.codemode import adapt_tool
+    from ctx.codemode.governance import ToolGovernance
+    from ctx.core.permissions import PermissionDecision
+    from ctx.protocol.types import ToolResult
     from pydantic import BaseModel
-
-    from vtx.agent.tools.base import BaseTool
-    from vtx.codemode import adapt_tool
-    from vtx.codemode.governance import ToolGovernance
-    from vtx.core.permissions import PermissionDecision
-    from vtx.protocol.types import ToolResult
 
     class P(BaseModel):
         text: str = ""

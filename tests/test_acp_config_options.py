@@ -1,8 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
-
-from vtx.coding_agent.acp import AcpServer, _Session
+from ctx.coding_agent.acp import AcpServer, _Session
 
 
 class _Runtime:
@@ -40,7 +39,7 @@ class _Runtime:
 @pytest.mark.asyncio
 async def test_session_config_options_update_live_runtime(monkeypatch):
     model = SimpleNamespace(id="new-model", provider="test-provider", base_url="")
-    monkeypatch.setattr("vtx.ai.models.get_model", lambda model_id, provider: model)
+    monkeypatch.setattr("ctx.ai.models.get_model", lambda model_id, provider: model)
     server = AcpServer()
     session = _Session("/workspace")
     session.acp_id = "s1"

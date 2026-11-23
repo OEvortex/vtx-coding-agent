@@ -1,9 +1,8 @@
 """Tests for the mock LLM provider."""
 
 import pytest
-
-from vtx.ai.providers.mock import MockProvider
-from vtx.protocol.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
+from ctx.ai.providers.mock import MockProvider
+from ctx.protocol.types import StreamDone, TextPart, ThinkPart, ToolCallDelta, ToolCallStart
 
 
 @pytest.mark.asyncio
@@ -128,7 +127,7 @@ def test_mock_provider_should_retry():
 @pytest.mark.asyncio
 async def test_mock_provider_with_config():
     """Test that mock provider can be initialized with a config."""
-    from vtx.ai.base import ProviderConfig
+    from ctx.ai.base import ProviderConfig
 
     config = ProviderConfig(model="test-model", temperature=0.5)
     provider = MockProvider(config=config)

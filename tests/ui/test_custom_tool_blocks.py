@@ -1,5 +1,5 @@
 """Tests for the custom TUI block API: extensions and agents can ship
-a custom :class:`vtx.ui.blocks.ToolBlock` subclass for a tool they
+a custom :class:`ctx.ui.blocks.ToolBlock` subclass for a tool they
 register.
 """
 
@@ -8,15 +8,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from ctx.agent.tools.base import BaseTool
+from ctx.coding_agent.agents.api import AgentAPI
+from ctx.coding_agent.agents.loader import load_agent
+from ctx.plugins.api import ExtensionAPI, ExtensionRecord, ExtensionTool
+from ctx.tui.blocks import ToolBlock
+from ctx.tui.chat import ChatLog
+from ctx.tui.styles import get_styles
 from textual.app import App, ComposeResult
-
-from vtx.agent.tools.base import BaseTool
-from vtx.coding_agent.agents.api import AgentAPI
-from vtx.coding_agent.agents.loader import load_agent
-from vtx.plugins.api import ExtensionAPI, ExtensionRecord, ExtensionTool
-from vtx.tui.blocks import ToolBlock
-from vtx.tui.chat import ChatLog
-from vtx.tui.styles import get_styles
 
 # ---------------------------------------------------------------------------
 # A small custom block, used as a fixture
@@ -108,10 +107,10 @@ def _noop_params():
 
 def _make_ext_api(name: str = "ext_test") -> tuple[ExtensionAPI, ExtensionRecord]:
     """Build a minimal ``ExtensionAPI`` over a real record and a tool service."""
-    from vtx.plugins.api import ExtensionActions
-    from vtx.plugins.bus import EventBus
-    from vtx.plugins.context import Context
-    from vtx.plugins.services import ToolService
+    from ctx.plugins.api import ExtensionActions
+    from ctx.plugins.bus import EventBus
+    from ctx.plugins.context import Context
+    from ctx.plugins.services import ToolService
 
     record = ExtensionRecord(name, Path(f"/{name}.py"))
     tools = ToolService()
@@ -177,7 +176,7 @@ class TestLocalToolUiBlock:
     def _make_agent_api(self, tmp_path: Path) -> AgentAPI:
         agent_file = tmp_path / "reviewer.py"
         agent_file.write_text(
-            "from vtx.coding_agent.agents import AgentDef\n"
+            "from ctx.coding_agent.agents import AgentDef\n"
             "AGENT = AgentDef(name='reviewer', description='x')\n"
         )
         loaded = load_agent(agent_file, cwd=str(tmp_path), config_dir=tmp_path)

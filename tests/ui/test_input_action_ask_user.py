@@ -11,8 +11,8 @@ otherwise the bindings consume them and the picker never sees them.
 
 from typing import Any
 
-from vtx.core import AskUserOption
-from vtx.tui.input import _is_ask_user_picker_key
+from ctx.core import AskUserOption
+from ctx.tui.input import _is_ask_user_picker_key
 
 
 class FakeFuture:
@@ -53,10 +53,10 @@ class FakeApp:
             return
 
     def _handle_ask_user_key(self, event: Any) -> bool:
-        """Minimal replica of the real Vtx._handle_ask_user_key."""
+        """Minimal replica of the real Ctx._handle_ask_user_key."""
         if self._ask_user_future is None or self._ask_user_future.done():
             return False
-        from vtx.core import AskUserResponse
+        from ctx.core import AskUserResponse
 
         key = event.key
         if key.isdigit() and len(key) == 1:
@@ -86,7 +86,7 @@ class FakeApp:
         return False
 
     def _ask_user_pick(self, index: int) -> None:
-        from vtx.core import AskUserResponse
+        from ctx.core import AskUserResponse
 
         self._ask_user_highlight = index
         if index < len(self._ask_user_options):
@@ -97,7 +97,7 @@ class FakeApp:
         self.cleared = True
 
     def _ask_user_submit_highlighted(self) -> None:
-        from vtx.core import AskUserResponse
+        from ctx.core import AskUserResponse
 
         idx = self._ask_user_highlight
         if idx < len(self._ask_user_options):

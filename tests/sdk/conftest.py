@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.ai.providers.mock import MockProvider
+from ctx.ai.providers.mock import MockProvider
 
 
 @pytest.fixture

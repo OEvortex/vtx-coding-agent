@@ -1,7 +1,7 @@
 """Tests for the rpiv-style ask_user questionnaire state machine."""
 
-from vtx.core import AskUserOption, AskUserQuestion
-from vtx.tui.ask_user import AskUserDialog
+from ctx.core import AskUserOption, AskUserQuestion
+from ctx.tui.ask_user import AskUserDialog
 
 
 def _q(

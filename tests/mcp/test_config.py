@@ -2,8 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-
-from vtx.mcp.config import (
+from ctx.mcp.config import (
     add_mcp_server_config,
     load_mcp_config,
     remove_mcp_server_config,
@@ -88,7 +87,7 @@ def test_loads_global_then_project_with_project_winning(tmp_path: Path):
         config_dir / "mcp.json",
         {"mcpServers": {"a": {"command": "global-a"}, "b": {"command": "global-b"}}},
     )
-    _write(project / ".vtx" / "mcp.json", {"mcpServers": {"a": {"command": "project-a"}}})
+    _write(project / ".ctx" / "mcp.json", {"mcpServers": {"a": {"command": "project-a"}}})
 
     # Both files are read unconditionally: a project's servers are configured
     # the moment the project is opened, so a project entry needs no grant.

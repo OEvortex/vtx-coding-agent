@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from vtx.git.git_branch import resolve_git_branch
+from ctx.git.git_branch import resolve_git_branch
 
 
 def test_resolve_git_branch_reads_head_directly(tmp_path: Path):

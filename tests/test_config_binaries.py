@@ -1,4 +1,4 @@
-from vtx.core.config import AVAILABLE_BINARIES, config
+from ctx.core.config import AVAILABLE_BINARIES, config
 
 
 def test_available_binaries_is_set():

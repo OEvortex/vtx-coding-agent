@@ -12,8 +12,7 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
-from vtx.agent.tools.web import SearchParams, WebSearchTool
+from ctx.agent.tools.web import SearchParams, WebSearchTool
 
 
 def _sse_payload(text: str) -> str:

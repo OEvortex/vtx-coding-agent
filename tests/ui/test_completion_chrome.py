@@ -4,19 +4,18 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
-
-from vtx.agent.runtime import ConversationRuntime
-from vtx.agent.session import SessionInfo
-from vtx.tui.app import Vtx
-from vtx.tui.autocomplete import (
+from ctx.agent.runtime import ConversationRuntime
+from ctx.agent.session import SessionInfo
+from ctx.tui.app import Ctx
+from ctx.tui.autocomplete import (
     FilePathProvider,
     PullRequestProvider,
     SlashCommand,
     SlashCommandProvider,
 )
-from vtx.tui.floating_list import FloatingList, ListItem
-from vtx.tui.input import InputBox
-from vtx.tui.selection_mode import SelectionMode
+from ctx.tui.floating_list import FloatingList, ListItem
+from ctx.tui.input import InputBox
+from ctx.tui.selection_mode import SelectionMode
 
 
 class FakeChat:
@@ -133,7 +132,7 @@ class FakeInputBox:
         pass
 
 
-class FakeVtx:
+class FakeCtx:
     def __init__(
         self, selected_item: ListItem | None = None, *, completion_visible: bool | None = None
     ) -> None:
@@ -183,8 +182,8 @@ class FakeVtx:
     def _select_theme(self, theme_id: str) -> None:
         self.selected_themes.append(theme_id)
 
-    def _vtx(self) -> Vtx:
-        return cast(Vtx, self)
+    def _ctx(self) -> Ctx:
+        return cast(Ctx, self)
 
     def call_after_refresh(self, callback: Callable[[], None]) -> None:
         callback()
@@ -193,16 +192,16 @@ class FakeVtx:
         callback(*args)
 
     def _is_chat_at_bottom(self) -> bool:
-        return Vtx._is_chat_at_bottom(self._vtx())
+        return Ctx._is_chat_at_bottom(self._ctx())
 
     def _restore_chat_scroll_if_needed(self, was_at_bottom: bool) -> None:
-        Vtx._restore_chat_scroll_if_needed(self._vtx(), was_at_bottom)
+        Ctx._restore_chat_scroll_if_needed(self._ctx(), was_at_bottom)
 
     def _restore_chat_scroll_after_refresh(self, was_at_bottom: bool) -> None:
-        Vtx._restore_chat_scroll_after_refresh(self._vtx(), was_at_bottom)
+        Ctx._restore_chat_scroll_after_refresh(self._ctx(), was_at_bottom)
 
     def _set_bottom_info_displaced(self, displaced: bool) -> None:
-        Vtx._set_bottom_info_displaced(self._vtx(), displaced)
+        Ctx._set_bottom_info_displaced(self._ctx(), displaced)
 
     def _show_completion_list(
         self,
@@ -211,26 +210,26 @@ class FakeVtx:
         searchable: bool = False,
         max_label_width: int | None = None,
     ) -> None:
-        Vtx._show_completion_list(
-            self._vtx(), items, searchable=searchable, max_label_width=max_label_width
+        Ctx._show_completion_list(
+            self._ctx(), items, searchable=searchable, max_label_width=max_label_width
         )
 
     def _hide_completion_list(self, *, restore_footer: bool = True) -> None:
-        Vtx._hide_completion_list(self._vtx(), restore_footer=restore_footer)
+        Ctx._hide_completion_list(self._ctx(), restore_footer=restore_footer)
 
     def on_completion_update(self, event: InputBox.CompletionUpdate) -> None:
-        Vtx.on_completion_update(self._vtx(), event)
+        Ctx.on_completion_update(self._ctx(), event)
 
     def on_completion_hide(self, event: InputBox.CompletionHide) -> None:
-        Vtx.on_completion_hide(self._vtx(), event)
+        Ctx.on_completion_hide(self._ctx(), event)
 
     def on_completion_select(self, event: InputBox.CompletionSelect) -> None:
-        Vtx.on_completion_select(self._vtx(), event)
+        Ctx.on_completion_select(self._ctx(), event)
 
     def _apply_selection_mode_choice(
         self, item: ListItem, input_box: Any, was_at_bottom: bool
     ) -> None:
-        Vtx._apply_selection_mode_choice(self._vtx(), item, input_box, was_at_bottom)
+        Ctx._apply_selection_mode_choice(self._ctx(), item, input_box, was_at_bottom)
 
     def _show_selection_picker(
         self,
@@ -240,8 +239,8 @@ class FakeVtx:
         searchable: bool = True,
         max_label_width: int | None = None,
     ) -> None:
-        Vtx._show_selection_picker(
-            self._vtx(),
+        Ctx._show_selection_picker(
+            self._ctx(),
             items,
             selection_mode,
             searchable=searchable,
@@ -249,19 +248,19 @@ class FakeVtx:
         )
 
     def _handle_settings_select(self, item_value: str):
-        return Vtx._handle_settings_select(self._vtx(), item_value)
+        return Ctx._handle_settings_select(self._ctx(), item_value)
 
     def _build_settings_items(self) -> list[ListItem[str]]:
-        return Vtx._build_settings_items(self._vtx())
+        return Ctx._build_settings_items(self._ctx())
 
     def _show_settings_picker(self, selected_value: str | None = None) -> None:
-        Vtx._show_settings_picker(self._vtx(), selected_value=selected_value)
+        Ctx._show_settings_picker(self._ctx(), selected_value=selected_value)
 
     def _build_resume_items(self) -> list[ListItem]:
         return self.resume_items
 
     def _delete_selected_resume_session(self) -> None:
-        Vtx._delete_selected_resume_session(self._vtx())
+        Ctx._delete_selected_resume_session(self._ctx())
 
     def notify(
         self, message: str, *, title: str = "", timeout: int = 0, severity: str = "information"
@@ -269,10 +268,10 @@ class FakeVtx:
         self.notifications.append((message, title, timeout, severity))
 
     def _handle_themes_command(self, args: str) -> None:
-        Vtx._handle_themes_command(self._vtx(), args)
+        Ctx._handle_themes_command(self._ctx(), args)
 
     def _handle_thinking_command(self, args: str) -> None:
-        Vtx._handle_thinking_command(self._vtx(), args)
+        Ctx._handle_thinking_command(self._ctx(), args)
 
 
 def _make_session_item(path, session_id: str = "session") -> ListItem:
@@ -289,7 +288,7 @@ def _make_session_item(path, session_id: str = "session") -> ListItem:
 
 
 def test_completion_list_is_configured_for_ten_rows() -> None:
-    app = Vtx(cwd=".")
+    app = Ctx(cwd=".")
     floating_list = next(
         widget
         for widget in app.compose()
@@ -300,7 +299,7 @@ def test_completion_list_is_configured_for_ten_rows() -> None:
 
 
 def test_show_completion_list_displaces_footer() -> None:
-    app = FakeVtx()
+    app = FakeCtx()
     items = [ListItem(value="one", label="one")]
 
     app._show_completion_list(items, searchable=True, max_label_width=40)
@@ -312,7 +311,7 @@ def test_show_completion_list_displaces_footer() -> None:
 
 
 def test_show_selection_picker_displaces_footer_and_restores_scroll() -> None:
-    app = FakeVtx()
+    app = FakeCtx()
     item = ListItem(value="one", label="one")
 
     app._show_selection_picker([item], SelectionMode.PERMISSIONS)
@@ -325,7 +324,7 @@ def test_show_selection_picker_displaces_footer_and_restores_scroll() -> None:
 
 
 def test_completion_update_displaces_footer_for_visible_list() -> None:
-    app = FakeVtx(completion_visible=True)
+    app = FakeCtx(completion_visible=True)
     items = [ListItem(value="one", label="one")]
 
     app.on_completion_update(InputBox.CompletionUpdate(items))
@@ -341,7 +340,7 @@ def test_completion_update_displaces_footer_for_visible_list() -> None:
 def test_hide_completion_list_controls_footer_restore(
     restore_footer: bool, expected_hidden_class: bool
 ) -> None:
-    app = FakeVtx()
+    app = FakeCtx()
     app.footer.classes.add("-completion-hidden")
 
     app._hide_completion_list(restore_footer=restore_footer)
@@ -353,7 +352,7 @@ def test_hide_completion_list_controls_footer_restore(
 @pytest.mark.parametrize("case", ["no-item", "tab", "slash", "file"])
 def test_completion_select_terminal_paths_restore_footer(case: str) -> None:
     item = None if case == "no-item" else ListItem(value="value", label="value")
-    app = FakeVtx(selected_item=item, completion_visible=True)
+    app = FakeCtx(selected_item=item, completion_visible=True)
     app.footer.classes.add("-completion-hidden")
 
     if case == "tab":
@@ -385,7 +384,7 @@ def test_completion_select_terminal_paths_restore_footer(case: str) -> None:
 
 
 def test_completion_select_final_selection_mode_restores_footer() -> None:
-    app = FakeVtx(selected_item=ListItem(value="auto", label="auto"))
+    app = FakeCtx(selected_item=ListItem(value="auto", label="auto"))
     app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.PERMISSIONS
 
@@ -402,7 +401,7 @@ def test_completion_select_final_selection_mode_restores_footer() -> None:
 
 
 def test_completion_select_settings_themes_keeps_footer_displaced() -> None:
-    app = FakeVtx(selected_item=ListItem(value="themes", label="themes"))
+    app = FakeCtx(selected_item=ListItem(value="themes", label="themes"))
     app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.SETTINGS
 
@@ -417,7 +416,7 @@ def test_completion_select_settings_themes_keeps_footer_displaced() -> None:
 
 
 def test_completion_select_settings_thinking_without_provider_restores_footer() -> None:
-    app = FakeVtx(selected_item=ListItem(value="thinking", label="thinking"))
+    app = FakeCtx(selected_item=ListItem(value="thinking", label="thinking"))
     app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.SETTINGS
 
@@ -432,7 +431,7 @@ def test_completion_select_settings_thinking_without_provider_restores_footer() 
 
 
 def test_completion_hide_from_settings_subpicker_reopens_settings_and_restores_scroll() -> None:
-    app = FakeVtx(completion_visible=True)
+    app = FakeCtx(completion_visible=True)
     app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.THEME
     app._settings_active = True
@@ -449,7 +448,7 @@ def test_completion_hide_from_settings_subpicker_reopens_settings_and_restores_s
 def test_resume_delete_no_remaining_sessions_hides_picker_and_restores_scroll(tmp_path) -> None:
     session_path = tmp_path / "deleted.jsonl"
     session_path.write_text("{}\n")
-    app = FakeVtx(selected_item=_make_session_item(session_path))
+    app = FakeCtx(selected_item=_make_session_item(session_path))
     app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.SESSION
 
@@ -473,7 +472,7 @@ def test_resume_delete_remaining_sessions_updates_picker_and_restores_scroll(tmp
     deleted_path.write_text("{}\n")
     remaining_path.write_text("{}\n")
     remaining_item = _make_session_item(remaining_path, "remaining")
-    app = FakeVtx(selected_item=_make_session_item(deleted_path, "deleted"))
+    app = FakeCtx(selected_item=_make_session_item(deleted_path, "deleted"))
     app._selection_mode = SelectionMode.SESSION
     app.resume_items = [remaining_item]
 
@@ -487,7 +486,7 @@ def test_resume_delete_remaining_sessions_updates_picker_and_restores_scroll(tmp
 
 
 def test_completion_select_settings_subpicker_reopens_settings_and_restores_scroll() -> None:
-    app = FakeVtx(selected_item=ListItem(value="textual-dark", label="textual-dark"))
+    app = FakeCtx(selected_item=ListItem(value="textual-dark", label="textual-dark"))
     app.footer.classes.add("-completion-hidden")
     app._selection_mode = SelectionMode.THEME
     app._settings_active = True

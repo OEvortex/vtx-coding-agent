@@ -8,9 +8,8 @@ integration into dynamic model parsing.
 from __future__ import annotations
 
 import pytest
-
-from vtx.ai.dynamic_models import DynamicModelEntry, _parse_models
-from vtx.ai.thinking import (
+from ctx.ai.dynamic_models import DynamicModelEntry, _parse_models
+from ctx.ai.thinking import (
     EXTENDED_THINKING_LEVELS,
     THINKING_LEVELS,
     clamp_thinking_level,
@@ -293,8 +292,8 @@ def test_parse_models_attaches_thinking_level_map_from_models_dev():
 # =============================================================================
 
 
-from vtx.ai.sdk.base import GenerationConfig  # noqa: E402
-from vtx.ai.sdk.openai import OpenAISDK  # noqa: E402
+from ctx.ai.sdk.base import GenerationConfig  # noqa: E402
+from ctx.ai.sdk.openai import OpenAISDK  # noqa: E402
 
 
 def _sdk(slug):
@@ -410,7 +409,7 @@ def test_default_level_omits_reasoning_effort():
 
 
 def test_token_limits_stores_thinking_level_map():
-    from vtx.ai.context_length import ContextLengthManager
+    from ctx.ai.context_length import ContextLengthManager
 
     mgr = ContextLengthManager()
     data = {
@@ -439,8 +438,8 @@ def test_token_limits_stores_thinking_level_map():
 
 
 def test_provider_info_to_model_attaches_thinking_level_map():
-    from vtx.ai.context_length import context_length_manager
-    from vtx.ai.provider_catalog import _provider_info_to_model, get
+    from ctx.ai.context_length import context_length_manager
+    from ctx.ai.provider_catalog import _provider_info_to_model, get
 
     p = get("openai")
     assert p is not None

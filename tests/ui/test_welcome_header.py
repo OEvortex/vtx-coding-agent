@@ -8,17 +8,16 @@ lists live behind /skills and /tools.
 from __future__ import annotations
 
 import pytest
+from ctx.agent.context.skills import Skill
+from ctx.agent.tools.base import BaseTool
+from ctx.core.paths import get_agents_dir
+from ctx.protocol.types import ToolResult
+from ctx.tui.brand import CTX_LOGO
+from ctx.tui.chat import ChatLog
+from ctx.tui.commands.catalog import skill_sections, tool_label, tool_sections
+from ctx.tui.styles import get_styles
 from textual.app import App, ComposeResult
 from textual.widgets import Label
-
-from vtx.agent.context.skills import Skill
-from vtx.agent.tools.base import BaseTool
-from vtx.core.paths import get_agents_dir
-from vtx.protocol.types import ToolResult
-from vtx.tui.brand import VTX_LOGO
-from vtx.tui.chat import ChatLog
-from vtx.tui.commands.catalog import skill_sections, tool_label, tool_sections
-from vtx.tui.styles import get_styles
 
 
 class _TestApp(App):
@@ -80,9 +79,9 @@ async def test_header_is_centered_with_hints_beside_the_wordmark():
         # The wordmark keeps its own column on all six rows, and the version
         # rides the first one rather than restating the name in text.
         for index in range(6):
-            assert rows[index].lstrip().startswith(VTX_LOGO[index].strip()), f"\n{rows}"
+            assert rows[index].lstrip().startswith(CTX_LOGO[index].strip()), f"\n{rows}"
         assert "v1.2.2" in rows[0]
-        assert "VTX" not in "".join(rows), "the logo spells it; the title must not repeat it"
+        assert "CTX" not in "".join(rows), "the logo spells it; the title must not repeat it"
 
         # Hints share the wordmark's rows instead of stacking under it: no key
         # is repeated, so none is stated with two meanings.

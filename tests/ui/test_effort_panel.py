@@ -7,10 +7,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
-from vtx.tui.app import Vtx
-from vtx.tui.autocomplete import DEFAULT_COMMANDS
-from vtx.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
+from ctx.tui.app import Ctx
+from ctx.tui.autocomplete import DEFAULT_COMMANDS
+from ctx.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
 
 LEVELS = ["low", "medium", "high", "xhigh", "max"]
 _PROVIDER = object()
@@ -37,7 +36,7 @@ class FakeRuntime:
 
 
 class FakeApp:
-    action_cycle_thinking_level = Vtx.action_cycle_thinking_level
+    action_cycle_thinking_level = Ctx.action_cycle_thinking_level
 
     def __init__(self, runtime: FakeRuntime) -> None:
         self._runtime = runtime
@@ -59,7 +58,7 @@ def _app(levels: list[str] | None = None) -> FakeApp:
 
 def _borrow(name: str):
     """Bind a real SettingsCommands method onto the fake."""
-    from vtx.tui.commands.settings import SettingsCommands
+    from ctx.tui.commands.settings import SettingsCommands
 
     return getattr(SettingsCommands, name)
 
@@ -147,7 +146,7 @@ def test_both_commands_route_to_the_thinking_handler(cmd):
     """
     import inspect
 
-    from vtx.tui.commands import CommandsMixin
+    from ctx.tui.commands import CommandsMixin
 
     src = inspect.getsource(CommandsMixin._handle_command)
     branch = src.split(f'cmd == "{cmd}"')[1]
@@ -171,7 +170,7 @@ def test_panel_reports_when_the_catalog_entry_is_missing():
     assert "catalog entry not found" in app.chat.infos[-1]
 
 
-def test_panel_names_levels_the_model_advertises_but_vtx_will_not_offer():
+def test_panel_names_levels_the_model_advertises_but_ctx_will_not_offer():
     app = _app()
     missing, reason = _borrow("_thinking_availability")(app)
     # The catalog is only loaded when the isolated test config allows it; this

@@ -11,17 +11,16 @@ from __future__ import annotations
 import json
 
 import pytest
-from pydantic import BaseModel, Field
-
-from vtx.agent.tools import get_all_tools, get_default_tools, get_tool_definitions
-from vtx.codemode.errors import TIMEOUT, WALL_CLOCK
-from vtx.coding_agent.tools.codemode import (
+from ctx.agent.tools import get_all_tools, get_default_tools, get_tool_definitions
+from ctx.codemode.errors import TIMEOUT, WALL_CLOCK
+from ctx.coding_agent.tools.codemode import (
     _RECOVERY,
     CODEMODE_TOOL_NAME,
     CodemodeParams,
     CodemodeTool,
 )
-from vtx.protocol.types import ToolResult
+from ctx.protocol.types import ToolResult
+from pydantic import BaseModel, Field
 
 
 class Echo(BaseModel):
@@ -49,7 +48,7 @@ def tool() -> CodemodeTool:
 def mounted():
     """``codemode`` registers through its plugin row, so reading it from the
     registry needs a mounted composition rather than an import side effect."""
-    from vtx.plugins import boot
+    from ctx.plugins import boot
 
     host = boot()
     yield host
@@ -63,7 +62,7 @@ def echo_tool() -> EchoTool:
     Registered for the test's duration only: the registry is process-global, and
     a leaked entry would show up in every other test that inspects the tool set.
     """
-    from vtx.agent.tools import register_tool, unregister_tool
+    from ctx.agent.tools import register_tool, unregister_tool
 
     tool = EchoTool()
     register_tool(tool, is_default=True)

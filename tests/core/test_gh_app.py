@@ -10,9 +10,8 @@ from unittest import mock
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-
-from vtx.git import gh_app
-from vtx.git.gh_app import (
+from ctx.git import gh_app
+from ctx.git.gh_app import (
     GitHubAppConfig,
     committer_env_vars,
     committer_identity,
@@ -46,17 +45,17 @@ def fake_pem(tmp_path: Path) -> str:
 def cfg(tmp_path: Path, fake_pem: str) -> GitHubAppConfig:
     return GitHubAppConfig(
         app_id="1234567",
-        app_slug="vtx-coding-agent",
+        app_slug="ctx-code",
         pem_path=fake_pem,
         commit_as_bot=True,
         push_remote_owner="OEvortex",
-        push_remote_repo="VTX",
+        push_remote_repo="CTX",
     )
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Isolate every test to a throwaway ~/.vtx/gh_app dir + fresh caches."""
+    """Isolate every test to a throwaway ~/.ctx/gh_app dir + fresh caches."""
     app_dir = tmp_path / "gh_app"
     app_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(gh_app, "_APP_DIR", app_dir)
@@ -219,7 +218,7 @@ class TestBotIdentity:
         (gh_app._BOT_ID_CACHE).write_text(
             json.dumps({"app_id": "old-app", "bot_user_id": 1, "cached_at": time.time()})
         )
-        cfg = GitHubAppConfig(app_id="new-app", app_slug="vtx-coding-agent", pem_path=fake_pem)
+        cfg = GitHubAppConfig(app_id="new-app", app_slug="ctx-code", pem_path=fake_pem)
 
         class FakeResp:
             status_code = 200
@@ -241,9 +240,9 @@ class TestBotIdentity:
 
         with mock.patch.object(gh_app.requests, "get", lambda *a, **kw: FakeResp()):
             name, email, bot_id = committer_identity(cfg)
-        assert name == "vtx-coding-agent[bot]"
+        assert name == "ctx-code[bot]"
         assert bot_id == 149130343
-        assert email == "149130343+vtx-coding-agent[bot]@users.noreply.github.com"
+        assert email == "149130343+ctx-code[bot]@users.noreply.github.com"
         assert "1234567" not in email
 
     def test_committer_env_vars_keys(self, cfg):
@@ -262,7 +261,7 @@ class TestBotIdentity:
             "GIT_COMMITTER_NAME",
             "GIT_COMMITTER_EMAIL",
         }
-        assert env["GIT_AUTHOR_NAME"] == "vtx-coding-agent[bot]"
+        assert env["GIT_AUTHOR_NAME"] == "ctx-code[bot]"
         assert env["GIT_AUTHOR_EMAIL"].endswith("@users.noreply.github.com")
         assert env["GIT_AUTHOR_EMAIL"] == env["GIT_COMMITTER_EMAIL"]
         assert env["GIT_AUTHOR_NAME"] == env["GIT_COMMITTER_NAME"]
@@ -301,8 +300,8 @@ class TestInstallationToken:
             mock.patch.object(gh_app.requests, "get", lambda *a, **kw: _fake_get_installation()),
             mock.patch.object(gh_app.requests, "post", lambda *a, **kw: FakeResp()),
         ):
-            first = get_installation_token(cfg, "OEvortex", "VTX")
-            second = get_installation_token(cfg, "OEvortex", "VTX")
+            first = get_installation_token(cfg, "OEvortex", "CTX")
+            second = get_installation_token(cfg, "OEvortex", "CTX")
         assert first == "ghs_tok" == second
         assert posts["n"] == 1
 
@@ -321,9 +320,9 @@ class TestInstallationToken:
             mock.patch.object(gh_app.requests, "get", lambda *a, **kw: _fake_get_installation()),
             mock.patch.object(gh_app.requests, "post", lambda *a, **kw: FakeResp()),
         ):
-            first = get_installation_token(cfg, "OEvortex", "VTX")
+            first = get_installation_token(cfg, "OEvortex", "CTX")
             gh_app._cached_token = (first, time.time() - 1)  # expired
-            second = get_installation_token(cfg, "OEvortex", "VTX")
+            second = get_installation_token(cfg, "OEvortex", "CTX")
         assert first != second
         assert posts["n"] == 2
 
@@ -340,16 +339,14 @@ class TestBashIntegration:
         gh_app._cached_bot_id = (cfg.app_slug, 149130343)
         gh_app._cached_bot_id_at = time.time()
 
-        from vtx.coding_agent.tools.bash import _get_env
+        from ctx.coding_agent.tools.bash import _get_env
 
         env = _get_env()
-        assert env["GIT_AUTHOR_NAME"] == "vtx-coding-agent[bot]"
-        assert (
-            env["GIT_AUTHOR_EMAIL"] == "149130343+vtx-coding-agent[bot]@users.noreply.github.com"
-        )
+        assert env["GIT_AUTHOR_NAME"] == "ctx-code[bot]"
+        assert env["GIT_AUTHOR_EMAIL"] == "149130343+ctx-code[bot]@users.noreply.github.com"
 
     def test_get_env_no_bot_identity_without_config(self):
-        from vtx.coding_agent.tools.bash import _get_env
+        from ctx.coding_agent.tools.bash import _get_env
 
         env = _get_env()
         assert "GIT_AUTHOR_NAME" not in env

@@ -1,11 +1,10 @@
 from typing import Protocol, cast
 
 import pytest
+from ctx.protocol.types import ImageContent
+from ctx.tui import prompt_history as ph
+from ctx.tui.input import InputBox
 from textual._ansi_sequences import ANSI_SEQUENCES_KEYS
-
-from vtx.protocol.types import ImageContent
-from vtx.tui import prompt_history as ph
-from vtx.tui.input import InputBox
 
 
 @pytest.fixture(autouse=True)

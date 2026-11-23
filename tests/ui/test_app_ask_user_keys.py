@@ -2,18 +2,17 @@
 
 Mirrors the structure of ``test_app_approval_keys.py``: a fake app
 with the ask_user state populated, and a ``FakeKeyEvent`` that records
-whether the key was consumed. We drive ``Vtx._handle_ask_user_key``
+whether the key was consumed. We drive ``Ctx._handle_ask_user_key``
 directly to exercise the dispatch between keys and the
 :class:`AskUserDialog` state machine without a live Textual app.
 """
 
 from typing import cast
 
+from ctx.core import AskUserQuestion, AskUserResponse
+from ctx.tui.app import Ctx
+from ctx.tui.ask_user import AskUserDialog
 from textual import events
-
-from vtx.core import AskUserQuestion, AskUserResponse
-from vtx.tui.app import Vtx
-from vtx.tui.ask_user import AskUserDialog
 
 
 class FakeKeyEvent:
@@ -67,7 +66,7 @@ class FakeFuture:
 
 
 def _dialog(n_options: int = 2, multi: bool = False) -> AskUserDialog:
-    from vtx.core import AskUserOption
+    from ctx.core import AskUserOption
 
     question = AskUserQuestion(
         question="Pick one?",
@@ -86,7 +85,7 @@ def _make_app(dialog: AskUserDialog | None = None) -> tuple[FakeFuture, "AskUser
 
 
 class AskUserApp:
-    """Stand-in for the Vtx app exposing the ask_user state."""
+    """Stand-in for the Ctx app exposing the ask_user state."""
 
     def __init__(self, future: FakeFuture, dialog: AskUserDialog, chat: FakeChat) -> None:
         self._ask_user_future = future  # type: ignore[assignment]
@@ -123,7 +122,7 @@ def test_number_key_commits_and_resolves():
     future, app, chat = _make_app()
 
     event = FakeKeyEvent("1")
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, event))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, event))
 
     result = future.result()
     assert result is not None
@@ -141,7 +140,7 @@ def test_enter_on_other_with_text_builds_custom_answer():
     app._ask_dialog.handle_key("down")
     app._ask_dialog.handle_key("down")  # onto Type something.
     event = FakeKeyEvent("enter")
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, event))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, event))
 
     result = future.result()
     assert result is not None
@@ -155,7 +154,7 @@ def test_enter_on_other_empty_text_opens_input_not_resolve():
     app._ask_dialog.handle_key("down")  # onto Type something.
 
     event = FakeKeyEvent("enter")
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, event))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, event))
 
     assert not future.done()
     assert app.cleared is False
@@ -170,7 +169,7 @@ def test_enter_on_other_empty_text_opens_input_not_resolve():
 def test_arrow_moves_and_rerenders_without_resolving():
     _future, app, chat = _make_app()
     event = FakeKeyEvent("down")
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, event))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, event))
     assert app._ask_dialog.row_kind() == ("option", 1)
     assert chat.rerenders == ["tool-1"]
     assert not app._ask_user_future.done()
@@ -178,7 +177,7 @@ def test_arrow_moves_and_rerenders_without_resolving():
 
 def test_space_toggles_multi_option():
     _future, app, _chat = _make_app(_dialog(multi=True))
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, FakeKeyEvent(" ")))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, FakeKeyEvent(" ")))
     assert 0 in app._ask_dialog.current_state().toggled
     assert not app._ask_user_future.done()
 
@@ -188,7 +187,7 @@ def test_ctrl_u_clears_draft_via_chat_setter():
     chat.custom_value = "draft text"
     app._ask_dialog.current_state().draft = "draft text"
 
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, FakeKeyEvent("ctrl+u")))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, FakeKeyEvent("ctrl+u")))
 
     assert chat.cleared_custom == [""]
     assert app._ask_dialog.current_state().draft == ""
@@ -203,7 +202,7 @@ def test_escape_cancels_with_decline_response():
     future, app, chat = _make_app()
 
     event = FakeKeyEvent("escape")
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, event))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, event))
 
     result = future.result()
     assert result is not None
@@ -221,7 +220,7 @@ def test_out_of_range_number_does_not_consume():
     future, app, _chat = _make_app()
 
     event = FakeKeyEvent("7")
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, event))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, event))
 
     assert not future.done()
     assert event.prevented is False
@@ -232,7 +231,7 @@ def test_unhandled_letter_does_not_consume():
     future, app, _chat = _make_app()
 
     event = FakeKeyEvent("z")
-    Vtx._handle_ask_user_key(cast(Vtx, app), cast(events.Key, event))
+    Ctx._handle_ask_user_key(cast(Ctx, app), cast(events.Key, event))
 
     assert not future.done()
     assert event.prevented is False

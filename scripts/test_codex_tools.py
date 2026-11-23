@@ -6,10 +6,10 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from vtx.ai import ProviderConfig, get_valid_codex_token_sync
-from vtx.ai.oauth.codex import is_codex_logged_in
-from vtx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
-from vtx.protocol.types import ToolDefinition, UserMessage
+from ctx.ai import ProviderConfig, get_valid_codex_token_sync
+from ctx.ai.oauth.codex import is_codex_logged_in
+from ctx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
+from ctx.protocol.types import ToolDefinition, UserMessage
 
 MODEL = "gpt-5.6-luna"
 TEST_MESSAGE = "What is the capital of France? Use the lookup tool."
@@ -54,7 +54,7 @@ async def main() -> None:
     finish_reason = "stop"
 
     async for part in stream:
-        from vtx.protocol.types import (
+        from ctx.protocol.types import (
             StreamDone,
             StreamError,
             TextPart,

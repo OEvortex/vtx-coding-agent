@@ -1974,14 +1974,11 @@ button.model-hover-configurable-button:hover {
   padding: 0 4px;
 }
 
-/* With no visible control the row collapses entirely rather than leaving a
-   stray gap under the input box. */
-#secondary-toolbar:not(:has(.usage-ring:not(.hidden))) {
+/* The row always carries the session target and permission pickers. Only the
+   context ring collapses when there is no usage to show, so there is no stray
+   gap under the input box without losing the pickers. */
+#secondary-toolbar:not(:has(.usage-ring:not(.hidden))) .usage-ring {
   display: none;
-}
-
-#composer.list-mode #secondary-toolbar {
-  display: none !important;
 }
 
 #secondary-toolbar.cmp-sm .usage-pct {
@@ -6501,4 +6498,179 @@ body.dv-resizing #sessions-resizer {
    its own air. Only when open: closed, the line stands on its own. */
 .completed-work[open] .completed-work-summary {
   margin-bottom: 8px;
+}
+
+/* ==========================================================================
+   Copilot-style chat surface
+
+   The two bars mirror VS Code's chat view: the native view title above (CHAT,
+   with its own actions) and this webview's own session bar. The session bar
+   carries the view title and the list actions, and the composer carries the
+   input pills, the session target and the permission picker.
+   ========================================================================== */
+
+/* The webview title is a label, not an uppercase heading in the Copilot chat
+   view. The native view title above already says CHAT in uppercase. */
+#chat-title {
+  font-size: var(--vscode-fontSize-body1, 13px);
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 18px;
+  text-transform: none;
+}
+
+#chat-header {
+  min-height: 36px;
+  padding: 4px 12px;
+}
+
+#chat-header .icon-btn .codicon {
+  font-size: 15px;
+  opacity: 0.85;
+}
+
+#chat-header .icon-btn.active .codicon {
+  opacity: 1;
+}
+
+/* Empty sessions view: only the companion waits in the corner. The copy the
+   old empty state carried is redundant next to the new-chat composer. */
+#landing-pet {
+  position: absolute;
+  right: 14px;
+  bottom: 6px;
+  z-index: 2;
+  width: 62px;
+  height: 62px;
+  pointer-events: none;
+  opacity: 0.95;
+}
+
+#landing-pet svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#landing-pet .pet-body {
+  fill: var(--vtx-pet-body, #24bfa5);
+}
+
+#landing-pet .pet-shade {
+  fill: var(--vtx-pet-shade, #009a7c);
+}
+
+#landing-pet .pet-eyes {
+  fill: var(--vtx-pet-eye, #191a1b);
+}
+
+body.vscode-light #landing-pet {
+  opacity: 0.8;
+}
+
+/* Input pills. The context pill reads as plain text, the options and mic sit
+   on the same 22px tier as the other composer controls. */
+.context-pill {
+  width: auto;
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground, var(--dv-dim));
+  white-space: nowrap;
+}
+
+.context-pill:hover,
+.options-pill:hover,
+.mic-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.mic-btn .codicon {
+  font-size: 15px;
+}
+
+/* The row under the input: session target on the left, context ring on the
+   right. Mirrors VS Code's secondary chat toolbar. */
+#secondary-toolbar {
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 2px 0;
+}
+
+#composer-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, var(--dv-dim));
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+button.status-pill {
+  cursor: pointer;
+}
+
+button.status-pill:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.status-pill .codicon {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* In the sessions view the composer starts a chat, so the mode picker is
+   represented by the permission pill below it instead of a chip in the row. */
+#composer.list-mode #mode-dd,
+#composer.list-mode #thinking-dd,
+#composer.list-mode #fusion-dd {
+  display: none !important;
+}
+
+#composer.list-mode #input::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--dv-dim));
+}
+
+/* In the sessions view the context ring is folded into the input pill. */
+#composer.list-mode #usage {
+  display: none !important;
+}
+
+/* At sidebar widths the composer normally drops picker labels. The model chip
+   is the one control that has to keep its name, as it does in Copilot's input. */
+#composer.list-mode #input-box.cmp-sm #model-dd .dd-btn.has-icon .dd-label,
+#composer.list-mode #input-box.cmp-xs #model-dd .dd-btn.has-icon .dd-label {
+  display: inline;
+}
+
+#composer.list-mode #input-box.cmp-sm #model-dd .dd-btn {
+  max-width: 140px;
+}
+
+/* The webview fills the space left by VS Code's own view title bar. */
+#app,
+#chat {
+  height: 100%;
+}
+
+/* The options control uses the same slider glyph as Copilot's chat settings. */
+.options-pill svg {
+  width: 15px;
+  height: 15px;
+  display: block;
 }

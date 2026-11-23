@@ -14,9 +14,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
-from vtx.core.session_retention import PruneResult, RetentionPolicy, prune_old_sessions
-from vtx.tui import usage_stats
+from ctx.core.session_retention import PruneResult, RetentionPolicy, prune_old_sessions
+from ctx.tui import usage_stats
 
 TODAY = date(2026, 10, 4)
 
@@ -106,7 +105,7 @@ def test_unchanged_session_is_not_reparsed(history: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(usage_stats, "sync_usage_ledger", counting)
     # The ledger, not the session log, is what makes the second call cheap.
-    from vtx.core import token_usage
+    from ctx.core import token_usage
 
     scanned: list[Path] = []
     monkeypatch.setattr(
@@ -225,7 +224,7 @@ def test_disabled_retention_deletes_nothing(history: Path) -> None:
 
 def test_pruning_stops_when_the_ledger_cannot_be_written(history: Path, monkeypatch) -> None:
     """Losing the ledger must lose nothing else: no write, no delete."""
-    from vtx.core import token_usage
+    from ctx.core import token_usage
 
     old = _write(
         history,

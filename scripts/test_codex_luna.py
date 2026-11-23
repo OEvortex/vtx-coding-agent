@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Programmatically test the Codex OAuth provider in VTX.
+"""Programmatically test the Codex OAuth provider in CTX.
 
 Tries Luna first, then falls back to other known Codex models to verify
 the provider plumbing works end-to-end.
@@ -13,10 +13,10 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from vtx.ai import ProviderConfig, get_valid_codex_token_sync
-from vtx.ai.oauth.codex import is_codex_logged_in, login_with_device_code
-from vtx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
-from vtx.protocol.types import UserMessage
+from ctx.ai import ProviderConfig, get_valid_codex_token_sync
+from ctx.ai.oauth.codex import is_codex_logged_in, login_with_device_code
+from ctx.ai.providers.openai_responses_sdk import OpenAIResponsesSDKProvider
+from ctx.protocol.types import UserMessage
 
 MODELS_TO_TRY = [
     "gpt-5.6-luna",
@@ -86,7 +86,7 @@ async def test_model(model: str) -> tuple[str, str | None, str | None, str | Non
     stream_error = None
 
     async for part in stream:
-        from vtx.protocol.types import StreamDone, StreamError, TextPart, ThinkPart
+        from ctx.protocol.types import StreamDone, StreamError, TextPart, ThinkPart
 
         if isinstance(part, StreamError):
             stream_error = part.error

@@ -2,12 +2,11 @@ import asyncio
 import time
 import warnings
 
+from ctx.tui.autocomplete import AutocompleteProvider, CompletionResult
+from ctx.tui.floating_list import ListItem
+from ctx.tui.input import InputBox
 from textual.app import App, ComposeResult
 from textual.widgets import Label
-
-from vtx.tui.autocomplete import AutocompleteProvider, CompletionResult
-from vtx.tui.floating_list import ListItem
-from vtx.tui.input import InputBox
 
 
 class SlowProvider(AutocompleteProvider):

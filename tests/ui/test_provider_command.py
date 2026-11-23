@@ -3,19 +3,18 @@
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, cast
 
+import ctx.ai.model_fetcher as model_fetcher_module
+import ctx.tui.commands.models as models_module
 import pytest
-
-import vtx.ai.model_fetcher as model_fetcher_module
-import vtx.tui.commands.models as models_module
-from vtx.ai import list_providers
-from vtx.core.config import get_config
-from vtx.tui.commands import CommandsMixin
-from vtx.tui.commands.providers import _ALL_SLUG
-from vtx.tui.floating_list import ListItem
-from vtx.tui.selection_mode import SelectionMode
+from ctx.ai import list_providers
+from ctx.core.config import get_config
+from ctx.tui.commands import CommandsMixin
+from ctx.tui.commands.providers import _ALL_SLUG
+from ctx.tui.floating_list import ListItem
+from ctx.tui.selection_mode import SelectionMode
 
 if TYPE_CHECKING:
-    from vtx.agent.runtime import ConversationRuntime
+    from ctx.agent.runtime import ConversationRuntime
 
 
 class FakeChat:
@@ -195,14 +194,14 @@ def test_provider_picker_ignores_unknown_arg_and_still_opens():
 
 def test_provider_setter_rejects_unknown_slug():
     """Unknown provider via the setter clears the filter rather than persisting a typo."""
-    from vtx.coding_agent import set_model_provider_filter
+    from ctx.coding_agent import set_model_provider_filter
 
     set_model_provider_filter("not-a-real-provider-xyz")
     assert get_config().ui.model_provider_filter == ""
 
 
 def test_model_picker_filters_to_one_provider(monkeypatch):
-    from vtx.ai import Model
+    from ctx.ai import Model
 
     fake = FakeCommands()
     fake._runtime.model = "model-a"
@@ -217,7 +216,7 @@ def test_model_picker_filters_to_one_provider(monkeypatch):
     monkeypatch.setattr(fake, "_show_selection_picker", _capture)
 
     def _stub_all_models():
-        from vtx.ai.models import ApiType
+        from ctx.ai.models import ApiType
 
         return [
             Model(
@@ -249,7 +248,7 @@ def test_model_picker_filters_to_one_provider(monkeypatch):
             ),
         ]
 
-    monkeypatch.setattr("vtx.tui.commands.models.get_all_models", _stub_all_models)
+    monkeypatch.setattr("ctx.tui.commands.models.get_all_models", _stub_all_models)
 
     fake._select_provider_set("kilo")
     fake._handle_model_command("")

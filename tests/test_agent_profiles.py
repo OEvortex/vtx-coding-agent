@@ -1,4 +1,4 @@
-"""Tests for the vtx.agents package: schema, discovery, loader, registry.
+"""Tests for the ctx.agents package: schema, discovery, loader, registry.
 
 Mirrors the style of tests/test_extensions.py.
 """
@@ -10,10 +10,9 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-
-from vtx.agent.agents.api import ExtensionCommand
-from vtx.agent.tools import BaseTool
-from vtx.coding_agent.agents import (
+from ctx.agent.agents.api import ExtensionCommand
+from ctx.agent.tools import BaseTool
+from ctx.coding_agent.agents import (
     AGENT_ACTIVATED,
     AGENT_CHANGED,
     AgentDef,
@@ -26,10 +25,10 @@ from vtx.coding_agent.agents import (
     load_agent,
     load_all_agents,
 )
-from vtx.coding_agent.agents.schema import AGENT_NAME_RE
-from vtx.plugins.api import ExtensionTool
-from vtx.plugins.event_contract import AGENT_START
-from vtx.protocol.types import ToolResult
+from ctx.coding_agent.agents.schema import AGENT_NAME_RE
+from ctx.plugins.api import ExtensionTool
+from ctx.plugins.event_contract import AGENT_START
+from ctx.protocol.types import ToolResult
 
 # =============================================================================
 # Schema
@@ -91,32 +90,32 @@ def test_agentdef_deny_filters_empty_strings():
 
 
 def test_find_agent_paths_project_and_global(tmp_path: Path, monkeypatch):
-    project = tmp_path / "project" / ".vtx" / "agent"
+    project = tmp_path / "project" / ".ctx" / "agent"
     project.mkdir(parents=True)
     (project / "code-review.py").write_text("AGENT = None\n")
 
-    global_dir = tmp_path / "home" / ".vtx" / "agent"
+    global_dir = tmp_path / "home" / ".ctx" / "agent"
     global_dir.mkdir(parents=True)
     (global_dir / "yolo.py").write_text("AGENT = None\n")
 
     paths = find_agent_paths(
-        cwd=str(tmp_path / "project"), agent_dir=tmp_path / "home" / ".vtx" / "agent"
+        cwd=str(tmp_path / "project"), agent_dir=tmp_path / "home" / ".ctx" / "agent"
     )
     names = sorted(p.stem for p in paths)
     assert names == ["code-review", "yolo"]
 
 
 def test_find_agent_paths_project_wins_on_collision(tmp_path: Path, monkeypatch):
-    project = tmp_path / "project" / ".vtx" / "agent"
+    project = tmp_path / "project" / ".ctx" / "agent"
     project.mkdir(parents=True)
     (project / "x.py").write_text("# project")
 
-    global_dir = tmp_path / "home" / ".vtx" / "agent"
+    global_dir = tmp_path / "home" / ".ctx" / "agent"
     global_dir.mkdir(parents=True)
     (global_dir / "x.py").write_text("# global")
 
     paths = find_agent_paths(
-        cwd=str(tmp_path / "project"), agent_dir=tmp_path / "home" / ".vtx" / "agent"
+        cwd=str(tmp_path / "project"), agent_dir=tmp_path / "home" / ".ctx" / "agent"
     )
     # Project version wins — only one entry.
     assert len(paths) == 1
@@ -141,14 +140,14 @@ def test_find_agent_paths_walks_to_git_root(tmp_path: Path, monkeypatch):
     git_root = tmp_path / "r"
     (git_root / ".git").mkdir(parents=True)
     # Agent dir at the root
-    (git_root / ".vtx" / "agent").mkdir(parents=True)
-    (git_root / ".vtx" / "agent" / "root_agent.py").write_text("# root")
+    (git_root / ".ctx" / "agent").mkdir(parents=True)
+    (git_root / ".ctx" / "agent" / "root_agent.py").write_text("# root")
 
     # Subdir of the repo
     sub = git_root / "sub" / "deeper"
     sub.mkdir(parents=True)
 
-    paths = find_agent_paths(cwd=str(sub), agent_dir=tmp_path / "home" / ".vtx" / "agent")
+    paths = find_agent_paths(cwd=str(sub), agent_dir=tmp_path / "home" / ".ctx" / "agent")
     assert any(p.name == "root_agent.py" for p in paths)
 
 
@@ -172,7 +171,7 @@ def test_load_agent_minimal_data_only(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.coding_agent.agents import AgentDef
+            from ctx.coding_agent.agents import AgentDef
             AGENT = AgentDef(
                 name="code-review",
                 description="Strict review mode",
@@ -197,7 +196,7 @@ def test_load_agent_with_register_and_local_tool(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.coding_agent.agents import AgentDef
+            from ctx.coding_agent.agents import AgentDef
 
             AGENT = AgentDef(
                 name="code-review",
@@ -257,8 +256,8 @@ def test_load_agent_event_handler_is_wired(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.coding_agent.agents import AgentDef
-            from vtx.agent import AGENT_START
+            from ctx.coding_agent.agents import AgentDef
+            from ctx.agent import AGENT_START
 
             AGENT = AgentDef(name="code-review", description="x")
 
@@ -293,7 +292,7 @@ def test_load_agent_name_mismatch(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.coding_agent.agents import AgentDef
+            from ctx.coding_agent.agents import AgentDef
             AGENT = AgentDef(name="different-name", description="x")
             """
         ).strip()
@@ -307,7 +306,7 @@ def test_load_agent_register_raises(tmp_path: Path):
     a.write_text(
         dedent(
             """
-            from vtx.coding_agent.agents import AgentDef
+            from ctx.coding_agent.agents import AgentDef
             AGENT = AgentDef(name="explodes", description="x")
             def register(api):
                 raise RuntimeError("boom")
@@ -320,7 +319,7 @@ def test_load_agent_register_raises(tmp_path: Path):
 
 def test_load_all_agents_collects_errors(tmp_path: Path):
     (tmp_path / "good.py").write_text(
-        "from vtx.coding_agent.agents import AgentDef\n"
+        "from ctx.coding_agent.agents import AgentDef\n"
         "AGENT = AgentDef(name='good', description='x')\n"
     )
     (tmp_path / "bad.py").write_text("def register(): pass\n")
@@ -407,7 +406,7 @@ def test_registry_describe():
 
 
 def _builtin_pool() -> dict[str, BaseTool]:
-    from vtx.coding_agent.tools import tools_by_name
+    from ctx.coding_agent.tools import tools_by_name
 
     return dict(tools_by_name)
 
@@ -460,7 +459,7 @@ def test_compose_active_tools_local_tools_bypass_allow_deny():
     """A local tool the agent contributes is never stripped by its own
     allow/deny filters. The allow/deny lists target the base pool, not
     the agent's own contributions."""
-    from vtx.agent.tools.schema import _json_schema_to_pydantic
+    from ctx.agent.tools.schema import _json_schema_to_pydantic
 
     pool = _builtin_pool()
     base = ["read", "write", "bash"]
@@ -496,7 +495,7 @@ def test_compose_active_tools_local_tools_bypass_allow_deny():
 
 
 def test_compose_active_tools_includes_local_tool():
-    from vtx.agent.tools.schema import _json_schema_to_pydantic
+    from ctx.agent.tools.schema import _json_schema_to_pydantic
 
     pool = _builtin_pool()
     base = ["read", "bash"]
@@ -524,7 +523,7 @@ def test_compose_active_tools_includes_local_tool():
 
 
 def test_compose_active_commands_merges_local():
-    from vtx.agent.agents.api import CommandOutcome
+    from ctx.agent.agents.api import CommandOutcome
 
     def _make_handler(s: str):
         def _h(args: str) -> CommandOutcome:
@@ -553,7 +552,7 @@ def test_compose_active_commands_merges_local():
 
 
 def test_when_predicate_matches_substring():
-    from vtx.coding_agent.agents.api import _when_predicate
+    from ctx.coding_agent.agents.api import _when_predicate
 
     pred = _when_predicate("command matches 'rm -rf'")
     assert pred({"command": "rm -rf /tmp"})
@@ -561,7 +560,7 @@ def test_when_predicate_matches_substring():
 
 
 def test_when_predicate_equality():
-    from vtx.coding_agent.agents.api import _when_predicate
+    from ctx.coding_agent.agents.api import _when_predicate
 
     pred = _when_predicate("name == 'tool_call'")
     assert pred({"name": "tool_call"})
@@ -569,7 +568,7 @@ def test_when_predicate_equality():
 
 
 def test_when_predicate_unsupported_expression_raises():
-    from vtx.coding_agent.agents.api import _when_predicate
+    from ctx.coding_agent.agents.api import _when_predicate
 
     with pytest.raises(ValueError, match="unsupported"):
         _when_predicate("command contains 'rm'")
@@ -582,7 +581,7 @@ def test_when_predicate_unsupported_expression_raises():
 
 def test_extension_register_local_tool(tmp_path: Path):
     """The cross-agent local_tool API in ExtensionAPI."""
-    from vtx.plugins.extensions import load_extension
+    from ctx.plugins.extensions import load_extension
 
     ext = tmp_path / "ext.py"
     ext.write_text(
@@ -611,7 +610,7 @@ def test_extension_register_local_tool(tmp_path: Path):
 
 
 def test_agent_events_in_all_events():
-    from vtx.plugins.event_contract import ALL_EVENTS
+    from ctx.plugins.event_contract import ALL_EVENTS
 
     assert AGENT_ACTIVATED in ALL_EVENTS
     assert AGENT_CHANGED in ALL_EVENTS
@@ -698,7 +697,7 @@ def test_load_agent_wraps_callable_tools(tmp_path: Path):
     agent_file.write_text(
         dedent(
             """
-            from vtx.coding_agent.agents import AgentDef
+            from ctx.coding_agent.agents import AgentDef
             def hello(name: str) -> str:
                 \"\"\"Say hello.\"\"\"
                 return f"hi {name}"
@@ -715,14 +714,14 @@ def test_load_agent_wraps_callable_tools(tmp_path: Path):
 
 def test_load_agent_wraps_basetool_tools(tmp_path: Path):
     """A pre-built BaseTool in ``AGENT.tools`` is accepted directly."""
-    from vtx.coding_agent.tools import ReadTool
+    from ctx.coding_agent.tools import ReadTool
 
     agent_file = tmp_path / "raw2.py"
     agent_file.write_text(
         dedent(
             """
-            from vtx.coding_agent.agents import AgentDef
-            from vtx.coding_agent.tools import ReadTool
+            from ctx.coding_agent.agents import AgentDef
+            from ctx.coding_agent.tools import ReadTool
             AGENT = AgentDef(name="raw2", description="x", tools=[ReadTool()])
             """
         ).strip()
@@ -769,6 +768,6 @@ def test_registry_tool_group_cycle_no_groups():
 
 
 def test_tool_group_changed_event_in_all_events():
-    from vtx.plugins.event_contract import ALL_EVENTS, TOOL_GROUP_CHANGED
+    from ctx.plugins.event_contract import ALL_EVENTS, TOOL_GROUP_CHANGED
 
     assert TOOL_GROUP_CHANGED in ALL_EVENTS

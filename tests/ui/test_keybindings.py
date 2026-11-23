@@ -1,6 +1,5 @@
+from ctx.tui.app import Ctx
 from textual.binding import Binding
-
-from vtx.tui.app import Vtx
 
 
 def _binding_key_and_action(binding) -> tuple[str, str]:
@@ -11,7 +10,7 @@ def _binding_key_and_action(binding) -> tuple[str, str]:
 
 
 def test_thinking_and_permission_mode_keybindings():
-    bindings = dict(_binding_key_and_action(binding) for binding in Vtx.BINDINGS)
+    bindings = dict(_binding_key_and_action(binding) for binding in Ctx.BINDINGS)
 
     assert bindings["ctrl+t"] == "cycle_thinking_level"
     assert bindings["ctrl+o"] == "toggle_tool_output"
@@ -25,6 +24,6 @@ def test_thinking_and_permission_mode_keybindings():
 
 
 def test_agent_keybindings():
-    bindings = dict(_binding_key_and_action(binding) for binding in Vtx.BINDINGS)
+    bindings = dict(_binding_key_and_action(binding) for binding in Ctx.BINDINGS)
     # Shift+Tab is the canonical "cycle handoff agent" binding.
     assert bindings["shift+tab"] == "cycle_agent"

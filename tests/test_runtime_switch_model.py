@@ -1,9 +1,8 @@
 import pytest
-
-from vtx.agent.runtime import ConversationRuntime, create_provider
-from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-from vtx.ai.models import ApiType
-from vtx.protocol.types import Message, ToolDefinition
+from ctx.agent.runtime import ConversationRuntime, create_provider
+from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig
+from ctx.ai.models import ApiType
+from ctx.protocol.types import Message, ToolDefinition
 
 
 class _FakeProvider(BaseProvider):
@@ -90,7 +89,7 @@ def test_switch_model_recreates_provider_when_base_url_changes(monkeypatch, tmp_
     )
     runtime = _runtime_with_provider(provider1)
 
-    from vtx.ai.models import Model
+    from ctx.ai.models import Model
 
     new_model = Model(
         id="deepseek-chat",
@@ -120,7 +119,7 @@ def test_switch_model_reuses_provider_when_base_url_unchanged(monkeypatch, tmp_p
     runtime = _runtime_with_provider(provider1)
     original_provider = runtime.provider
 
-    from vtx.ai.models import Model
+    from ctx.ai.models import Model
 
     new_model = Model(
         id="gpt-4o-mini",
@@ -148,7 +147,7 @@ def test_switch_model_to_different_api_type_creates_new_provider(monkeypatch, tm
     )
     runtime = _runtime_with_provider(provider1)
 
-    from vtx.ai.models import Model
+    from ctx.ai.models import Model
 
     new_model = Model(
         id="claude-sonnet-4-20250514",

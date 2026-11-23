@@ -3,10 +3,9 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-
-from vtx.ai.base import ProviderConfig
-from vtx.ai.providers.anthropic_sdk import AnthropicSDKProvider
-from vtx.protocol.types import AssistantMessage, StopReason, TextContent, UserMessage
+from ctx.ai.base import ProviderConfig
+from ctx.ai.providers.anthropic_sdk import AnthropicSDKProvider
+from ctx.protocol.types import AssistantMessage, StopReason, TextContent, UserMessage
 
 
 @pytest.fixture
@@ -46,7 +45,7 @@ def test_convert_assistant_message(anthropic_provider):
 
 
 def test_convert_tool_result(anthropic_provider):
-    from vtx.protocol.types import ToolResultMessage
+    from ctx.protocol.types import ToolResultMessage
 
     msg = ToolResultMessage(
         tool_call_id="tc-1", tool_name="bash", content=[TextContent(text="output")]
@@ -58,7 +57,7 @@ def test_convert_tool_result(anthropic_provider):
 
 
 def test_convert_tools(anthropic_provider):
-    from vtx.protocol.types import ToolDefinition
+    from ctx.protocol.types import ToolDefinition
 
     tools = [
         ToolDefinition(

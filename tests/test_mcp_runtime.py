@@ -13,9 +13,8 @@ import sys
 from pathlib import Path
 
 import pytest
-
-from vtx.agent.runtime import ConversationRuntime
-from vtx.plugins.bus import EventBus
+from ctx.agent.runtime import ConversationRuntime
+from ctx.plugins.bus import EventBus
 
 FIXTURES = Path(__file__).parent / "mcp" / "fixtures"
 STDIO_SERVER = FIXTURES / "stdio_server.py"
@@ -28,7 +27,7 @@ def _runtime(cwd: Path) -> ConversationRuntime:
 
 
 def _write_mcp(directory: Path, servers: dict) -> None:
-    path = directory / ".vtx" / "mcp.json"
+    path = directory / ".ctx" / "mcp.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"mcpServers": servers}), encoding="utf-8")
 
@@ -72,7 +71,7 @@ async def test_mcp_tools_reach_the_live_tool_set(tmp_path):
     runtime = _runtime(tmp_path)
     try:
         manager = runtime.ensure_mcp_manager()
-        from vtx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
+        from ctx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
 
         config, error = validate_mcp_server_config("echo", _echo_server())
         assert error is None, error
@@ -94,7 +93,7 @@ async def test_closing_the_runtime_closes_every_server(tmp_path):
     """A leaked stdio server is a leaked process holding a pipe."""
     runtime = _runtime(tmp_path)
     manager = runtime.ensure_mcp_manager()
-    from vtx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
+    from ctx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
 
     config, error = validate_mcp_server_config("echo", _echo_server())
     assert error is None, error

@@ -9,9 +9,8 @@ invisible to the suite that existed before.
 from __future__ import annotations
 
 import pytest
-
-from vtx.coding_agent.tools.codemode import _render_value
-from vtx.tui.formatting import find_stable_block_boundary, format_markdown
+from ctx.coding_agent.tools.codemode import _render_value
+from ctx.tui.formatting import find_stable_block_boundary, format_markdown
 
 
 def render(text: str, width: int = 44) -> list[str]:

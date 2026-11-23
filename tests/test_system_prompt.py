@@ -1,7 +1,7 @@
-from vtx.agent.context import Context
-from vtx.agent.prompts import build_system_prompt
-from vtx.coding_agent.tools import all_tools
-from vtx.core.config import Config, reset_config, set_config
+from ctx.agent.context import Context
+from ctx.agent.prompts import build_system_prompt
+from ctx.coding_agent.tools import all_tools
+from ctx.core.config import Config, reset_config, set_config
 
 
 def test_system_prompt_includes_guidelines():
@@ -16,7 +16,7 @@ def test_system_prompt_includes_guidelines():
     assert "edit (not sed/awk)" in prompt
     assert "write for new files/rewrites" in prompt
     assert "bash for git/builds/tests/scripts" in prompt
-    assert "Session logs: JSONL in ~/.vtx/sessions" in prompt
+    assert "Session logs: JSONL in ~/.ctx/sessions" in prompt
     # Exactly one tool-usage section header.
     assert prompt.count("# Tool usage\n\n") == 1
     tool_usage = prompt.split("# Tool usage", 1)[1]

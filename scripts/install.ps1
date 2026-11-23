@@ -20,7 +20,7 @@ Write-Host ""
 Write-Host -Object $(
 @"
 ┌─────────────────────────────────────────────────────────┐
-│              vtx-coding-agent installer                 │
+│              ctx-code installer                 │
 ├─────────────────────────────────────────────────────────┤
 │  Minimalist coding agent harness                       │
 └─────────────────────────────────────────────────────────┘
@@ -41,7 +41,7 @@ if ($ActiveVenv -and (Test-Path "$ActiveVenv\Scripts\python.exe")) {
 
 if ($InstallTarget -eq "") {
     Write-Host "Choose installation type:" -ForegroundColor Cyan
-    Write-Host "  1) Managed venv at `$env:LOCALAPPDATA\vtx\venv (isolated, recommended)"
+    Write-Host "  1) Managed venv at `$env:LOCALAPPDATA\ctx\venv (isolated, recommended)"
     Write-Host "  2) Global install (system/user Python)"
     Write-Host ""
 
@@ -54,7 +54,7 @@ if ($InstallTarget -eq "") {
     switch ($TargetChoice) {
         "1" {
             $InstallTarget = "managed"
-            $VenvDir = "$env:LOCALAPPDATA\vtx\venv"
+            $VenvDir = "$env:LOCALAPPDATA\ctx\venv"
         }
         "2" {
             $InstallTarget = "global"
@@ -129,7 +129,7 @@ if ($NonInteractive) {
 switch ($SourceChoice) {
     "1" {
         Write-Info "Installing stable version from PyPI..."
-        Invoke-Pip @("install", "--upgrade", "vtx-coding-agent")
+        Invoke-Pip @("install", "--upgrade", "ctx-code")
     }
     "2" {
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -137,7 +137,7 @@ switch ($SourceChoice) {
             Write-Info "Install git first, or switch to the PyPI option."
         }
         Write-Info "Installing latest from GitHub..."
-        Invoke-Pip @("install", "--upgrade", "git+https://github.com/OEvortex/vtx-coding-agent.git@main")
+        Invoke-Pip @("install", "--upgrade", "git+https://github.com/OEvortex/ctx-code.git@main")
     }
     default {
         Write-Err "Invalid choice. Exiting."
@@ -147,26 +147,26 @@ switch ($SourceChoice) {
 
 # Link command on PATH for managed installs
 if ($InstallTarget -eq "managed") {
-    $CommandLinkDir = "$env:LOCALAPPDATA\vtx\bin"
+    $CommandLinkDir = "$env:LOCALAPPDATA\ctx\bin"
     if (-not (Test-Path $CommandLinkDir)) {
         New-Item -ItemType Directory -Force -Path $CommandLinkDir | Out-Null
     }
 
-    $vtxTarget = Join-Path $VenvDir "Scripts\vtx.exe"
-    $vtxLink = Join-Path $CommandLinkDir "vtx.exe"
-    if (Test-Path $vtxTarget) {
-        if (Test-Path $vtxLink) { Remove-Item $vtxLink -Force }
-        New-Item -ItemType SymbolicLink -Path $vtxLink -Target $vtxTarget -ErrorAction SilentlyContinue | Out-Null
+    $ctxTarget = Join-Path $VenvDir "Scripts\ctx.exe"
+    $ctxLink = Join-Path $CommandLinkDir "ctx.exe"
+    if (Test-Path $ctxTarget) {
+        if (Test-Path $ctxLink) { Remove-Item $ctxLink -Force }
+        New-Item -ItemType SymbolicLink -Path $ctxLink -Target $ctxTarget -ErrorAction SilentlyContinue | Out-Null
     }
 
     $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($currentPath -notlike "*$CommandLinkDir*") {
         [Environment]::SetEnvironmentVariable("Path", "$currentPath;$CommandLinkDir", "User")
-        Write-Warn "$CommandLinkDir added to your user PATH. Restart your terminal to use 'vtx'."
+        Write-Warn "$CommandLinkDir added to your user PATH. Restart your terminal to use 'ctx'."
     } else {
-        Write-Success "Vtx installed successfully. Run 'vtx' to start."
+        Write-Success "Ctx installed successfully. Run 'ctx' to start."
     }
 } else {
     Write-Host ""
-    Write-Success "Vtx installed successfully. Run 'vtx' to start."
+    Write-Success "Ctx installed successfully. Run 'ctx' to start."
 }

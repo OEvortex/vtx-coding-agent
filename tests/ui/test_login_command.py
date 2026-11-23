@@ -1,11 +1,10 @@
 from contextlib import contextmanager
 
 import pytest
-
-from vtx.tui.commands import CommandsMixin
-from vtx.tui.commands import auth as commands
-from vtx.tui.floating_list import ListItem
-from vtx.tui.selection_mode import SelectionMode
+from ctx.tui.commands import CommandsMixin
+from ctx.tui.commands import auth as commands
+from ctx.tui.floating_list import ListItem
+from ctx.tui.selection_mode import SelectionMode
 
 
 class FakeChat:
@@ -163,8 +162,8 @@ def test_login_method_oauth_shows_only_oauth_providers(monkeypatch):
 
 def test_login_method_apikey_excludes_keyless_providers(monkeypatch):
     """Keyless providers belong in their own sub-picker, not the API-key one."""
-    from vtx.ai.oauth.dynamic import DynamicProviderStatus
-    from vtx.ai.provider_catalog import ProviderInfo
+    from ctx.ai.oauth.dynamic import DynamicProviderStatus
+    from ctx.ai.provider_catalog import ProviderInfo
 
     fake = FakeCommands()
     monkeypatch.setattr(
@@ -211,7 +210,7 @@ def test_login_method_apikey_excludes_keyless_providers(monkeypatch):
 
 
 def test_login_method_keyless_shows_only_keyless_providers(monkeypatch):
-    from vtx.ai.provider_catalog import ProviderInfo
+    from ctx.ai.provider_catalog import ProviderInfo
 
     fake = FakeCommands()
     monkeypatch.setattr(
@@ -264,8 +263,8 @@ def test_select_keyless_provider_refreshes_models(monkeypatch):
 
 
 def test_select_apikey_provider_prompts_for_key(monkeypatch):
-    from vtx.ai.oauth.dynamic import DynamicProviderStatus
-    from vtx.ai.provider_catalog import ProviderInfo
+    from ctx.ai.oauth.dynamic import DynamicProviderStatus
+    from ctx.ai.provider_catalog import ProviderInfo
 
     fake = FakeCommands()
     monkeypatch.setattr(

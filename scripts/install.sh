@@ -77,7 +77,7 @@ prompt_read() {
 echo -e "${CYAN}${BOLD}"
 cat <<'EOF'
 ┌─────────────────────────────────────────────────────────┐
-│              vtx-coding-agent installer                 │
+│              ctx-code installer                 │
 ├─────────────────────────────────────────────────────────┤
 │  Minimalist coding agent harness                       │
 └─────────────────────────────────────────────────────────┘
@@ -172,7 +172,7 @@ esac
 
 # Step 2: Choose installation target
 INSTALL_TARGET=""
-MANAGED_VENV="$HOME/.vtx/venv"
+MANAGED_VENV="$HOME/.ctx/venv"
 
 if [ -n "$ACTIVE_VENV" ]; then
     log_info "Active virtual environment detected: $ACTIVE_VENV"
@@ -180,7 +180,7 @@ if [ -n "$ACTIVE_VENV" ]; then
 else
     echo ""
     echo -e "${CYAN}${BOLD}Choose installation target:${NC}"
-    echo "  1) Managed venv at ~/.vtx/venv (isolated, recommended)"
+    echo "  1) Managed venv at ~/.ctx/venv (isolated, recommended)"
     echo "  2) Global install (user/system Python)"
     echo ""
     prompt_read "Enter choice" "1" TARGET_CHOICE
@@ -213,10 +213,10 @@ if [ "$INSTALL_SOURCE" = "github" ]; then
         fi
     fi
     log_info "Installing latest from GitHub (main branch)..."
-    run_pip --upgrade "git+https://github.com/OEvortex/vtx-coding-agent.git@main"
+    run_pip --upgrade "git+https://github.com/OEvortex/ctx-code.git@main"
 else
     log_info "Installing stable version from PyPI..."
-    run_pip --upgrade vtx-coding-agent
+    run_pip --upgrade ctx-code
 fi
 
 # Step 4: Post-install linking
@@ -228,11 +228,11 @@ if [ "$INSTALL_TARGET" = "managed" ]; then
     fi
 
     mkdir -p "$COMMAND_LINK_DIR"
-    ln -sf "$MANAGED_VENV/bin/vtx" "$COMMAND_LINK_DIR/vtx"
+    ln -sf "$MANAGED_VENV/bin/ctx" "$COMMAND_LINK_DIR/ctx"
 
     case ":${PATH}:" in
         *":${COMMAND_LINK_DIR}:"*)
-            log_success "Vtx installed successfully. Run 'vtx' to start." ;;
+            log_success "Ctx installed successfully. Run 'ctx' to start." ;;
         *)
             echo ""
             log_warn "${COMMAND_LINK_DIR} is not on your PATH."
@@ -249,10 +249,10 @@ else
         COMMAND_LINK_DIR="$HOME/.local/bin"
     fi
 
-    if [ -f "$COMMAND_LINK_DIR/vtx" ]; then
-        log_success "Vtx installed successfully. Run 'vtx' to start."
+    if [ -f "$COMMAND_LINK_DIR/ctx" ]; then
+        log_success "Ctx installed successfully. Run 'ctx' to start."
     else
-        log_warn "Installation completed, but 'vtx' was not found at $COMMAND_LINK_DIR/vtx"
+        log_warn "Installation completed, but 'ctx' was not found at $COMMAND_LINK_DIR/ctx"
         log_info "Add ${COMMAND_LINK_DIR} to your PATH and try again."
     fi
 fi

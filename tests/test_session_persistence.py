@@ -1,8 +1,7 @@
 import json
 
 import pytest
-
-from vtx.agent.session import (
+from ctx.agent.session import (
     CompactionEntry,
     CustomMessageEntry,
     MessageEntry,
@@ -11,7 +10,7 @@ from vtx.agent.session import (
     SessionInfoEntry,
     ThinkingLevelChangeEntry,
 )
-from vtx.protocol.types import (
+from ctx.protocol.types import (
     AssistantMessage,
     StopReason,
     TextContent,
@@ -49,7 +48,7 @@ def thinking_message():
 
 
 def test_round_trip_basic_messages(tmp_path, user_message, assistant_message, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     # Create session
     session = Session.create("/test/project", system_prompt="test system prompt")
@@ -87,7 +86,7 @@ def test_round_trip_basic_messages(tmp_path, user_message, assistant_message, mo
 
 
 def test_round_trip_with_thinking(tmp_path, thinking_message, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_message(thinking_message)
@@ -104,7 +103,7 @@ def test_round_trip_with_thinking(tmp_path, thinking_message, monkeypatch):
 
 
 def test_round_trip_all_entry_types(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -155,7 +154,7 @@ def test_round_trip_all_entry_types(tmp_path, monkeypatch):
 
 
 def test_round_trip_parent_id_linking(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -181,7 +180,7 @@ def test_round_trip_parent_id_linking(tmp_path, monkeypatch):
 
 
 def test_round_trip_session_properties(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create(
         "/test/project", provider="anthropic", model_id="claude-3-opus", thinking_level="high"
@@ -211,7 +210,7 @@ def test_round_trip_session_properties(tmp_path, monkeypatch):
 
 
 def test_round_trip_get_entry_by_id(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -251,7 +250,7 @@ def test_round_trip_no_persistence_mode(tmp_path, monkeypatch):
 
 
 def test_round_trip_empty_session(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -275,7 +274,7 @@ def test_round_trip_empty_session(tmp_path, monkeypatch):
 
 
 def test_round_trip_multiple_messages(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -301,7 +300,7 @@ def test_round_trip_multiple_messages(tmp_path, monkeypatch):
 
 
 def test_round_trip_with_tool_calls(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -329,7 +328,7 @@ def test_round_trip_with_tool_calls(tmp_path, monkeypatch):
 
 
 def test_round_trip_session_file_format(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -362,7 +361,7 @@ def test_round_trip_session_file_format(tmp_path, monkeypatch):
 
 
 def test_round_trip_unique_entry_ids(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -388,7 +387,7 @@ def test_round_trip_unique_entry_ids(tmp_path, monkeypatch):
 
 
 def test_round_trip_mixed_content_types(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -426,7 +425,7 @@ def test_round_trip_mixed_content_types(tmp_path, monkeypatch):
 
 
 def test_round_trip_session_info_property(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
 
@@ -448,7 +447,7 @@ def test_round_trip_session_info_property(tmp_path, monkeypatch):
 
 
 def test_round_trip_model_property_changes(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project", provider="openai", model_id="gpt-3.5")
 
@@ -470,7 +469,7 @@ def test_round_trip_model_property_changes(tmp_path, monkeypatch):
 
 
 def test_round_trip_model_base_url_persistence(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project", provider="openai", model_id="gpt-3.5")
     session.append_model_change("openai", "custom-model", "http://localhost:8080/v1")
@@ -507,7 +506,7 @@ def test_get_last_assistant_text_returns_none_when_latest_has_no_text():
 
 
 def test_continue_by_id_exact_match(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_message(AssistantMessage(content=[TextContent(text="Response")]))
@@ -517,7 +516,7 @@ def test_continue_by_id_exact_match(tmp_path, monkeypatch):
 
 
 def test_continue_by_id_unique_prefix_match(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_message(AssistantMessage(content=[TextContent(text="Response")]))
@@ -542,7 +541,7 @@ def test_load_old_session_without_system_prompt(tmp_path):
 
 
 def test_ensure_persisted_writes_session_without_assistant(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_custom_message("handoff_backlink", "origin", display=False)
@@ -560,7 +559,7 @@ def test_ensure_persisted_writes_session_without_assistant(tmp_path, monkeypatch
 
 
 def test_append_after_ensure_persisted_backfills_skipped_entries(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_custom_message("handoff_backlink", "origin", display=False)
@@ -591,7 +590,7 @@ def test_append_after_ensure_persisted_backfills_skipped_entries(tmp_path, monke
 
 
 def test_continue_by_id_not_found(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_message(AssistantMessage(content=[TextContent(text="Response")]))
@@ -601,7 +600,7 @@ def test_continue_by_id_not_found(tmp_path, monkeypatch):
 
 
 def test_continue_recent_uses_system_prompt_for_new_session(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.continue_recent(
         "/test/project",
@@ -635,7 +634,7 @@ def test_extract_preview_from_regular_user_message():
 
 
 def test_build_session_info_extracts_parent_session_id(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     parent = Session.create("/test/project")
     parent.append_message(AssistantMessage(content=[TextContent(text="hi")]))
@@ -664,7 +663,7 @@ def test_build_session_info_extracts_parent_session_id(tmp_path, monkeypatch):
 
 
 def test_session_list_includes_parent_session_id(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     parent = Session.create("/test/project")
     parent.append_message(UserMessage(content="parent task"))
@@ -696,7 +695,7 @@ def test_checkpoint_survives_crash_during_first_turn(tmp_path, monkeypatch):
     message existed, so a crash during turn 1 left no session file on disk at
     all -- the user's prompt and any tool results produced so far were gone.
     """
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_message(UserMessage(content="fix the bug"))
@@ -722,7 +721,7 @@ def test_clean_finish_does_not_offer_resume_after_reopen(tmp_path, monkeypatch):
     therefore still looked interrupted on the next open, and the model got a
     bogus "resume from where you left off" prompt.
     """
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_message(UserMessage(content="go"))
@@ -737,7 +736,7 @@ def test_clean_finish_does_not_offer_resume_after_reopen(tmp_path, monkeypatch):
 
 def test_only_the_newest_checkpoint_decides_resume(tmp_path, monkeypatch):
     """A newer inactive tombstone wins over an older active checkpoint."""
-    monkeypatch.setattr("vtx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+    monkeypatch.setattr("ctx.agent.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 
     session = Session.create("/test/project")
     session.append_message(UserMessage(content="go"))

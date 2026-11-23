@@ -3,3 +3,9 @@ exclude = [
     "tests/",
     ".venv/",
 ]
+
+[environment]
+extra-paths = [
+    "packages/ctx/src",
+    "packages/code/src",
+]

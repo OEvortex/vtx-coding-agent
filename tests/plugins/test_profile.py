@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.plugins import DEFAULT_PROFILE, PatchError, dump_config, load_profile
-from vtx.plugins.builtins import BUNDLES, PROFILE_TEMPLATES
-from vtx.plugins.profile import init_profile, profile_dir, profile_file, read_bundles
+from ctx.plugins import DEFAULT_PROFILE, PatchError, dump_config, load_profile
+from ctx.plugins.builtins import BUNDLES, PROFILE_TEMPLATES
+from ctx.plugins.profile import init_profile, profile_dir, profile_file, read_bundles
 
 
 def test_shipped_profiles_stack_only_known_bundles():
@@ -32,14 +31,14 @@ def test_every_bundle_row_is_individually_addressable():
 
 
 def test_load_profile_composes_bundles_in_order(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     rows = load_profile("default")
     assert rows[0].id == "tools"
     assert {row.id for row in rows} >= {"tools", "tool-read", "ui", "commands"}
 
 
 def test_load_profile_prefers_the_profiles_own_bundle_list(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     directory = tmp_path / "profiles" / "mine"
     directory.mkdir(parents=True)
     (directory / "bundle.txt").write_text("minimal\n", encoding="utf-8")
@@ -48,7 +47,7 @@ def test_load_profile_prefers_the_profiles_own_bundle_list(tmp_path, monkeypatch
 
 
 def test_a_profile_unknown_bundle_fails_loud(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     directory = tmp_path / "profiles" / "bad"
     directory.mkdir(parents=True)
     (directory / "bundle.txt").write_text("nope\n", encoding="utf-8")
@@ -57,7 +56,7 @@ def test_a_profile_unknown_bundle_fails_loud(tmp_path, monkeypatch):
 
 
 def test_the_profile_patch_layer_applies_after_the_bundles(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     directory = tmp_path / "profiles" / "p"
     directory.mkdir(parents=True)
     (directory / "bundle.txt").write_text("base\n", encoding="utf-8")
@@ -72,7 +71,7 @@ def test_the_profile_patch_layer_applies_after_the_bundles(tmp_path, monkeypatch
 
 
 def test_a_cli_patch_overlay_applies_after_the_profile_layer(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     overlay = tmp_path / "overlay.yml"
     overlay.write_text("- remove:\n    - tool-grep\n", encoding="utf-8")
     rows = {row.id: row for row in load_profile("default", [overlay])}
@@ -80,7 +79,7 @@ def test_a_cli_patch_overlay_applies_after_the_profile_layer(tmp_path, monkeypat
 
 
 def test_a_profile_patch_must_be_a_list(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     directory = tmp_path / "profiles" / "p"
     directory.mkdir(parents=True)
     (directory / "bundle.txt").write_text("base\n", encoding="utf-8")
@@ -90,14 +89,14 @@ def test_a_profile_patch_must_be_a_list(tmp_path, monkeypatch):
 
 
 def test_dump_config_returns_one_record_per_row(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     records = dump_config("default")
     assert records
     assert all({"id", "name", "disabled", "config"} <= set(r) for r in records)
 
 
 def test_init_profile_writes_both_files(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     directory = init_profile("fresh")
     assert (directory / "bundle.txt").exists()
     assert (directory / "cordis.yml").exists()
@@ -105,7 +104,7 @@ def test_init_profile_writes_both_files(tmp_path, monkeypatch):
 
 
 def test_a_profile_name_cannot_escape_the_profiles_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     with pytest.raises(PatchError, match="invalid profile name"):
         profile_dir("../escape")
     with pytest.raises(PatchError, match="invalid profile name"):
@@ -113,5 +112,5 @@ def test_a_profile_name_cannot_escape_the_profiles_dir(tmp_path, monkeypatch):
 
 
 def test_read_bundles_falls_back_to_the_shipped_template(tmp_path, monkeypatch):
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     assert read_bundles("headless") == ["base"]

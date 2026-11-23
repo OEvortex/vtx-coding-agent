@@ -9,8 +9,7 @@ taxonomy at all -- because the configuration reads as if it were obeyed.
 from __future__ import annotations
 
 import pytest
-
-from vtx.mcp.exposure import (
+from ctx.mcp.exposure import (
     DECLARED_TO_MODEL,
     EXPOSURES,
     SCRIPT_CALLABLE,
@@ -134,7 +133,7 @@ def test_the_package_re_exports_what_a_host_needs():
     The names are re-exported so a host making its own exposure decision reads
     the same taxonomy the runtime does, rather than re-deriving it and drifting.
     """
-    import vtx.mcp as mcp
+    import ctx.mcp as mcp
 
     missing = [name for name in mcp.__all__ if not hasattr(mcp, name)]
     assert missing == []
@@ -156,7 +155,7 @@ def test_a_wildcard_key_is_accepted_by_the_parser():
     documentation a lie. The whole resolution machinery is unreachable if the
     only way to spell a pattern is refused at the front door.
     """
-    from vtx.mcp.config import validate_mcp_server_config
+    from ctx.mcp.config import validate_mcp_server_config
 
     config, error = validate_mcp_server_config(
         "docs",
@@ -175,7 +174,7 @@ def test_a_wildcard_key_is_accepted_by_the_parser():
 
 @pytest.mark.parametrize("key", ["*", "delete_*", "get_?", "get_[a-z]*", "a-b", "x1"])
 def test_valid_pattern_keys_are_accepted(key):
-    from vtx.mcp.config import validate_mcp_server_config
+    from ctx.mcp.config import validate_mcp_server_config
 
     config, error = validate_mcp_server_config(
         "s", {"command": "x", "tool_exposure": {key: "hidden"}}
@@ -186,7 +185,7 @@ def test_valid_pattern_keys_are_accepted(key):
 
 @pytest.mark.parametrize("key", ["has space", "a.b", "quote'", "semi;colon"])
 def test_keys_that_are_neither_a_name_nor_a_pattern_are_rejected(key):
-    from vtx.mcp.config import validate_mcp_server_config
+    from ctx.mcp.config import validate_mcp_server_config
 
     config, error = validate_mcp_server_config(
         "s", {"command": "x", "tool_exposure": {key: "hidden"}}

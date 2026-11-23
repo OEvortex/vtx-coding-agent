@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.plugins import boot
-from vtx.plugins.builtins.commands import CommandService
-from vtx.plugins.services import MCPService
-from vtx.plugins.tui import BUILTIN_COMMANDS, TUIChannel, install, uninstall
+from ctx.plugins import boot
+from ctx.plugins.builtins.commands import CommandService
+from ctx.plugins.services import MCPService
+from ctx.plugins.tui import BUILTIN_COMMANDS, TUIChannel, install, uninstall
 
 # --------------------------------------------------------------------------
 # ctx.mcp

@@ -10,8 +10,7 @@ import time
 from pathlib import Path
 
 import pytest
-
-from vtx.ai.context_length import CACHE_TTL_SECONDS, ContextLengthManager
+from ctx.ai.context_length import CACHE_TTL_SECONDS, ContextLengthManager
 
 CATALOG = {
     "xai": {
@@ -43,7 +42,7 @@ FRESH_CATALOG = {
 @pytest.fixture
 def cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A manager whose cache file lives under ``tmp_path`` (never the real one)."""
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     return ContextLengthManager(), tmp_path / "models_dev_limits.json"
 
 
@@ -71,7 +70,7 @@ def _blocking_fetch(monkeypatch: pytest.MonkeyPatch, payload: dict) -> threading
         release.wait(timeout=10)
         return _Response()
 
-    monkeypatch.setattr("vtx.ai.context_length.urlopen", _fake_urlopen)
+    monkeypatch.setattr("ctx.ai.context_length.urlopen", _fake_urlopen)
     return release
 
 

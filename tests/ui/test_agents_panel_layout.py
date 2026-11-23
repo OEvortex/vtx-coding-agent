@@ -11,12 +11,11 @@ import asyncio
 import time
 
 import pytest
-
-from vtx.tui import agents_panel
-from vtx.tui.agents_panel import AgentsPanel
-from vtx.tui.app import Vtx
-from vtx.tui.subagents import REGISTRY
-from vtx.tui.widgets import InfoBar
+from ctx.tui import agents_panel
+from ctx.tui.agents_panel import AgentsPanel
+from ctx.tui.app import Ctx
+from ctx.tui.subagents import REGISTRY
+from ctx.tui.widgets import InfoBar
 
 
 @pytest.fixture
@@ -26,7 +25,7 @@ def clean_registry():
     REGISTRY.clear()
 
 
-def _start(app: Vtx, call_id: str, description: str) -> None:
+def _start(app: Ctx, call_id: str, description: str) -> None:
     """Dispatch a sub-agent the way the Task tool does."""
     app._task_progress_callback(
         call_id, {"kind": "subagent_start", "subagent": "Explore", "description": description}
@@ -35,7 +34,7 @@ def _start(app: Vtx, call_id: str, description: str) -> None:
 
 @pytest.mark.asyncio
 async def test_panel_is_hidden_with_no_subagents(tmp_path, clean_registry) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     async with app.run_test(size=(100, 30)):
         panel = app.query_one("#agents-panel", AgentsPanel)
         assert not panel.has_class("-visible")
@@ -46,7 +45,7 @@ async def test_panel_is_hidden_with_no_subagents(tmp_path, clean_registry) -> No
 async def test_panel_shows_a_row_per_subagent_and_sits_above_the_input(
     tmp_path, clean_registry
 ) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     async with app.run_test(size=(100, 30)) as pilot:
         panel = app.query_one("#agents-panel", AgentsPanel)
         input_box = app.query_one("#input-box")
@@ -76,7 +75,7 @@ async def test_panel_shows_a_row_per_subagent_and_sits_above_the_input(
 
 @pytest.mark.asyncio
 async def test_panel_counts_reach_the_info_bar(tmp_path, clean_registry) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     async with app.run_test(size=(100, 30)) as pilot:
         footer = app.query_one("#compact-footer", InfoBar)
 
@@ -101,7 +100,7 @@ async def test_panel_counts_reach_the_info_bar(tmp_path, clean_registry) -> None
 
 @pytest.mark.asyncio
 async def test_panel_retires_once_everything_lands(tmp_path, clean_registry) -> None:
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     async with app.run_test(size=(100, 30)) as pilot:
         panel = app.query_one("#agents-panel", AgentsPanel)
 
@@ -117,7 +116,7 @@ async def test_panel_retires_once_everything_lands(tmp_path, clean_registry) -> 
         assert panel.has_class("-visible")
 
         # ...then the strip gives its space back.
-        from vtx.tui.subagents import DONE_LINGER_SECONDS
+        from ctx.tui.subagents import DONE_LINGER_SECONDS
 
         run = REGISTRY.runs()[0]
         run.ended_at = time.monotonic() - DONE_LINGER_SECONDS - 1
@@ -139,11 +138,11 @@ async def test_panel_unpins_itself_after_the_linger_window(
     """
     monkeypatch.setattr(agents_panel, "DONE_LINGER_SECONDS", 0.2)
 
-    app = Vtx(cwd=str(tmp_path))
+    app = Ctx(cwd=str(tmp_path))
     async with app.run_test(size=(100, 30)) as pilot:
         panel = app.query_one("#agents-panel", AgentsPanel)
 
-        _start(app, "t1", "Rate the VTX codebase")
+        _start(app, "t1", "Rate the CTX codebase")
         await pilot.pause()
         assert panel.has_class("-visible")
 

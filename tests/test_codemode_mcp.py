@@ -18,13 +18,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
-
-from vtx.agent.runtime import ConversationRuntime
-from vtx.agent.tools import get_all_tools
-from vtx.codemode import CodemodeSandbox, adapt_tools
-from vtx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
-from vtx.mcp.manager import McpManager
-from vtx.plugins.bus import EventBus
+from ctx.agent.runtime import ConversationRuntime
+from ctx.agent.tools import get_all_tools
+from ctx.codemode import CodemodeSandbox, adapt_tools
+from ctx.mcp.config import LoadedMcpConfig, validate_mcp_server_config
+from ctx.mcp.manager import McpManager
+from ctx.plugins.bus import EventBus
 
 FIXTURES = Path(__file__).parent / "mcp" / "fixtures"
 STDIO_SERVER = FIXTURES / "stdio_server.py"
@@ -37,7 +36,7 @@ def mounted():
     """The coding tools -- ``codemode`` included -- register through the plugin
     rows, so reading them from the registry needs a mounted composition rather
     than an import side effect."""
-    from vtx.plugins import boot
+    from ctx.plugins import boot
 
     host = boot()
     yield host
@@ -127,7 +126,7 @@ async def test_a_hidden_tool_is_callable_by_nobody(tmp_path):
         assert tools
         assert all(t.exposure == "hidden" for t in tools)
 
-    from vtx.coding_agent.tools.tool_search import ToolSearchTool
+    from ctx.coding_agent.tools.tool_search import ToolSearchTool
 
     # The registry is global, so a fresh instance sees whatever is registered;
     # `searchable()` draws from it and a bare registration with no MCP tools has
@@ -138,7 +137,7 @@ async def test_a_hidden_tool_is_callable_by_nobody(tmp_path):
 async def test_the_harness_tool_reaches_mcp_tools_through_the_runtime(tmp_path):
     # The end-to-end claim: a session with a connected server, using the
     # registered `codemode` tool, can call that server's tools from a script.
-    from vtx.coding_agent.tools.codemode import CodemodeParams
+    from ctx.coding_agent.tools.codemode import CodemodeParams
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
@@ -179,7 +178,7 @@ async def test_a_codemode_exposed_tool_is_not_declared_to_the_model(tmp_path, mo
     is still sent two hundred tool definitions per turn, which is the cost the
     exposure setting exists to remove.
     """
-    from vtx.agent.tools import get_tool_definitions
+    from ctx.agent.tools import get_tool_definitions
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()
@@ -210,7 +209,7 @@ async def test_a_per_tool_override_beats_the_server_exposure(tmp_path, monkeypat
     name beats the pattern, so the one tool the operator wants composed arrives
     through a script rather than as its own tool definition.
     """
-    from vtx.agent.tools import get_tool_definitions
+    from ctx.agent.tools import get_tool_definitions
 
     runtime = ConversationRuntime(
         cwd=str(tmp_path), model="gpt-test", tools=[], extensions=EventBus()

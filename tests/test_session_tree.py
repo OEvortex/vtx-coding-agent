@@ -1,5 +1,5 @@
-from vtx.agent.session import LeafEntry, MessageEntry, Session
-from vtx.protocol.types import AssistantMessage, StopReason, TextContent, UserMessage
+from ctx.agent.session import LeafEntry, MessageEntry, Session
+from ctx.protocol.types import AssistantMessage, StopReason, TextContent, UserMessage
 
 
 def test_tree_navigation_branches_without_overwriting(tmp_path, monkeypatch):

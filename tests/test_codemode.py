@@ -16,8 +16,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
-from vtx.codemode import (
+from ctx.codemode import (
     ARGS_PREVIEW_CHARS,
     CodemodeSandbox,
     CodemodeSourceError,
@@ -398,13 +397,13 @@ async def test_a_filesystem_error_is_a_script_error_not_a_denial():
 
 @pytest.mark.asyncio
 async def test_importing_the_harness_yields_an_unconnected_copy():
-    # vtx is installed, so a script *can* import the harness's modules -- the
+    # ctx is installed, so a script *can* import the harness's modules -- the
     # same way prime-agent's runtime exposes `rlm.repl.emit` to a cell on
     # purpose. What it cannot obtain is the host's live state: the running
     # agent, the session, the TUI and the injected tools exist only in the
     # other process, so a fresh import constructs a new, empty sandbox.
     result = await _sandbox().execute(
-        "import vtx.codemode.host as host\n"
+        "import ctx.codemode.host as host\n"
         "sandbox = host.CodemodeSandbox(tools=[])\n"
         "return sandbox.tools"
     )
@@ -649,7 +648,7 @@ def _load_sandbox_module():
     """Import the worker by path, the same way the host launches it."""
     import importlib.util
 
-    from vtx.codemode import SANDBOX_PATH
+    from ctx.codemode import SANDBOX_PATH
 
     spec = importlib.util.spec_from_file_location("_codemode_sandbox", SANDBOX_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -659,20 +658,20 @@ def _load_sandbox_module():
 
 def test_the_sandbox_imports_nothing_from_the_package():
     # This is what makes the ~30ms launch possible: `python -m` would import
-    # vtx/__init__, which pulls in the agent SDK and costs ~1.5s per execution.
+    # ctx/__init__, which pulls in the agent SDK and costs ~1.5s per execution.
     sandbox = _load_sandbox_module()
     leaked = [
         name
         for name, value in vars(sandbox).items()
-        if getattr(value, "__name__", "").startswith("vtx")
+        if getattr(value, "__name__", "").startswith("ctx")
     ]
-    assert not leaked, f"sandbox.py must not import from vtx: {leaked}"
+    assert not leaked, f"sandbox.py must not import from ctx: {leaked}"
 
 
 def test_diagnostic_kinds_match_across_the_wire():
     # The worker is launched by path and cannot import this package, so the
     # kinds exist on both sides. This is the test that keeps them honest.
-    from vtx.codemode import errors
+    from ctx.codemode import errors
 
     sandbox = _load_sandbox_module()
     assert set(sandbox.KINDS) == set(errors.KINDS)
@@ -764,7 +763,7 @@ async def test_closed_sandbox_refuses_execution():
 
 @pytest.mark.asyncio
 async def test_oversized_input_store_is_refused_before_spawning():
-    from vtx.codemode import MAX_STORE_VALUE_CHARS
+    from ctx.codemode import MAX_STORE_VALUE_CHARS
 
     result = await _sandbox().execute("return 1", store={"k": "x" * (MAX_STORE_VALUE_CHARS + 1)})
     assert not result.ok
@@ -781,8 +780,8 @@ def test_the_stall_kind_is_mirrored_in_both_processes():
     import re
     from pathlib import Path
 
-    from vtx.codemode import errors
-    from vtx.codemode.sandbox import STALLED
+    from ctx.codemode import errors
+    from ctx.codemode.sandbox import STALLED
 
     names = (
         "SCRIPT",
@@ -867,7 +866,7 @@ def test_a_record_the_host_never_answered_is_reported_as_cancelled():
     # builds a result. Guarded anyway: a row left "running" on a run that is
     # already over would spin forever, and the only thing standing between that
     # and a real report is this mapping.
-    from vtx.codemode.host import _Execution, _result_from_frame
+    from ctx.codemode.host import _Execution, _result_from_frame
 
     state = _Execution(call_budget=None, output_budget=None)
     state.by_id[1] = ToolCall(name="slow", status="running", args="{}")

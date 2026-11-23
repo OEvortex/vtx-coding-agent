@@ -2,14 +2,13 @@ import importlib
 from pathlib import Path
 
 import pytest
-
-from vtx.core import notify
-from vtx.core.config import Config, set_config
+from ctx.core import notify
+from ctx.core.config import Config, set_config
 
 # core/__init__ re-exports the notify() function, which shadows the
-# core.notify submodule for `import vtx.core.notify as mod`; resolve
+# core.notify submodule for `import ctx.core.notify as mod`; resolve
 # the module explicitly instead.
-mod = importlib.import_module("vtx.core.notify")
+mod = importlib.import_module("ctx.core.notify")
 
 
 @pytest.fixture(autouse=True)

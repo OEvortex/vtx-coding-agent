@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.plugins import Context, ServiceMissingError, plugin
-from vtx.plugins.context import STANDARD_KEYS
+from ctx.plugins import Context, ServiceMissingError, plugin
+from ctx.plugins.context import STANDARD_KEYS
 
 
 def test_provide_and_read_by_key():

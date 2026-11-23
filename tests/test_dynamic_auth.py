@@ -5,11 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import ctx.ai.oauth.dynamic as dynamic_oauth
 import pytest
-
-import vtx.ai.oauth.dynamic as dynamic_oauth
-from vtx.ai.base import ProviderConfig
-from vtx.ai.oauth.dynamic import (
+from ctx.ai.base import ProviderConfig
+from ctx.ai.oauth.dynamic import (
     clear_api_key,
     get_dynamic_api_key,
     get_dynamic_auth_path,
@@ -18,7 +17,7 @@ from vtx.ai.oauth.dynamic import (
     load_api_key,
     save_api_key,
 )
-from vtx.ai.providers.openai_sdk import OpenAISDKProvider
+from ctx.ai.providers.openai_sdk import OpenAISDKProvider
 
 
 @pytest.fixture(autouse=True)

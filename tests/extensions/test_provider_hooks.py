@@ -1,6 +1,6 @@
 """Tests for provider-level hooks (``before_provider_headers``/request).
 
-Covers the transport registry (:mod:`vtx.ai.provider_hooks`) and its bridge
+Covers the transport registry (:mod:`ctx.ai.provider_hooks`) and its bridge
 onto the extension EventBus.
 """
 
@@ -9,17 +9,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from vtx.ai import provider_hooks
-from vtx.ai.provider_hooks import (
+from ctx.ai import provider_hooks
+from ctx.ai.provider_hooks import (
     install_provider_bridge,
     prepare_request,
     register_headers_listener,
     register_request_listener,
     reset_listeners,
 )
-from vtx.plugins.bus import EventBus
-from vtx.plugins.event_contract import BEFORE_PROVIDER_HEADERS, BEFORE_PROVIDER_REQUEST
+from ctx.plugins.bus import EventBus
+from ctx.plugins.event_contract import BEFORE_PROVIDER_HEADERS, BEFORE_PROVIDER_REQUEST
 
 
 @pytest.fixture(autouse=True)
@@ -166,8 +165,8 @@ async def test_bridge_is_idempotent():
 
 @pytest.mark.asyncio
 async def test_extension_api_helper_registers_handler():
-    from vtx.plugins.api import ExtensionActions, ExtensionAPI, ExtensionRecord
-    from vtx.plugins.context import Context
+    from ctx.plugins.api import ExtensionActions, ExtensionAPI, ExtensionRecord
+    from ctx.plugins.context import Context
 
     bus = EventBus()
     record = ExtensionRecord("t", Path("/tmp/t.py"))

@@ -13,11 +13,10 @@ approval must not be reachable by a script, because a script has nobody to ask.
 from __future__ import annotations
 
 import pytest
+from ctx.agent.tools.base import BaseTool
+from ctx.coding_agent.tools.tool_search import ToolSearchTool
+from ctx.protocol.types import ToolResult
 from pydantic import BaseModel
-
-from vtx.agent.tools.base import BaseTool
-from vtx.coding_agent.tools.tool_search import ToolSearchTool
-from vtx.protocol.types import ToolResult
 
 
 class _Empty(BaseModel):
@@ -154,7 +153,7 @@ async def test_nothing_to_find_is_reported_as_such():
 @pytest.mark.asyncio
 async def test_an_empty_query_is_refused_rather_than_answered_with_nothing():
     # "Found nothing" would teach the model the wrong lesson: it asked for
-    # nothing. pi-mono throws; vtx answers with a failure the model can act on.
+    # nothing. pi-mono throws; ctx answers with a failure the model can act on.
     search = ToolSearchTool()
     search.tool_source = lambda: [_mcp_tool("mcp__docs__search", "Search the docs", "codemode")]
     result = await search.execute(_params("   "))
@@ -209,6 +208,6 @@ async def test_the_ui_body_caps_the_summary_names():
 
 
 def _params(query: str, limit: int = 8):
-    from vtx.coding_agent.tools.tool_search import ToolSearchParams
+    from ctx.coding_agent.tools.tool_search import ToolSearchParams
 
     return ToolSearchParams(query=query, limit=limit)

@@ -1,6 +1,6 @@
 """Focused tests for the bus face an extension handler is called through.
 
-``vtx.plugins.bus`` is a deprecation boundary: it adapts the composition's
+``ctx.plugins.bus`` is a deprecation boundary: it adapts the composition's
 :class:`EventHub` to the four-method shape the older call sites already use.
 The point of these tests is that the adapter is *transparent* — a handler
 written against the old contract keeps its exact semantics, in particular the
@@ -20,12 +20,11 @@ import asyncio
 import logging
 
 import pytest
+from ctx.plugins.api import ExtensionUIContext
+from ctx.plugins.bus import EventBus, ExtensionBus, HandlerContext
+from ctx.plugins.event_contract import ALL_EVENTS, TOOL_CALL, TOOL_RESULT
 
-from vtx.plugins.api import ExtensionUIContext
-from vtx.plugins.bus import EventBus, ExtensionBus, HandlerContext
-from vtx.plugins.event_contract import ALL_EVENTS, TOOL_CALL, TOOL_RESULT
-
-_BUS_LOG = "vtx.plugins.bus"
+_BUS_LOG = "ctx.plugins.bus"
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +54,7 @@ def test_a_rebuilt_handler_is_not_mistaken_for_the_one_it_replaced(recycle_handl
     place reproduces the collision CPython hands out for free; the new handler
     must still be judged on its own signature.
     """
-    from vtx.plugins.bus import _accepts_third
+    from ctx.plugins.bus import _accepts_third
 
     def old(event, payload, ctx):
         return None

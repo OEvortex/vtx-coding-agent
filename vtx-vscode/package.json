@@ -2,7 +2,7 @@
   "name": "vtx-vscode",
   "displayName": "Vtx for VS Code",
   "description": "A native chat panel for the Vtx CLI, powered by the Agent Client Protocol. Streaming replies, per workspace sessions, and trackable diffs.",
-  "version": "0.0.1",
+  "version": "0.13.4",
   "publisher": "oevortex",
   "author": "Vortex",
   "license": "AGPL-3.0-or-later",
@@ -63,6 +63,12 @@
         }
       ]
     },
+    "submenus": [
+      {
+        "id": "vtx.newSessionMenu",
+        "label": "New Session"
+      }
+    ],
     "commands": [
       {
         "command": "vtx.newSession",
@@ -87,6 +93,12 @@
         "title": "New Vtx CLI Session (Terminal)",
         "category": "Vtx",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "vtx.openFolder",
+        "title": "Open Folder",
+        "category": "Vtx",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "vtx.renameTabSession",
@@ -254,6 +266,49 @@
       }
     ],
     "menus": {
+      "vtx.newSessionMenu": [
+        {
+          "command": "vtx.newSession",
+          "group": "1_start@1"
+        },
+        {
+          "command": "vtx.newSessionEditor",
+          "group": "1_start@2"
+        },
+        {
+          "command": "vtx.newSessionWindow",
+          "group": "1_start@3"
+        },
+        {
+          "command": "vtx.newSessionTerminal",
+          "group": "1_start@4"
+        }
+      ],
+      "view/title": [
+        {
+          "submenu": "vtx.newSessionMenu",
+          "when": "view == vtx.chatView",
+          "group": "navigation@-1",
+          "icon": "$(add)"
+        },
+        {
+          "command": "vtx.openFolder",
+          "when": "view == vtx.chatView",
+          "group": "navigation@0"
+        },
+        {
+          "command": "vtx.openSettings",
+          "when": "view == vtx.chatView",
+          "group": "navigation@1",
+          "icon": "$(ellipsis)"
+        },
+        {
+          "command": "vtx.focusChat",
+          "when": "view == vtx.chatView",
+          "group": "navigation@2",
+          "icon": "$(layout-sidebar-right)"
+        }
+      ],
       "commandPalette": [
         {
           "command": "vtx.acceptChange",

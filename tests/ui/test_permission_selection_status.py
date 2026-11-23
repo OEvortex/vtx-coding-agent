@@ -1,5 +1,5 @@
-from vtx.core.config import _read_config_data, config, reset_config
-from vtx.tui.commands import CommandsMixin
+from ctx.core.config import _read_config_data, config, reset_config
+from ctx.tui.commands import CommandsMixin
 
 
 class FakeChat:
@@ -44,7 +44,7 @@ def test_select_permission_mode_is_session_scoped(tmp_path, monkeypatch):
         assert config.permissions.mode == "auto"
 
         # Permission mode is now persisted to disk
-        config_file = tmp_path / ".vtx" / "config.yml"
+        config_file = tmp_path / ".ctx" / "config.yml"
         if config_file.exists():
             data = _read_config_data(config_file)
             perms = data.get("permissions", {})

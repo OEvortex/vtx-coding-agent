@@ -14,11 +14,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
-from vtx.plugins.api import ExtensionUIContext
-from vtx.plugins.bus import HandlerContext
-from vtx.plugins.event_contract import TOOL_CALL as EVENT_TOOL_CALL
-from vtx.tui.extension_ui import ExtensionConfirmScreen, TextualExtensionUI
+from ctx.plugins.api import ExtensionUIContext
+from ctx.plugins.bus import HandlerContext
+from ctx.plugins.event_contract import TOOL_CALL as EVENT_TOOL_CALL
+from ctx.tui.extension_ui import ExtensionConfirmScreen, TextualExtensionUI
 
 # =============================================================================
 # Base no-ops (headless mode)
@@ -47,7 +46,7 @@ def test_noop_ui_non_blocking_surfaces():
 
 
 def _make_bus():
-    from vtx.plugins.bus import EventBus
+    from ctx.plugins.bus import EventBus
 
     return EventBus()
 
@@ -201,7 +200,7 @@ async def test_confirm_resolves_false_on_dismiss_false():
 
 @pytest.mark.asyncio
 async def test_select_returns_chosen_option():
-    from vtx.tui.extension_ui import ExtensionSelectScreen
+    from ctx.tui.extension_ui import ExtensionSelectScreen
 
     app = FakeApp()
     ui = TextualExtensionUI(app)
@@ -215,7 +214,7 @@ async def test_select_returns_chosen_option():
 
 @pytest.mark.asyncio
 async def test_input_returns_text():
-    from vtx.tui.extension_ui import ExtensionInputScreen
+    from ctx.tui.extension_ui import ExtensionInputScreen
 
     app = FakeApp()
     ui = TextualExtensionUI(app)
@@ -287,9 +286,8 @@ async def test_noop_custom_returns_none():
 
 @pytest.mark.asyncio
 async def test_custom_wraps_widget_instance_and_returns_result():
+    from ctx.tui.extension_ui import ExtensionCustomScreen
     from textual.widget import Widget
-
-    from vtx.tui.extension_ui import ExtensionCustomScreen
 
     app = FakeApp()
     ui = TextualExtensionUI(app)
@@ -306,9 +304,8 @@ async def test_custom_wraps_widget_instance_and_returns_result():
 
 @pytest.mark.asyncio
 async def test_custom_widget_class_is_instantiated_and_wrapped():
+    from ctx.tui.extension_ui import ExtensionCustomScreen
     from textual.widget import Widget
-
-    from vtx.tui.extension_ui import ExtensionCustomScreen
 
     class MyWidget(Widget):
         pass
@@ -349,9 +346,8 @@ async def test_custom_screen_subclass_pushed_directly():
 
 @pytest.mark.asyncio
 async def test_custom_callable_factory_used():
+    from ctx.tui.extension_ui import ExtensionCustomScreen
     from textual.widget import Widget
-
-    from vtx.tui.extension_ui import ExtensionCustomScreen
 
     def make():
         return Widget()

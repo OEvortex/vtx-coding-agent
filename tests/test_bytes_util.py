@@ -1,6 +1,5 @@
 import pytest
-
-from vtx.core.bytes_util import format_bytes, parse_bytes
+from ctx.core.bytes_util import format_bytes, parse_bytes
 
 
 class TestFormatBytes:

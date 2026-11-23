@@ -1,35 +1,40 @@
 # SDK
 
-The SDK is the programmatic interface to the Vtx agent runtime. This page covers the top-level exports, the `Agent` and `Runner` classes, tool registration, guardrails, handoffs, approvals, permissions, sessions, and tracing, ending with a minimal program that runs as written.
+The SDK is the programmatic interface to the Ctx agent runtime. This page covers the top-level exports, the `Agent` and `Runner` classes, tool registration, guardrails, handoffs, approvals, permissions, sessions, and tracing, ending with a minimal program that runs as written.
 
-The SDK drives the same engine the TUI and headless modes use  --  the native turn runner's event stream  --  and layers guardrails, handoffs, approvals, and session persistence on top of it (`src/vtx/agent/sdk/runner.py:377-433`). Nothing here needs the TUI, and none of it requires an extensions graph. If you want the composition of subsystems the CLI boots, read [plugins.md](plugins.md); if you are looking for the built-in tools, they are in [tools.md](tools.md).
+The SDK drives the same engine the TUI and headless modes use  --  the native turn runner's event stream  --  and layers guardrails, handoffs, approvals, and session persistence on top of it (`src/ctx/agent/sdk/runner.py:377-433`). Nothing here needs the TUI, and none of it requires an extensions graph. If you want the composition of subsystems the CLI boots, read [plugins.md](plugins.md); if you are looking for the built-in tools, they are in [tools.md](tools.md).
 
-## `vtx.sdk` — the unified surface
+## `ctx.sdk` — the unified surface
 
-`import vtx.sdk` (or `from vtx.sdk import ...`) re-exports the whole public surface in one namespace: the agent SDK (`Agent`, `Runner`, `tool`, `define_tool`, sessions, guardrails, handoffs, permissions, tracing), the wire protocol (`Message`, `ToolResult`, `ToolDefinition`, stream parts), the plugin kernel (`plugin`, `PluginHost`, `load_profile`, `Context`, `EventHub`), the extension API (`ExtensionAPI`, `ExtensionTool`, event constants via `vtx.sdk.events`), and lazy provider/headless helpers (`BaseProvider`, `get_model`, `run_headless`, ...).
+`import ctx.sdk` (or `from ctx.sdk import ...`) re-exports the whole public surface in one namespace: the agent SDK (`Agent`, `Runner`, `tool`, `define_tool`, sessions, guardrails, handoffs, permissions, tracing), the wire protocol (`Message`, `ToolResult`, `ToolDefinition`, stream parts), the plugin kernel (`plugin`, `PluginHost`, `load_profile`, `Context`, `EventHub`), the extension API (`ExtensionAPI`, `ExtensionTool`, event constants via `ctx.sdk.events`), and lazy provider/headless helpers (`BaseProvider`, `get_model`, `run_headless`, ...).
 
 The point is that the three historical surfaces — SDK, extension `register(api)`, and plugin rows — now speak one language:
 
 * **One tool type.** `define_tool(name, description, parameters, execute=fn)` builds a `SchemaTool`, a plain `BaseTool` whose `execute` receives `(args_dict, ctx_dict)` — the same contract `ExtensionAPI.register_tool` always used. `ExtensionTool` is now a `SchemaTool` subclass, and `api.register_tool(...)` accepts *any* `BaseTool` (a `@tool` `FunctionTool`, a `define_tool` result, or a hand-written subclass), not just the `(name, description, schema, execute=)` spelling.
-* **One hook path.** `vtx.sdk.on(event, handler)` subscribes with the exact extension contract — typed event objects, `(event, payload)` or `(event, payload, ctx)` handlers, blocking returns — against the *running* composition. `vtx.sdk.emit(name, payload)` / `emit_nowait` dispatch on its event hub.
-* **One live handle.** `vtx.sdk.context()` returns the running composition's `Context` (the object a plugin row gets: `ctx.tools`, `ctx.llm`, `ctx.sessions`, `ctx.permissions`, `ctx.agent_loop`, `ctx.hub`, `ctx.effect`, ...). `vtx.sdk.api()` returns an `ExtensionAPI` bound to that context (the object `register(api)` gets: `register_tool`, `register_command`, `register_provider`, `send_message`, `set_model`, `ui`, `exec`, ...). `register_tool` / `register_command` / `register_provider` / `unregister_provider` are thin wrappers over `api()`.
+* **One hook path.** `ctx.sdk.on(event, handler)` subscribes with the exact extension contract — typed event objects, `(event, payload)` or `(event, payload, ctx)` handlers, blocking returns — against the *running* composition. `ctx.sdk.emit(name, payload)` / `emit_nowait` dispatch on its event hub.
+* **One live handle.** `ctx.sdk.context()` returns the running composition's `Context` (the object a plugin row gets: `ctx.tools`, `ctx.llm`, `ctx.sessions`, `ctx.permissions`, `ctx.agent_loop`, `ctx.hub`, `ctx.effect`, ...). `ctx.sdk.api()` returns an `ExtensionAPI` bound to that context (the object `register(api)` gets: `register_tool`, `register_command`, `register_provider`, `send_message`, `set_model`, `ui`, `exec`, ...). `register_tool` / `register_command` / `register_provider` / `unregister_provider` are thin wrappers over `api()`.
 
 ```python
-import vtx.sdk as sdk
+import ctx.sdk as sdk
 
-# Inside a running vtx (extension, plugin apply, REPL, embedder):
-sdk.register_tool(name="greet", description="Greet",
-                  parameters={"type": "object",
-                              "properties": {"name": {"type": "string"}}},
-                  execute=lambda args, ctx: f"hi {args['name']}")
+# Inside a running ctx (extension, plugin apply, REPL, embedder):
+sdk.register_tool(
+    name="greet",
+    description="Greet",
+    parameters={"type": "object", "properties": {"name": {"type": "string"}}},
+    execute=lambda args, ctx: f"hi {args['name']}",
+)
+
 
 @sdk.on(sdk.events.TOOL_CALL)
 def watch(event, payload):
     print("tool call:", payload)
 
+
 # Standalone, no composition needed:
-agent = sdk.Agent(name="bot", model="gpt-4o-mini",
-                  tools=[sdk.define_tool("greet", "Greet", SCHEMA, execute=fn)])
+agent = sdk.Agent(
+    name="bot", model="gpt-4o-mini", tools=[sdk.define_tool("greet", "Greet", SCHEMA, execute=fn)]
+)
 result = sdk.Runner.run_sync(agent, "hi")
 ```
 
@@ -37,10 +42,10 @@ Both modes raise a clear `RuntimeError` from `context()`/`api()`/`on()`/`registe
 
 ## Minimal program
 
-This is the SDK's own quick start, and it runs as written against a configured provider (`src/vtx/agent/sdk/__init__.py:8-25`):
+This is the SDK's own quick start, and it runs as written against a configured provider (`src/ctx/agent/sdk/__init__.py:8-25`):
 
 ```python
-from vtx.agent.sdk import Agent, Runner, tool
+from ctx.agent.sdk import Agent, Runner, tool
 
 
 @tool
@@ -50,21 +55,18 @@ def get_weather(city: str) -> str:
 
 
 agent = Agent(
-    name="Weather bot",
-    instructions="Be concise.",
-    model="gpt-4o-mini",
-    tools=[get_weather],
+    name="Weather bot", instructions="Be concise.", model="gpt-4o-mini", tools=[get_weather]
 )
 
 result = Runner.run_sync(agent, "Weather in Tokyo?")
 print(result.final_output)
 ```
 
-`Runner.run_sync` runs the coroutine on a one-worker thread pool, so it is safe to call from inside an event loop you already own (`src/vtx/agent/sdk/runner.py:295-325`).
+`Runner.run_sync` runs the coroutine on a one-worker thread pool, so it is safe to call from inside an event loop you already own (`src/ctx/agent/sdk/runner.py:295-325`).
 
 ## Top-level exports
 
-`from vtx import ...` re-exports the whole agent surface. Grouped by what they do:
+`from ctx import ...` re-exports the whole agent surface. Grouped by what they do:
 
 | Group | Names |
 |---|---|
@@ -77,11 +79,11 @@ print(result.final_output)
 | Items | `MessageOutputItem`, `ToolCallItem`, `ToolCallOutputItem`, `HandoffCallItem`, `HandoffOutputItem`, `ReasoningItem` |
 | Tracing | `Trace`, `Span`, `trace`, `span`, `add_trace_processor`, `enable_tracing`, `disable_tracing`, `TraceProcessor`, `ConsoleTraceProcessor`, `JSONLTraceProcessor` |
 
-`vtx` also exports the headless entry points (`run_headless`, `render_run`, `resolve_prompt`)  --  see [headless.md](headless.md).
+`ctx` also exports the headless entry points (`run_headless`, `render_run`, `resolve_prompt`)  --  see [headless.md](headless.md).
 
 ## Runner
 
-Three entry points, all static, all with the same argument shape (`src/vtx/agent/sdk/runner.py:265-345`):
+Three entry points, all static, all with the same argument shape (`src/ctx/agent/sdk/runner.py:265-345`):
 
 ```python
 @staticmethod
@@ -95,6 +97,7 @@ async def run(
     cancellation: asyncio.Event | None = None,
     context: Any = None,
 ) -> RunResult: ...
+
 
 # run_sync(...) -> RunResult          same arguments, blocking
 # run_streamed(...) -> RunStreamed    same arguments, async-iterable
@@ -112,7 +115,7 @@ async def run(
 
 A run wraps a `Trace` and a `span("agent_run", agent_name=...)`, so tracing works without extra setup (`runner.py:284-292`, `346-349`).
 
-`RunResult` (`src/vtx/agent/sdk/results.py:12-57`):
+`RunResult` (`src/ctx/agent/sdk/results.py:12-57`):
 
 | Field | Meaning |
 |---|---|
@@ -126,10 +129,10 @@ A run wraps a `Trace` and a `span("agent_run", agent_name=...)`, so tracing work
 
 ### Streaming
 
-`run_streamed` returns a `RunStreamed` you iterate for typed events (`src/vtx/agent/sdk/runner.py:187-263`):
+`run_streamed` returns a `RunStreamed` you iterate for typed events (`src/ctx/agent/sdk/runner.py:187-263`):
 
 ```python
-from vtx import Agent, Runner
+from ctx import Agent, Runner
 
 stream = Runner.run_streamed(agent, "Summarize this repo asynchronously")
 
@@ -152,11 +155,11 @@ print("\n", result.final_output, result.usage)
 | `_ToolResult` | `tool_call_id`, `tool_name`, `output`, `is_error` |
 | `_RunFinished` | `result`  --  consumed by `RunStreamed`, not yielded to you |
 
-Reading `.result` before the iterator is exhausted raises a `RuntimeError` telling you to iterate first (`src/vtx/agent/sdk/runner.py:250-258`).
+Reading `.result` before the iterator is exhausted raises a `RuntimeError` telling you to iterate first (`src/ctx/agent/sdk/runner.py:250-258`).
 
 ## Agent
 
-`Agent` is a mutable dataclass, so `clone(**overrides)` gives you a variant without touching the original (`src/vtx/agent/sdk/agent.py:94-180`):
+`Agent` is a mutable dataclass, so `clone(**overrides)` gives you a variant without touching the original (`src/ctx/agent/sdk/agent.py:94-180`):
 
 ```python
 @dataclass
@@ -175,7 +178,7 @@ class Agent:
     needs_approval_tools: set[str] = field(default_factory=set)
 ```
 
-(`src/vtx/agent/sdk/agent.py:168-180`)
+(`src/ctx/agent/sdk/agent.py:168-180`)
 
 | Field | Meaning |
 |---|---|
@@ -191,24 +194,35 @@ class Agent:
 | `metadata` | Free-form; visible to guardrails and traces |
 | `needs_approval_tools` | Tool names that pause for approval even under a permissive policy |
 
-Methods: `compiled_tools`, `compiled_handoff_tools`, `all_tools`, `as_tool`, `clone`, `resolve_instructions`, `build_system_prompt`, `resolve_provider` (`src/vtx/agent/sdk/agent.py:195-521`).
+Methods: `compiled_tools`, `compiled_handoff_tools`, `all_tools`, `as_tool`, `clone`, `resolve_instructions`, `build_system_prompt`, `resolve_provider` (`src/ctx/agent/sdk/agent.py:195-521`).
 
 ### Providers
 
-`provider` accepts a live provider object, or a dict with any of `_PROVIDER_DICT_KEYS` (`src/vtx/agent/sdk/agent.py:42-54`):
+`provider` accepts a live provider object, or a dict with any of `_PROVIDER_DICT_KEYS` (`src/ctx/agent/sdk/agent.py:42-54`):
 
 ```python
-{"name", "sdk", "api_key", "base_url", "model", "max_tokens", "temperature", "thinking_level", "default_headers"}
+{
+    "name",
+    "sdk",
+    "api_key",
+    "base_url",
+    "model",
+    "max_tokens",
+    "temperature",
+    "thinking_level",
+    "default_headers",
+}
 ```
 
-`resolve_provider` picks in this order (`src/vtx/agent/sdk/agent.py:374-521`): a `BaseProvider` passes through untouched; a dict whose `name` matches the built-in provider catalog is built from that; a dict with a custom `name` requires both `sdk` and `base_url` and raises otherwise; anything else falls back to the environment-var and config path the CLI uses, which is why the quick-start program needs no `provider` at all.
+`resolve_provider` picks in this order (`src/ctx/agent/sdk/agent.py:374-521`): a `BaseProvider` passes through untouched; a dict whose `name` matches the built-in provider catalog is built from that; a dict with a custom `name` requires both `sdk` and `base_url` and raises otherwise; anything else falls back to the environment-var and config path the CLI uses, which is why the quick-start program needs no `provider` at all.
 
 ## Tool registration
 
-`@tool` wraps a sync or async function and builds a Pydantic params model from its type hints and docstring (`src/vtx/agent/sdk/tools.py:252-312`):
+`@tool` wraps a sync or async function and builds a Pydantic params model from its type hints and docstring (`src/ctx/agent/sdk/tools.py:252-312`):
 
 ```python
-from vtx import tool
+from ctx import tool
+
 
 @tool(needs_approval=True, mutating=True)
 def delete_file(path: str) -> str:
@@ -228,13 +242,13 @@ def delete_file(path: str) -> str:
 | `tool_icon` | `"→"` | Badge shown in the TUI |
 | `input_guardrails` / `output_guardrails` | `None` | Per-tool guardrails |
 
-Docstring formats understood: Sphinx `:param name:`, Google `Args:`, and NumPy `Parameters:` (`src/vtx/agent/sdk/tools.py:79-109`). A `None` return is normalized to `"(no output)"`, and an exception becomes `ToolResult(success=False, result=f"Error: {exc}")` rather than aborting the turn.
+Docstring formats understood: Sphinx `:param name:`, Google `Args:`, and NumPy `Parameters:` (`src/ctx/agent/sdk/tools.py:79-109`). A `None` return is normalized to `"(no output)"`, and an exception becomes `ToolResult(success=False, result=f"Error: {exc}")` rather than aborting the turn.
 
-An agent can be used as a tool too, with `agent.as_tool(...)` (`src/vtx/agent/sdk/agent.py:266-287`). That returns a `_AgentAsTool` with `mutating = False` and icon `↪` (`src/vtx/agent/sdk/tools.py:320-373`), so a nested run is not a write. To send the transcript onward, prefer a [handoff](#handoffs).
+An agent can be used as a tool too, with `agent.as_tool(...)` (`src/ctx/agent/sdk/agent.py:266-287`). That returns a `_AgentAsTool` with `mutating = False` and icon `↪` (`src/ctx/agent/sdk/tools.py:320-373`), so a nested run is not a write. To send the transcript onward, prefer a [handoff](#handoffs).
 
 ## Guardrails
 
-Four decorators, two data contracts. Decorate a function and pass the result into an agent (`src/vtx/agent/sdk/guardrails/__init__.py:28-158`):
+Four decorators, two data contracts. Decorate a function and pass the result into an agent (`src/ctx/agent/sdk/guardrails/__init__.py:28-158`):
 
 | Decorator | Put it on | Data it receives | Tripwire raised |
 |---|---|---|---|
@@ -248,7 +262,7 @@ Only the two agent-level decorators are wired into `Runner` today: input guardra
 An agent-level guardrail and a tool-level one differ in return type. Agent guardrails return a `GuardrailFunctionOutput`; tool guardrails return a `ToolGuardrailFunctionOutput`.
 
 ```python
-from vtx import Agent, GuardrailFunctionOutput, input_guardrail
+from ctx import Agent, GuardrailFunctionOutput, input_guardrail
 
 
 @input_guardrail
@@ -256,8 +270,7 @@ def no_profanity(data):
     """Abort the run before any model call if the input is abusive."""
     if "damn" in data.input.lower():
         return GuardrailFunctionOutput(
-            output_info={"reason": "abusive language"},
-            tripwire_triggered=True,
+            output_info={"reason": "abusive language"}, tripwire_triggered=True
         )
     return GuardrailFunctionOutput()
 
@@ -270,7 +283,7 @@ agent = Agent(
 )
 ```
 
-The two output types (`src/vtx/agent/sdk/guardrails/types.py:12-50`):
+The two output types (`src/ctx/agent/sdk/guardrails/types.py:12-50`):
 
 ```python
 @dataclass
@@ -287,21 +300,23 @@ class ToolGuardrailFunctionOutput:
     @classmethod
     def allow(cls, output_info: Any = None) -> ToolGuardrailFunctionOutput: ...
     @classmethod
-    def reject_content(cls, message: str, output_info: Any = None) -> ToolGuardrailFunctionOutput: ...
+    def reject_content(
+        cls, message: str, output_info: Any = None
+    ) -> ToolGuardrailFunctionOutput: ...
     @classmethod
     def raise_exception(cls, output_info: Any = None) -> ToolGuardrailFunctionOutput: ...
 ```
 
-`reject_content` builds an `output_info` of `{"rejected_message": message, ...}` -- the soft rejection, meant to give the model something actionable (`src/vtx/agent/sdk/guardrails/types.py:36-46`). `raise_exception` sets `tripwire_triggered=True`, the hard stop. Neither runs today, for the same reason the tool-level decorators do not: the runner never invokes tool guardrails.
+`reject_content` builds an `output_info` of `{"rejected_message": message, ...}` -- the soft rejection, meant to give the model something actionable (`src/ctx/agent/sdk/guardrails/types.py:36-46`). `raise_exception` sets `tripwire_triggered=True`, the hard stop. Neither runs today, for the same reason the tool-level decorators do not: the runner never invokes tool guardrails.
 
-The data payloads are the dataclasses `_InputGuardrailData`, `_OutputGuardrailData`, `_ToolInputGuardrailData`, and `_ToolOutputGuardrailData` (`src/vtx/agent/sdk/guardrails/types.py:53-82`). Your decorated function takes the same fields in the same order, so name the parameters as they appear. Note that `_ToolInputGuardrailData.tool_arguments` is a **JSON string** (`str | None`), not a dict  --  parse it before inspecting it.
+The data payloads are the dataclasses `_InputGuardrailData`, `_OutputGuardrailData`, `_ToolInputGuardrailData`, and `_ToolOutputGuardrailData` (`src/ctx/agent/sdk/guardrails/types.py:53-82`). Your decorated function takes the same fields in the same order, so name the parameters as they appear. Note that `_ToolInputGuardrailData.tool_arguments` is a **JSON string** (`str | None`), not a dict  --  parse it before inspecting it.
 
 ## Handoffs
 
-`handoff` turns one agent into a transfer target for another (`src/vtx/agent/sdk/handoffs.py:43-79`):
+`handoff` turns one agent into a transfer target for another (`src/ctx/agent/sdk/handoffs.py:43-79`):
 
 ```python
-from vtx import Agent, handoff
+from ctx import Agent, handoff
 
 billing = Agent(name="Billing", instructions="Handle refunds.", model="gpt-4o-mini")
 support = Agent(
@@ -311,7 +326,7 @@ support = Agent(
 )
 ```
 
-`Handoff` is a `BaseTool` with `mutating = False` and icon `↪`, and its params model accepts an optional free-form `reason` (`src/vtx/agent/sdk/handoffs.py:82-159`).
+`Handoff` is a `BaseTool` with `mutating = False` and icon `↪`, and its params model accepts an optional free-form `reason` (`src/ctx/agent/sdk/handoffs.py:82-159`).
 
 | Option | Meaning |
 |---|---|
@@ -322,24 +337,24 @@ support = Agent(
 | `input_filter` | Accepted and stored, but the runner never invokes it today |
 | `input_type` | A Pydantic model used as the handoff tool's `params` schema instead of the default `reason` field (`handoffs.py:120-121`); the transcript itself is unchanged |
 
-The runner detects a handoff by tool name: anything starting with `transfer_to_` (`src/vtx/agent/sdk/runner.py:691`). On transfer, the active agent swaps and a synthetic user note tells the target agent to take over (`runner.py:719-726`):
+The runner detects a handoff by tool name: anything starting with `transfer_to_` (`src/ctx/agent/sdk/runner.py:691`). On transfer, the active agent swaps and a synthetic user note tells the target agent to take over (`runner.py:719-726`):
 
 ```text
 [handoff from Support → Billing. Take over the conversation from here.]
 ```
 
-That is why every handoff tool name must keep the `transfer_to_` prefix  --  the prefix is the protocol. `RunConfig(nest_handoff_history=True)` is accepted (`src/vtx/agent/sdk/run_config.py:43-44`), but the runner does not read it: the prior transcript is always carried forward.
+That is why every handoff tool name must keep the `transfer_to_` prefix  --  the prefix is the protocol. `RunConfig(nest_handoff_history=True)` is accepted (`src/ctx/agent/sdk/run_config.py:43-44`), but the runner does not read it: the prior transcript is always carried forward.
 
 ## Approvals
 
-The approval *types* exist and `RunResult` has the fields for a paused run, but the pause path is not reachable today. `ToolApprovalItem`, `ApprovalDecision`, and `RunState` are real (`src/vtx/agent/sdk/approvals.py:15-104`), and `_run_impl` contains a branch that would return `interruptions` populated, `stop_reason=StopReason.TOOL_USE`, and a `state` snapshot (`src/vtx/agent/sdk/runner.py:479-498`) -- but nothing ever appends to `pending_tool_calls`, so `interruptions` is always empty and `state` is always `None`.
+The approval *types* exist and `RunResult` has the fields for a paused run, but the pause path is not reachable today. `ToolApprovalItem`, `ApprovalDecision`, and `RunState` are real (`src/ctx/agent/sdk/approvals.py:15-104`), and `_run_impl` contains a branch that would return `interruptions` populated, `stop_reason=StopReason.TOOL_USE`, and a `state` snapshot (`src/ctx/agent/sdk/runner.py:479-498`) -- but nothing ever appends to `pending_tool_calls`, so `interruptions` is always empty and `state` is always `None`.
 
 Two related facts:
 
 - `needs_approval=True` on `@tool` and `Agent.needs_approval_tools` are stored on the objects but never consulted by the runner.
-- The underlying turn engine still enforces `vtx.core.permissions.check_permission` against your `~/.vtx/config.yml`. With the default `permissions.mode: prompt`, a `mutating=True` tool makes the engine emit a `ToolApprovalEvent` whose future nobody resolves -- the SDK runner does not handle that event, so the run hangs until `cancellation` fires. Mark tools `mutating=False` or set `permissions.mode: auto` to avoid it.
+- The underlying turn engine still enforces `ctx.core.permissions.check_permission` against your `~/.ctx/config.yml`. With the default `permissions.mode: prompt`, a `mutating=True` tool makes the engine emit a `ToolApprovalEvent` whose future nobody resolves -- the SDK runner does not handle that event, so the run hangs until `cancellation` fires. Mark tools `mutating=False` or set `permissions.mode: auto` to avoid it.
 
-`RunState` carries the original input, the pending tool calls, the decisions you queue, the new items, and free-form metadata (`src/vtx/agent/sdk/approvals.py:62-104`):
+`RunState` carries the original input, the pending tool calls, the decisions you queue, the new items, and free-form metadata (`src/ctx/agent/sdk/approvals.py:62-104`):
 
 | Member | Meaning |
 |---|---|
@@ -355,7 +370,7 @@ A `ToolApprovalItem`'s `to_input_item` raises  --  an approval prompt is never r
 
 ## Permissions
 
-`PermissionPolicy`, `AutoApprove`, `AllowlistApprove`, `PromptApprove`, and `PermissionCallback` are defined (`src/vtx/agent/sdk/permissions.py`), and `RunConfig.permission_policy` accepts one per run (`run_config.py:40-41`) -- but the runner never reads it. The classes describe the intended semantics:
+`PermissionPolicy`, `AutoApprove`, `AllowlistApprove`, `PromptApprove`, and `PermissionCallback` are defined (`src/ctx/agent/sdk/permissions.py`), and `RunConfig.permission_policy` accepts one per run (`run_config.py:40-41`) -- but the runner never reads it. The classes describe the intended semantics:
 
 | Policy | Behavior |
 |---|---|
@@ -363,19 +378,19 @@ A `ToolApprovalItem`'s `to_input_item` raises  --  an approval prompt is never r
 | `AllowlistApprove(allowlist)` | A name in the list is `ALLOW`, everything else `PROMPT` (`permissions.py:46-55`) |
 | `PromptApprove` (default) | `mutating=False` → `ALLOW`; an allowlisted `bash` head → `ALLOW`; else `PROMPT` (`permissions.py:58-100`) |
 
-`PromptApprove.SAFE_BASH` is the read-only command list: `cat`, `head`, `tail`, `ls`, `pwd`, `wc`, `diff`, `which`, `file`, `stat`, `du`, `df`, `whoami`, `id`, `uname`, `date`, `realpath`, `dirname`, `basename` (`permissions.py:67-89`). Note it is a simpler check than the product's `vtx.core.permissions.check_permission`: no safe-`git` subcommand list and no shell-metacharacter rejection.
+`PromptApprove.SAFE_BASH` is the read-only command list: `cat`, `head`, `tail`, `ls`, `pwd`, `wc`, `diff`, `which`, `file`, `stat`, `du`, `df`, `whoami`, `id`, `uname`, `date`, `realpath`, `dirname`, `basename` (`permissions.py:67-89`). Note it is a simpler check than the product's `ctx.core.permissions.check_permission`: no safe-`git` subcommand list and no shell-metacharacter rejection.
 
-What actually gates a tool call today is the turn engine's `check_permission` against `~/.vtx/config.yml` (`permissions.mode`, default `prompt`), which is also what produces the hang described under [Approvals](#approvals). For what the TUI saves to `config.yml` and what the modes mean, read [permissions.md](permissions.md).
+What actually gates a tool call today is the turn engine's `check_permission` against `~/.ctx/config.yml` (`permissions.mode`, default `prompt`), which is also what produces the hang described under [Approvals](#approvals). For what the TUI saves to `config.yml` and what the modes mean, read [permissions.md](permissions.md).
 
 ## Sessions
 
-Four methods make a `Session` (`src/vtx/agent/sdk/sessions.py:30-55`):
+Four methods make a `Session` (`src/ctx/agent/sdk/sessions.py:30-55`):
 
 ```python
-session.get_items(limit=None)   # list[Any]
-session.add_items(items)        # None
-session.pop_item()              # Any | None
-session.clear_session()         # None
+session.get_items(limit=None)  # list[Any]
+session.add_items(items)  # None
+session.pop_item()  # Any | None
+session.clear_session()  # None
 ```
 
 | Implementation | Use |
@@ -384,16 +399,16 @@ session.clear_session()         # None
 | `JSONLSession(path=None, *, session_id=None)` | Appends to disk, and the same file the TUI and headless runs produce |
 | `SessionSettings` | Per-session settings such as an item `limit` (`sessions.py:23`) |
 
-Cross-process sharing is the useful property: a `JSONLSession` pointed at a session written by a `vtx -p` run gives you that conversation to continue programmatically. See [storage-layout.md](storage-layout.md) for where those files land.
+Cross-process sharing is the useful property: a `JSONLSession` pointed at a session written by a `ctx -p` run gives you that conversation to continue programmatically. See [storage-layout.md](storage-layout.md) for where those files land.
 
-`JSONLSession` also exposes `session_id` and `path` properties if you need to log them (`sessions.py:219-225`). Skill discovery helpers live alongside: `load_vtx_skills(cwd)`, `load_builtin_vtx_skills()`, and `format_skills_for_prompt(skills)` (`src/vtx/agent/sdk/skills.py:15-52`); the frontmatter rules are in [skills.md](skills.md).
+`JSONLSession` also exposes `session_id` and `path` properties if you need to log them (`sessions.py:219-225`). Skill discovery helpers live alongside: `load_ctx_skills(cwd)`, `load_builtin_ctx_skills()`, and `format_skills_for_prompt(skills)` (`src/ctx/agent/sdk/skills.py:15-52`); the frontmatter rules are in [skills.md](skills.md).
 
 ## Tracing
 
-Every run opens a `Trace` and a nested `Span`, so a processor registered once sees every run in the process (`src/vtx/agent/sdk/runner.py:284-292`, `346-349`). The default processor list is empty until you add one (`src/vtx/telemetry/processor.py:28-30`).
+Every run opens a `Trace` and a nested `Span`, so a processor registered once sees every run in the process (`src/ctx/agent/sdk/runner.py:284-292`, `346-349`). The default processor list is empty until you add one (`src/ctx/telemetry/processor.py:28-30`).
 
 ```python
-from vtx import add_trace_processor, ConsoleTraceProcessor, enable_tracing
+from ctx import add_trace_processor, ConsoleTraceProcessor, enable_tracing
 
 enable_tracing()
 add_trace_processor(ConsoleTraceProcessor())
@@ -417,7 +432,7 @@ add_trace_processor(ConsoleTraceProcessor())
 | `enable_tracing()` / `disable_tracing()` | Global switch (`tracing_impl.py:48`, `53`) |
 | `add_trace_processor(p)` | Appends to the global chain (`tracing_impl.py:58-66`) |
 
-Set `VTX_SDK_DISABLE_TRACING` to `1`, `true`, `yes`, or `on` in the environment to make `span()` a no-op across the process (`src/vtx/telemetry/tracing_impl.py:33-49`). Per run, `RunConfig.tracing_disabled=True` and `RunConfig.trace_include_sensitive_data=False` suppress the trace or strip inputs and outputs from it (`src/vtx/agent/sdk/run_config.py:33-38`).
+Set `CTX_SDK_DISABLE_TRACING` to `1`, `true`, `yes`, or `on` in the environment to make `span()` a no-op across the process (`src/ctx/telemetry/tracing_impl.py:33-49`). Per run, `RunConfig.tracing_disabled=True` and `RunConfig.trace_include_sensitive_data=False` suppress the trace or strip inputs and outputs from it (`src/ctx/agent/sdk/run_config.py:33-38`).
 
 ## RunConfig
 
@@ -432,7 +447,7 @@ Set `VTX_SDK_DISABLE_TRACING` to `1`, `true`, `yes`, or `on` in the environment 
 | `nest_handoff_history` | Declared; the runner does not read it yet |
 | `custom` | Free-form data attached to the run |
 
-(`src/vtx/agent/sdk/run_config.py:12-47`)
+(`src/ctx/agent/sdk/run_config.py:12-47`)
 
 ## Worked example
 
@@ -441,9 +456,15 @@ A two-agent setup with an agent-level input guardrail, a handoff, and JSONL trac
 ```python
 import json
 
-from vtx import (
-    Agent, GuardrailFunctionOutput, JSONLTraceProcessor, Runner,
-    add_trace_processor, handoff, input_guardrail, tool,
+from ctx import (
+    Agent,
+    GuardrailFunctionOutput,
+    JSONLTraceProcessor,
+    Runner,
+    add_trace_processor,
+    handoff,
+    input_guardrail,
+    tool,
 )
 
 
@@ -452,8 +473,7 @@ def block_private_locations(data):
     text = data.input if isinstance(data.input, str) else json.dumps(data.input)
     if "Private-" in text:
         return GuardrailFunctionOutput(
-            output_info={"reason": "private location"},
-            tripwire_triggered=True,
+            output_info={"reason": "private location"}, tripwire_triggered=True
         )
     return GuardrailFunctionOutput()
 
@@ -468,9 +488,7 @@ def get_weather(city: str) -> str:
 
 
 billing = Agent(
-    name="Billing",
-    instructions="You refund charges. Restrained and terse.",
-    model="gpt-4o-mini",
+    name="Billing", instructions="You refund charges. Restrained and terse.", model="gpt-4o-mini"
 )
 
 support = Agent(
@@ -483,22 +501,22 @@ support = Agent(
     input_guardrails=[block_private_locations],
 )
 
-add_trace_processor(JSONLTraceProcessor("/tmp/vtx-trace.jsonl"))
+add_trace_processor(JSONLTraceProcessor("/tmp/ctx-trace.jsonl"))
 
 result = Runner.run_sync(support, "Weather in Tokyo?")
 print(result.final_output)
 print(result.agent_name, result.usage)
 ```
 
-The trace lands in `/tmp/vtx-trace.jsonl` with one object per trace and span event. If the model calls the `transfer_to_Billing` handoff, `result.agent_name` is `"Billing"`.
+The trace lands in `/tmp/ctx-trace.jsonl` with one object per trace and span event. If the model calls the `transfer_to_Billing` handoff, `result.agent_name` is `"Billing"`.
 
 ## Known gaps
 
-- The streamed event classes are underscore-prefixed (`_TextDelta`, `_ToolCallStart`, ...), so matching on the type name is the only stable dispatch. They are not exported from `vtx` (`src/vtx/agent/sdk/runner.py:186-221`).
-- `Agent` is generic over a context type (`Agent[TContext]`), but `context` is passed as `Any` at runtime and there is no runtime check that the type parameters agree (`src/vtx/agent/sdk/agent.py:94-95`).
+- The streamed event classes are underscore-prefixed (`_TextDelta`, `_ToolCallStart`, ...), so matching on the type name is the only stable dispatch. They are not exported from `ctx` (`src/ctx/agent/sdk/runner.py:186-221`).
+- `Agent` is generic over a context type (`Agent[TContext]`), but `context` is passed as `Any` at runtime and there is no runtime check that the type parameters agree (`src/ctx/agent/sdk/agent.py:94-95`).
 - A handoff is recognized *only* by the `transfer_to_` tool-name prefix (`runner.py:691`); an override that breaks that prefix silently becomes an ordinary tool call.
-- Several declared surfaces are not wired into the runner: `needs_approval` / `needs_approval_tools` / `permission_policy` / `PermissionCallback`, tool-level guardrails, `RunConfig.nest_handoff_history`, and `handoff(input_filter=...)` are all stored but never read (`src/vtx/agent/sdk/runner.py`). The approval pause branch in `_run_impl` is therefore unreachable, and `decision_for` is never called.
-- Worse, the turn engine still enforces `check_permission` from `vtx.core.permissions` against `~/.vtx/config.yml`. Under the default `permissions.mode: prompt`, any `mutating=True` tool emits a `ToolApprovalEvent` the SDK runner never answers, so the run hangs until `cancellation` is set (`src/vtx/agent/turn.py:1100-1121`, `336-342`). Use `mutating=False` tools or `permissions.mode: auto`.
-- `RunState`'s docstring says to "pass this object back to `Runner.run`", but `Runner.run`, `run_sync`, and `run_streamed` accept no `state` argument (`src/vtx/agent/sdk/runner.py:269-276`, `295-301`, `329-336`), and `decision_for` is never called from the runner. The run pauses and hands you the decisions; continuing after them is not wired up.
-- The default processor list is empty until you add one, so a run with no `add_trace_processor` produces no trace output at all (`src/vtx/telemetry/processor.py:28-30`).
+- Several declared surfaces are not wired into the runner: `needs_approval` / `needs_approval_tools` / `permission_policy` / `PermissionCallback`, tool-level guardrails, `RunConfig.nest_handoff_history`, and `handoff(input_filter=...)` are all stored but never read (`src/ctx/agent/sdk/runner.py`). The approval pause branch in `_run_impl` is therefore unreachable, and `decision_for` is never called.
+- Worse, the turn engine still enforces `check_permission` from `ctx.core.permissions` against `~/.ctx/config.yml`. Under the default `permissions.mode: prompt`, any `mutating=True` tool emits a `ToolApprovalEvent` the SDK runner never answers, so the run hangs until `cancellation` is set (`src/ctx/agent/turn.py:1100-1121`, `336-342`). Use `mutating=False` tools or `permissions.mode: auto`.
+- `RunState`'s docstring says to "pass this object back to `Runner.run`", but `Runner.run`, `run_sync`, and `run_streamed` accept no `state` argument (`src/ctx/agent/sdk/runner.py:269-276`, `295-301`, `329-336`), and `decision_for` is never called from the runner. The run pauses and hands you the decisions; continuing after them is not wired up.
+- The default processor list is empty until you add one, so a run with no `add_trace_processor` produces no trace output at all (`src/ctx/telemetry/processor.py:28-30`).
 - `Agent.as_tool` spawns a nested run with no recursion guard. An agent that lists itself as its own tool will recurse until `max_turns` runs out.

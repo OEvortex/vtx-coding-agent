@@ -1,9 +1,8 @@
 import base64
 import io
 
+from ctx.core.image import MAX_DIMENSION, read_and_process_image
 from PIL import Image
-
-from vtx.core.image import MAX_DIMENSION, read_and_process_image
 
 
 def _write_image(path, size: tuple[int, int], color: str = "red") -> None:

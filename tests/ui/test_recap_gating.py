@@ -15,10 +15,9 @@ the timer is armed, when it fires, and after the LLM call is already in flight.
 from __future__ import annotations
 
 import pytest
-
-from vtx.tui.app import Vtx
-from vtx.tui.recap import RecapMixin
-from vtx.tui.subagents import REGISTRY
+from ctx.tui.app import Ctx
+from ctx.tui.recap import RecapMixin
+from ctx.tui.subagents import REGISTRY
 
 
 @pytest.fixture
@@ -28,7 +27,7 @@ def clean_registry():
     REGISTRY.clear()
 
 
-def _start(call_id: str, label: str = "Rate the VTX codebase") -> None:
+def _start(call_id: str, label: str = "Rate the CTX codebase") -> None:
     REGISTRY.record(call_id, {"kind": "subagent_start", "subagent": "subagent", "label": label})
 
 
@@ -56,7 +55,7 @@ class TestRecapGating:
     async def test_recap_timer_is_not_armed_while_a_subagent_runs(
         self, tmp_path, clean_registry
     ) -> None:
-        app = Vtx(cwd=str(tmp_path))
+        app = Ctx(cwd=str(tmp_path))
         async with app.run_test(size=(100, 30)):
             _start("a")
             app._arm_recap_timer()
@@ -72,7 +71,7 @@ class TestRecapGating:
         self, tmp_path, clean_registry
     ) -> None:
         """The timer can fire after a sub-agent is dispatched inside the window."""
-        app = Vtx(cwd=str(tmp_path))
+        app = Ctx(cwd=str(tmp_path))
         drafted: list[str] = []
 
         async def _fake_generate(reason: str) -> None:
@@ -94,7 +93,7 @@ class TestRecapGating:
         self, tmp_path, clean_registry
     ) -> None:
         """The third gate: a turn can start after the LLM call is already out."""
-        app = Vtx(cwd=str(tmp_path))
+        app = Ctx(cwd=str(tmp_path))
         calls: list[object] = []
 
         class _Ctx:
@@ -109,7 +108,7 @@ class TestRecapGating:
             return "recap"
 
         app._runtime.provider = object()  # type: ignore[attr-defined]
-        import vtx.core.recap as recap_mod
+        import ctx.core.recap as recap_mod
 
         original = recap_mod.generate_recap
         recap_mod.generate_recap = _generate  # type: ignore[assignment]
@@ -127,7 +126,7 @@ class TestRecapGating:
         self, tmp_path, clean_registry
     ) -> None:
         """An explicit /recap is the user asking for it; do not second-guess."""
-        app = Vtx(cwd=str(tmp_path))
+        app = Ctx(cwd=str(tmp_path))
         async with app.run_test(size=(100, 30)):
             _start("a")
             app._handle_recap_command()
@@ -138,7 +137,7 @@ class TestRecapGating:
 class TestWakeupPreemptsRecap:
     @pytest.mark.asyncio
     async def test_a_wakeup_dismisses_a_pending_recap(self, tmp_path, clean_registry) -> None:
-        app = Vtx(cwd=str(tmp_path))
+        app = Ctx(cwd=str(tmp_path))
         started: list[str] = []
 
         async def _fake_run(prompt: str, images=None) -> None:
@@ -149,14 +148,14 @@ class TestWakeupPreemptsRecap:
         async with app.run_test(size=(100, 30)) as pilot:
             from datetime import UTC, datetime
 
-            from vtx.agent.background import BackgroundTaskRecord
+            from ctx.agent.background import BackgroundTaskRecord
 
             # Simulate the recap being armed and a worker in flight.
             app._recap_timer = app.set_timer(30.0, app._on_recap_idle)
 
             record = BackgroundTaskRecord(
                 task_id="bg_test",
-                description="Rate the VTX codebase",
+                description="Rate the CTX codebase",
                 prompt="p",
                 subagent_type="subagent",
                 model=None,
@@ -177,7 +176,7 @@ class TestWakeupPreemptsRecap:
         self, tmp_path, clean_registry
     ) -> None:
         """Every gate in the app reads _is_running; it must not get stuck True."""
-        app = Vtx(cwd=str(tmp_path))
+        app = Ctx(cwd=str(tmp_path))
         async with app.run_test(size=(100, 30)):
             app._is_running = True
 

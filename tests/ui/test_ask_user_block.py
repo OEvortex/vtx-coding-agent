@@ -6,11 +6,8 @@ plus the public show/rerender/hide API that the agent runner calls.
 """
 
 import pytest
-from textual.app import App, ComposeResult
-from textual.widgets import Label
-
-from vtx.core import AskUserOption, AskUserQuestion
-from vtx.tui.ask_user import (
+from ctx.core import AskUserOption, AskUserQuestion
+from ctx.tui.ask_user import (
     NEXT_LABEL,
     OTHER_DISPLAY,
     REVIEW_HEADING,
@@ -18,10 +15,12 @@ from vtx.tui.ask_user import (
     SUBMIT_PICK_LABEL,
     AskUserDialog,
 )
-from vtx.tui.blocks import ToolBlock
-from vtx.tui.chat import ChatLog
-from vtx.tui.input import AskUserInput
-from vtx.tui.styles import get_styles
+from ctx.tui.blocks import ToolBlock
+from ctx.tui.chat import ChatLog
+from ctx.tui.input import AskUserInput
+from ctx.tui.styles import get_styles
+from textual.app import App, ComposeResult
+from textual.widgets import Label
 
 
 def _q(
@@ -203,7 +202,7 @@ class _AskUserFocusApp(App):
 
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
-        from vtx.tui.input import InputBox
+        from ctx.tui.input import InputBox
 
         yield InputBox(id="input-box")
 

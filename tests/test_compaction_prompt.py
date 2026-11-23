@@ -15,11 +15,11 @@ import asyncio
 import re
 from typing import ClassVar
 
-from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-from vtx.ai.sdk.openai import GenerationConfig
-from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
-from vtx.core.compaction import SUMMARIZATION_PROMPT, _strip_analysis, generate_summary
-from vtx.protocol.types import StopReason, StreamDone, TextPart, UserMessage
+from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig
+from ctx.ai.sdk.openai import GenerationConfig
+from ctx.ai.sdk.openai_responses import OpenAIResponsesSDK
+from ctx.core.compaction import SUMMARIZATION_PROMPT, _strip_analysis, generate_summary
+from ctx.protocol.types import StopReason, StreamDone, TextPart, UserMessage
 
 
 def test_prompt_is_substantial():

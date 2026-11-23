@@ -1,6 +1,6 @@
 """ACP sessions run with the composition's tools, not a bare harness.
 
-The bug this pins: ``vtx acp`` never mounted the plugin composition, so the
+The bug this pins: ``ctx acp`` never mounted the plugin composition, so the
 coding agent's tools -- ``read``, ``edit``, ``write``, ``bash``, ``skill``,
 ``todo`` -- were never registered. The model saw only the three harness-native
 tools and could not touch the workspace at all. The row list is authoritative,
@@ -15,10 +15,9 @@ from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
-
-from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.acp import AcpServer, _session_tools
-from vtx.plugins import boot, reset
+from ctx.ai.providers.mock import MockProvider
+from ctx.coding_agent.acp import AcpServer, _session_tools
+from ctx.plugins import boot, reset
 
 CODING_AGENT_TOOLS = {"read", "apply_patch", "bash", "skill", "todo"}
 
@@ -52,7 +51,7 @@ def clean_composition():
 
 def test_session_tools_fall_back_without_a_composition():
     """A bare process still gets the product's default list."""
-    from vtx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+    from ctx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
 
     assert [t.name for t in _session_tools()] == [
         t.name for t in get_tools_with_extensions(DEFAULT_TOOLS)
@@ -89,8 +88,8 @@ def test_a_profile_that_removes_a_tool_row_removes_the_tool(tmp_path):
 
 
 def test_run_acp_mounts_the_composition_before_serving(monkeypatch):
-    """``vtx acp`` must boot: without it the registry has no coding tools."""
-    from vtx.coding_agent import acp
+    """``ctx acp`` must boot: without it the registry has no coding tools."""
+    from ctx.coding_agent import acp
 
     calls: dict[str, object] = {}
 
@@ -103,12 +102,12 @@ def test_run_acp_mounts_the_composition_before_serving(monkeypatch):
     async def fake_serve(self):
         calls["served"] = True
 
-    monkeypatch.setattr("vtx.plugins.boot", fake_boot)
+    monkeypatch.setattr("ctx.plugins.boot", fake_boot)
     monkeypatch.setattr(AcpServer, "_serve", fake_serve)
 
     acp.run_acp()
 
-    assert calls["profile"] == (os.environ.get("VTX_PROFILE") or "headless")
+    assert calls["profile"] == (os.environ.get("CTX_PROFILE") or "headless")
     assert calls["cwd"] == os.getcwd()
     assert calls["extension_paths"] is not None
     assert calls["served"] is True
@@ -119,7 +118,7 @@ def test_run_acp_mounts_the_composition_before_serving(monkeypatch):
 async def test_acp_prompt_offers_the_coding_agent_tools(monkeypatch, tmp_path):
     """End to end: a prompt over ACP declares the workspace tools to the model."""
     monkeypatch.setattr(
-        "vtx.agent.runtime.create_provider", lambda api_type, config: RecordingProvider(config)
+        "ctx.agent.runtime.create_provider", lambda api_type, config: RecordingProvider(config)
     )
     RecordingProvider.instances.clear()
 

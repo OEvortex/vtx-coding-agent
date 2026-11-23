@@ -1,8 +1,7 @@
 import pytest
-
-from vtx.agent.dispatcher import set_context
-from vtx.agent.tools import get_tool
-from vtx.core.config import get_config, reset_config
+from ctx.agent.dispatcher import set_context
+from ctx.agent.tools import get_tool
+from ctx.core.config import get_config, reset_config
 
 
 def pytest_runtest_setup(item):
@@ -60,13 +59,13 @@ class FakeChat:
 def isolate_user_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     # core.paths.get_config_dir() prefers os.environ["HOME"] over
     # Path.home(), so both must point at the SAME isolated dir or the
-    # developer's real ~/.vtx leaks into config-dependent tests.
+    # developer's real ~/.ctx leaks into config-dependent tests.
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr("pathlib.Path.home", lambda: home)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     reset_config()
-    from vtx.agent.tools import get_all_tools
+    from ctx.agent.tools import get_all_tools
 
     tools_before = frozenset(get_all_tools())
     # The dispatcher context must be cleared: it is a plain module global, not a
@@ -99,7 +98,7 @@ def isolate_user_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     # and whether it breaks depends on the shard, so the suite goes intermittently
     # red for no reason a reader could see. Snapshot and restore instead of asking
     # each test to remember.
-    from vtx.agent import tools as tools_module
+    from ctx.agent import tools as tools_module
 
     for name in tools_module.get_all_tools().keys() - tools_before:
         tools_module.unregister_tool(name)

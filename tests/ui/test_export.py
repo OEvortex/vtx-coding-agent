@@ -1,7 +1,7 @@
 import json
 
-from vtx.core.config import get_config_dir
-from vtx.tui.export import export_session_html
+from ctx.core.config import get_config_dir
+from ctx.tui.export import export_session_html
 
 CWD = "/tmp/export-proj"
 SESSION_ID = "abc12345"

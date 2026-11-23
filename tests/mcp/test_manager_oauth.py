@@ -24,17 +24,16 @@ from typing import Any
 
 import httpx
 import pytest
-
-from vtx.mcp.config import LoadedMcpConfig, McpServerConfig
-from vtx.mcp.manager import McpManager, McpServerConnection
-from vtx.mcp.oauth import (
+from ctx.mcp.config import LoadedMcpConfig, McpServerConfig
+from ctx.mcp.manager import McpManager, McpServerConnection
+from ctx.mcp.oauth import (
     FileOAuthStateStore,
     McpOAuthProvider,
     McpOAuthState,
     OAuthClientMetadata,
     OAuthTokens,
 )
-from vtx.mcp.types import LATEST_PROTOCOL_VERSION
+from ctx.mcp.types import LATEST_PROTOCOL_VERSION
 
 pytestmark = pytest.mark.asyncio
 
@@ -67,7 +66,7 @@ async def test_a_remote_server_gets_an_auth_provider():
 
 
 async def test_a_stdio_server_gets_no_auth_provider():
-    """A local process vtx already runs has no authorization server to talk to."""
+    """A local process ctx already runs has no authorization server to talk to."""
     connection = McpServerConnection(
         McpServerConfig(name="local", command="npx", args=["-y", "some-server"])
     )
@@ -395,7 +394,7 @@ def _manager(url: str, store: Any, tmp_path) -> McpManager:
             server_url=config.url or "",
             redirect_url=redirect_url,
             client_metadata=OAuthClientMetadata(
-                redirect_uris=[redirect_url] if redirect_url else [], client_name="vtx-test"
+                redirect_uris=[redirect_url] if redirect_url else [], client_name="ctx-test"
             ),
             store=store,
             on_redirect=_browse,

@@ -1,4 +1,4 @@
-from vtx.tui.fuzzy import NO_MATCH, fuzzy_filter, fuzzy_match
+from ctx.tui.fuzzy import NO_MATCH, fuzzy_filter, fuzzy_match
 
 
 def test_exact_match_outranks_subsequence():
@@ -54,7 +54,7 @@ def test_filter_ranks_best_first():
 
 
 def test_fd_query_escapes_regex_metacharacters():
-    from vtx.tui.autocomplete import FilePathProvider
+    from ctx.tui.autocomplete import FilePathProvider
 
     # An unescaped '.' would make "app.py" also match "appXpy".
     assert FilePathProvider._fd_query("app.py") == r"app\.py"
@@ -62,9 +62,9 @@ def test_fd_query_escapes_regex_metacharacters():
 
 
 def test_fd_query_uses_separator_class_for_paths():
-    from vtx.tui.autocomplete import FilePathProvider
+    from ctx.tui.autocomplete import FilePathProvider
 
-    assert FilePathProvider._fd_query("vtx/tui") == r"vtx[\\/]tui"
+    assert FilePathProvider._fd_query("ctx/tui") == r"ctx[\\/]tui"
     assert FilePathProvider._fd_query("src/") == r"src[\\/]"
 
 

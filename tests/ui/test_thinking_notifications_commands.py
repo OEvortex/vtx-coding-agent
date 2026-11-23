@@ -1,12 +1,12 @@
 from contextlib import contextmanager
 from typing import Any, ClassVar, cast
 
-from vtx.agent.runtime import ConversationRuntime
-from vtx.core.config import config, reset_config
-from vtx.tui.commands import CommandsMixin
-from vtx.tui.floating_list import ListItem
-from vtx.tui.selection_mode import SelectionMode
-from vtx.tui.widgets import InfoBar
+from ctx.agent.runtime import ConversationRuntime
+from ctx.core.config import config, reset_config
+from ctx.tui.commands import CommandsMixin
+from ctx.tui.floating_list import ListItem
+from ctx.tui.selection_mode import SelectionMode
+from ctx.tui.widgets import InfoBar
 
 
 class FakeChat:
@@ -162,7 +162,7 @@ def test_thinking_command_without_argument_opens_picker():
 
     assert fake._selection_mode == SelectionMode.THINKING
     assert fake.completion_list.searchable is True
-    from vtx.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
+    from ctx.tui.commands.settings import THINKING_LEVEL_DESCRIPTIONS
 
     assert [(item.value, item.label, item.description) for item in fake.completion_list.items] == [
         (level, f"{level} ✓" if level == "low" else level, THINKING_LEVEL_DESCRIPTIONS[level])
@@ -202,7 +202,7 @@ def test_notifications_command_without_argument_opens_picker(tmp_path, monkeypat
 
 
 def test_thinking_command_unmapped_reasoning_model_shows_only_default(monkeypatch):
-    from vtx.ai.models import ApiType, Model
+    from ctx.ai.models import ApiType, Model
 
     fake = FakeCommands()
     fake._runtime.model = "reasoning-unmapped"
@@ -217,7 +217,7 @@ def test_thinking_command_unmapped_reasoning_model_shows_only_default(monkeypatc
         supports_thinking=True,
         thinking_level_map=None,
     )
-    monkeypatch.setattr("vtx.agent.runtime.get_model", lambda *args, **kwargs: test_model)
+    monkeypatch.setattr("ctx.agent.runtime.get_model", lambda *args, **kwargs: test_model)
 
     assert fake._runtime.effective_thinking_levels == ["default"]
     fake._handle_thinking_command("")
@@ -227,7 +227,7 @@ def test_thinking_command_unmapped_reasoning_model_shows_only_default(monkeypatc
 
 
 def test_thinking_command_non_thinking_model_shows_only_none(monkeypatch):
-    from vtx.ai.models import ApiType, Model
+    from ctx.ai.models import ApiType, Model
 
     fake = FakeCommands()
     fake._runtime.model = "non-reasoning"
@@ -241,7 +241,7 @@ def test_thinking_command_non_thinking_model_shows_only_none(monkeypatch):
         supports_images=False,
         supports_thinking=False,
     )
-    monkeypatch.setattr("vtx.agent.runtime.get_model", lambda *args, **kwargs: test_model)
+    monkeypatch.setattr("ctx.agent.runtime.get_model", lambda *args, **kwargs: test_model)
 
     assert fake._runtime.effective_thinking_levels == ["none"]
     fake._handle_thinking_command("")
@@ -252,7 +252,7 @@ def test_max_level_from_the_catalog_is_cyclable_without_crashing(monkeypatch):
     """Regression for the ``ctrl+t`` crash: models.dev advertised the ``max``
     effort, the cycle offered it, and the provider raised
     ``ValueError: Invalid thinking level 'max'``."""
-    from vtx.ai.models import ApiType, Model
+    from ctx.ai.models import ApiType, Model
 
     fake = FakeCommands()
     fake._runtime.model = "reasoning-max"
@@ -260,7 +260,7 @@ def test_max_level_from_the_catalog_is_cyclable_without_crashing(monkeypatch):
     fake._runtime.thinking_level = "xhigh"
     fake._provider.thinking_levels = [*fake._provider.thinking_levels, "max"]
     monkeypatch.setattr(
-        "vtx.agent.runtime.get_model",
+        "ctx.agent.runtime.get_model",
         lambda *args, **kwargs: Model(
             id="reasoning-max",
             provider="fake",
@@ -303,13 +303,13 @@ def test_max_level_from_the_catalog_is_cyclable_without_crashing(monkeypatch):
 def test_level_outside_the_offered_set_is_clamped_not_raised(monkeypatch):
     """A level restored from a session (or left over from another model) must
     degrade to the nearest supported one instead of taking the app down."""
-    from vtx.ai.models import ApiType, Model
+    from ctx.ai.models import ApiType, Model
 
     fake = FakeCommands()
     fake._runtime.model = "reasoning-no-max"
     fake._runtime.model_provider = "fake"
     monkeypatch.setattr(
-        "vtx.agent.runtime.get_model",
+        "ctx.agent.runtime.get_model",
         lambda *args, **kwargs: Model(
             id="reasoning-no-max",
             provider="fake",

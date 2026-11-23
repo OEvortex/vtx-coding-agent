@@ -1,7 +1,6 @@
 import pytest
-
-from vtx.coding_agent.tools.read import ReadParams, ReadTool
-from vtx.protocol.types import ImageContent
+from ctx.coding_agent.tools.read import ReadParams, ReadTool
+from ctx.protocol.types import ImageContent
 
 
 @pytest.fixture

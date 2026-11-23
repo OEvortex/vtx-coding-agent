@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.plugins import DispatchMode, EventHub, EventModeError
+from ctx.plugins import DispatchMode, EventHub, EventModeError
 
 pytestmark = pytest.mark.asyncio
 

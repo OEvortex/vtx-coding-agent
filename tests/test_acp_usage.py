@@ -11,10 +11,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
-from vtx.coding_agent.acp import AcpServer, _Session
-from vtx.core.events import AgentEndEvent, CompactionEndEvent, TurnEndEvent
-from vtx.protocol.types import AssistantMessage, TextContent, Usage
+from ctx.coding_agent.acp import AcpServer, _Session
+from ctx.core.events import AgentEndEvent, CompactionEndEvent, TurnEndEvent
+from ctx.protocol.types import AssistantMessage, TextContent, Usage
 
 WINDOW = 200_000
 
@@ -73,7 +72,7 @@ def _assistant(inp: int, out: int, cached: int = 0) -> AssistantMessage:
 @pytest.fixture
 def known_model(monkeypatch):
     model = SimpleNamespace(context_window=WINDOW, max_tokens=8_000)
-    monkeypatch.setattr("vtx.ai.models.get_model", lambda model_id, provider=None: model)
+    monkeypatch.setattr("ctx.ai.models.get_model", lambda model_id, provider=None: model)
 
 
 @pytest.mark.asyncio
@@ -129,9 +128,9 @@ async def test_empty_context_is_not_reported():
 
 @pytest.mark.asyncio
 async def test_unknown_model_falls_back_to_the_configured_window(monkeypatch):
-    from vtx.core.config import get_config
+    from ctx.core.config import get_config
 
-    monkeypatch.setattr("vtx.ai.models.get_model", lambda model_id, provider=None: None)
+    monkeypatch.setattr("ctx.ai.models.get_model", lambda model_id, provider=None: None)
     server = AcpServer()
     sess = _session(context_tokens=500)
     updates = _recorder(server)
@@ -157,7 +156,7 @@ async def test_model_switch_republishes_with_the_new_window(monkeypatch):
     new_model = SimpleNamespace(
         id="new-model", provider="new-provider", base_url="", context_window=128_000
     )
-    monkeypatch.setattr("vtx.ai.models.get_model", lambda model_id, provider=None: new_model)
+    monkeypatch.setattr("ctx.ai.models.get_model", lambda model_id, provider=None: new_model)
     # The model list is not what this test is about.
     monkeypatch.setattr(AcpServer, "_config_options", lambda self, sess: [])
 
@@ -177,13 +176,13 @@ async def test_prompt_publishes_context_against_the_window(monkeypatch, tmp_path
     """
     import os
 
-    from vtx.ai.providers.mock import MockProvider
+    from ctx.ai.providers.mock import MockProvider
 
     # Window resolution has its own tests; what matters here is that the run's
     # context -- not its cumulative spend -- is published.
     monkeypatch.setattr(AcpServer, "_context_window", lambda self, sess: WINDOW)
     monkeypatch.setattr(
-        "vtx.agent.runtime.create_provider",
+        "ctx.agent.runtime.create_provider",
         lambda api_type, config: MockProvider(config, scenario="simple_text"),
     )
 

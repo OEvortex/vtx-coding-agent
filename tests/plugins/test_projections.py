@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.plugins import ServiceMissingError, boot
-from vtx.plugins.services import Projection, ProjectionService
+from ctx.plugins import ServiceMissingError, boot
+from ctx.plugins.services import Projection, ProjectionService
 
 
 class _Event:
@@ -98,7 +97,7 @@ def test_a_projection_key_must_be_non_empty():
 def test_the_built_in_uses_projection_folds_token_usage():
     """The registered projection, driven by real session-like entries."""
     service = ProjectionService()
-    from vtx.plugins.builtins.services.projections import _make_uses_projection
+    from ctx.plugins.builtins.services.projections import _make_uses_projection
 
     unit = _make_uses_projection()
     service.register(unit)
@@ -116,7 +115,7 @@ def test_the_built_in_uses_projection_folds_token_usage():
 
 
 def test_the_uses_projection_ignores_a_zero_usage_field():
-    from vtx.plugins.builtins.services.projections import _make_uses_projection
+    from ctx.plugins.builtins.services.projections import _make_uses_projection
 
     unit = _make_uses_projection()
     state = unit.init()

@@ -6,13 +6,12 @@ import json
 import os
 from pathlib import Path
 
+import ctx.ai.oauth.cline as cline_oauth
+import ctx.ai.oauth.codex as codex_oauth
+import ctx.ai.oauth.copilot as copilot_oauth
+import ctx.ai.oauth.dynamic as dynamic_oauth
 import pytest
-
-import vtx.ai.oauth.cline as cline_oauth
-import vtx.ai.oauth.codex as codex_oauth
-import vtx.ai.oauth.copilot as copilot_oauth
-import vtx.ai.oauth.dynamic as dynamic_oauth
-from vtx.ai import (
+from ctx.ai import (
     DYNAMIC_PROVIDERS,
     ProviderConfig,
     detect_provider_from_env,
@@ -23,8 +22,8 @@ from vtx.ai import (
     get_valid_copilot_token_sync,
     list_providers,
 )
-from vtx.ai.provider_catalog import is_provider_configured
-from vtx.ai.providers.openai_sdk import OpenAISDKProvider
+from ctx.ai.provider_catalog import is_provider_configured
+from ctx.ai.providers.openai_sdk import OpenAISDKProvider
 
 
 @pytest.fixture(autouse=True)
@@ -33,10 +32,10 @@ def isolated_oauth_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     monkeypatch.setattr(copilot_oauth, "get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(cline_oauth, "get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(codex_oauth, "get_config_dir", lambda: tmp_path)
-    monkeypatch.setattr("vtx.core.paths.get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr("ctx.core.paths.get_config_dir", lambda: tmp_path)
     # Clear ambient provider env vars so tests are fully deterministic
     for k in list(os.environ):
-        if k.endswith("_API_KEY") or k.endswith("_TOKEN") or k.startswith("VTX_"):
+        if k.endswith("_API_KEY") or k.endswith("_TOKEN") or k.startswith("CTX_"):
             monkeypatch.delenv(k, raising=False)
 
 
@@ -169,7 +168,7 @@ def test_codex_oauth_dynamic_api_key_and_status(tmp_path: Path, monkeypatch):
 
 
 def test_detect_provider_from_env_with_copilot_oauth(tmp_path: Path, monkeypatch):
-    monkeypatch.delenv("VTX_PROVIDER", raising=False)
+    monkeypatch.delenv("CTX_PROVIDER", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -191,7 +190,7 @@ def test_detect_provider_from_env_with_copilot_oauth(tmp_path: Path, monkeypatch
 
 
 def test_detect_provider_from_env_with_cline_oauth(tmp_path: Path, monkeypatch):
-    monkeypatch.delenv("VTX_PROVIDER", raising=False)
+    monkeypatch.delenv("CTX_PROVIDER", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -209,7 +208,7 @@ def test_detect_provider_from_env_with_cline_oauth(tmp_path: Path, monkeypatch):
 
 
 def test_detect_provider_from_env_with_codex_oauth(tmp_path: Path, monkeypatch):
-    monkeypatch.delenv("VTX_PROVIDER", raising=False)
+    monkeypatch.delenv("CTX_PROVIDER", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -257,8 +256,8 @@ def test_openai_sdk_provider_with_copilot(tmp_path: Path, monkeypatch):
 
 
 def test_codex_responses_payload_omits_max_output_tokens():
-    from vtx.ai.sdk.base import Message
-    from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
+    from ctx.ai.sdk.base import Message
+    from ctx.ai.sdk.openai_responses import OpenAIResponsesSDK
 
     sdk = OpenAIResponsesSDK(
         api_key="tok", base_url="https://chatgpt.com/backend-api/codex", provider_slug="codex"
@@ -287,8 +286,8 @@ def test_codex_responses_payload_omits_max_output_tokens():
 
 
 def test_openai_responses_payload_includes_max_output_tokens():
-    from vtx.ai.sdk.base import Message
-    from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
+    from ctx.ai.sdk.base import Message
+    from ctx.ai.sdk.openai_responses import OpenAIResponsesSDK
 
     sdk = OpenAIResponsesSDK(api_key="tok", provider_slug="openai-responses")
     payload = sdk._build_payload(

@@ -12,14 +12,13 @@ from __future__ import annotations
 import json
 
 import pytest
+from ctx.coding_agent.tools.codemode import PROGRESS_SENTINEL, CodemodeTool
+from ctx.tui.blocks import ToolBlock
+from ctx.tui.chat import ChatLog
+from ctx.tui.codemode_block import BODY_INDENT, CodemodeToolBlock
+from ctx.tui.styles import get_styles
+from ctx.tui.task_ui import GLYPHS
 from textual.app import App, ComposeResult
-
-from vtx.coding_agent.tools.codemode import PROGRESS_SENTINEL, CodemodeTool
-from vtx.tui.blocks import ToolBlock
-from vtx.tui.chat import ChatLog
-from vtx.tui.codemode_block import BODY_INDENT, CodemodeToolBlock
-from vtx.tui.styles import get_styles
-from vtx.tui.task_ui import GLYPHS
 
 FIRST_LINE = "rows = await tools.search(query='find dead code')"
 SCRIPT = f"{FIRST_LINE}\nreturn [r['name'] for r in rows]"

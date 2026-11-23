@@ -1,0 +1,323 @@
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import os
+import sys
+from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import TYPE_CHECKING, TextIO
+
+from ctx.core.config import (
+    _atomic_write_text,
+    _ensure_config_file,
+    _read_config_data,
+    _serialize_config_yaml,
+    _set_config_version,
+    config,
+    get_config,
+    get_last_selected,
+    reload_config,
+)
+from ctx.protocol.types import StopReason
+
+if TYPE_CHECKING:
+    from ctx.ai.base import AuthMode
+    from ctx.core.events import Event
+    from ctx.plugins.extensions import LoadedExtensions
+
+# NOTE: agent.* / ai.* / most protocol.* imports are deliberately deferred
+# into functions. Module-level imports here would re-enter agent.extensions
+# while it is still initializing when coding_agent is first imported from
+# deep inside the agent package (circular import).
+
+_EXIT_CODES = {StopReason.STOP: 0, StopReason.ERROR: 1, StopReason.LENGTH: 3}
+
+
+def _exit_code(stop: StopReason) -> int:
+    return _EXIT_CODES.get(stop, 1)
+
+
+def resolve_prompt(prompt_arg: str, *, stdin: TextIO) -> str:
+    if prompt_arg == "-":
+        return stdin.read().strip()
+    return prompt_arg.strip()
+
+
+async def render_run(
+    events: AsyncIterator[Event], *, out: TextIO | None = None, err: TextIO | None = None
+) -> StopReason:
+    from ctx.core.events import (
+        AgentEndEvent,
+        AskUserEvent,
+        ErrorEvent,
+        ToolApprovalEvent,
+        TurnEndEvent,
+    )
+    from ctx.core.permissions import ApprovalResponse, AskUserResponse
+    from ctx.protocol.types import TextContent
+
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
+    final_text = ""
+    stop = StopReason.ERROR
+    async for event in events:
+        match event:
+            case TurnEndEvent(assistant_message=msg) if msg is not None:
+                text = "".join(p.text for p in msg.content if isinstance(p, TextContent)).strip()
+                if text:
+                    final_text = text
+            case AgentEndEvent(stop_reason=stop_reason):
+                stop = stop_reason
+            case ErrorEvent(error=error):
+                print(f"error: {error}", file=err)
+            case ToolApprovalEvent(tool_name=tool_name, future=future) if future is not None:
+                future.set_result(ApprovalResponse.DENY)
+                print(
+                    f"error: {tool_name!r} requires approval, denied (non-interactive mode)",
+                    file=err,
+                )
+            case AskUserEvent(questions=questions, future=future) if future is not None:
+                # Headless can't surface a dialog; treat the questions
+                # as unanswered. The turn runner records a skipped tool
+                # result with a hint to the LLM.
+                future.set_result(AskUserResponse())
+                asked = "; ".join(q.question for q in questions)
+                print(f"error: agent asked a question in non-interactive mode: {asked}", file=err)
+            case _:
+                pass
+    if stop == StopReason.STOP and final_text:
+        print(final_text, file=out)
+    return stop
+
+
+def truncate(text: str, width: int = 100) -> str:
+    text = text.strip()
+    if len(text) <= width:
+        return text
+    return text[: width - 1] + "…"
+
+
+async def run_headless(
+    *,
+    prompt_arg: str,
+    model: str | None,
+    provider: str | None,
+    api_key: str | None,
+    base_url: str | None,
+    openai_compat_auth_mode: AuthMode | None,
+    anthropic_compat_auth_mode: AuthMode | None,
+    loaded_extensions: LoadedExtensions | None = None,
+    active_agent_name: str | None = None,
+    agent_files: list[str] | None = None,
+    auto_discover_agents: bool = True,
+) -> int:
+    from ctx.agent.runtime import ConversationRuntime
+    from ctx.coding_agent.tools import DEFAULT_TOOLS, get_tools_with_extensions
+
+    prompt = resolve_prompt(prompt_arg, stdin=sys.stdin)
+    if not prompt:
+        print("error: empty prompt", file=sys.stderr)
+        return 2
+
+    cfg = get_config()
+
+    # Ensure fd/rg binaries are available before any tool needs them.
+    # The TUI pre-downloads these at startup (tui/startup.py:_ensure_binaries);
+    # headless must do the same so the first read_directory/grep/find does not
+    # block for multiple seconds on a GitHub download (tools_manager.py).
+    from ctx.agent.tools_manager import ensure_tools
+
+    await ensure_tools(silent=True)
+
+    # Prune old session logs in the background: this run creates a fresh
+    # session, so nothing it writes is a candidate.
+    from ctx.core.session_retention import prune_in_background
+
+    prune_in_background()
+    previous_permission_mode = cfg.permissions.mode
+    # Headless can't show approval prompts; force auto for this run only,
+    # without mutating the saved config or clobbering the config file.
+    previous_config_data = _read_config_data(_ensure_config_file())
+    previous_config_data.setdefault("permissions", {})["mode"] = "auto"
+    _set_config_version(previous_config_data)
+    _atomic_write_text(_ensure_config_file(), _serialize_config_yaml(previous_config_data))
+    reload_config()
+
+    try:
+        last_selected = get_last_selected()
+        initial_model = model or last_selected.model_id or config.llm.default_model
+        initial_provider = (
+            provider
+            if provider is not None
+            else (
+                last_selected.provider
+                if last_selected.provider
+                else (config.llm.default_provider if model is None else None)
+            )
+        )
+        base = base_url or config.llm.default_base_url or None
+        thinking = last_selected.thinking_level or config.llm.default_thinking_level
+        openai_auth = openai_compat_auth_mode or config.llm.auth.openai_compat
+        anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
+
+        # Load agents first so the active agent's tool surface is applied.
+        from ctx.agent.agents import AgentRegistry, load_all_agents
+        from ctx.plugins.extensions import load_for_runtime
+
+        agent_registry = AgentRegistry()
+        if auto_discover_agents or agent_files:
+            loaded_agents, agent_errors = load_all_agents(cwd=os.getcwd(), configured=agent_files)
+            for err in agent_errors:
+                print(f"agent error: {err}", file=sys.stderr)
+            agent_registry.agents = loaded_agents
+            agent_registry.errors = agent_errors
+
+        # Resolve the initial active agent: CLI > env > last_selected > config > none
+        import os as _os
+
+        from ctx.core.config import get_last_selected as _get_last_selected
+
+        ls = _get_last_selected()
+        env_agent = _os.environ.get("CTX_AGENT")
+        desired = (
+            active_agent_name or env_agent or (ls.agent or None) or (cfg.agents.default or None)
+        )
+        if desired:
+            resolved = agent_registry.set_active(desired)
+            if resolved is None:
+                print(
+                    f"warning: agent {desired!r} not found; running without an active agent",
+                    file=sys.stderr,
+                )
+
+        tools = get_tools_with_extensions(DEFAULT_TOOLS)
+
+        # Discovery already ran in the composition's boot, which read
+        # ``config.extensions`` and the ``--extension`` paths. This only reads
+        # back what it found, to report failures and merge the extension tools.
+        loaded_extensions = load_for_runtime(cwd=os.getcwd())
+        for err in loaded_extensions.errors:
+            print(f"extension error: {err}", file=sys.stderr)
+
+        ext_tools = list(loaded_extensions.list_extension_tools())
+        if active_agent_name and agent_registry.active is not None:
+            ext_tools.extend(agent_registry.active.local_tools.values())
+            ext_tools.extend(
+                loaded_extensions.local_tools_for(agent_registry.active.definition.name)
+            )
+
+        if ext_tools:
+            tools = get_tools_with_extensions(DEFAULT_TOOLS, ext_tools)
+
+        runtime = ConversationRuntime(
+            cwd=os.getcwd(),
+            model=initial_model,
+            model_provider=initial_provider,
+            api_key=api_key,
+            base_url=base,
+            thinking_level=thinking,
+            tools=tools,
+            openai_compat_auth_mode=openai_auth,
+            anthropic_compat_auth_mode=anthropic_auth,
+            extensions=loaded_extensions.bus,
+            agent_registry=agent_registry,
+            active_agent=agent_registry.active,
+            agent_extensions=list(loaded_extensions.extensions),
+        )
+        runtime.set_loaded_extensions(loaded_extensions)
+
+        # Hook system: bridge YAML hook configs onto the extension EventBus.
+        from ctx.agent.hooks.bridge import HookBridge
+
+        hook_bridge = HookBridge(
+            bus=loaded_extensions.bus,
+            project_path=Path.cwd() / ".ctx" / "hooks.yml",
+            global_path=Path.home() / ".ctx" / "hooks.yml",
+        )
+        await hook_bridge.load()
+
+        # Connect the configured MCP servers in the background so startup is
+        # not held up while they spin up. Their tools land in the session as
+        # they arrive (see ``_on_mcp_tools_changed``), and a failure is reported
+        # on stderr rather than raised: a broken server must not fail a run.
+        async def _connect_mcp_background() -> None:
+            try:
+                mcp_tools = await runtime.connect_mcp()
+            except Exception as exc:
+                print(f"warning: MCP startup failed: {exc}", file=sys.stderr)
+                mcp_tools = []
+            else:
+                if mcp_tools:
+                    contributing = sum(
+                        1
+                        for status in runtime.ensure_mcp_manager().statuses()
+                        if status.state == "connected" and status.tool_count
+                    )
+                    print(
+                        f"mcp: {len(mcp_tools)} tool(s) from {contributing} server(s)",
+                        file=sys.stderr,
+                    )
+            try:
+                for message in runtime.ensure_mcp_manager().errors:
+                    print(f"warning: MCP config: {message}", file=sys.stderr)
+                for status in runtime.ensure_mcp_manager().statuses():
+                    if status.state == "failed":
+                        print(
+                            f"warning: MCP server {status.name!r}: {status.error or 'failed'}",
+                            file=sys.stderr,
+                        )
+                    elif status.state == "needs-auth":
+                        print(
+                            f"warning: MCP server {status.name!r} needs sign-in", file=sys.stderr
+                        )
+            except Exception:
+                pass
+
+        mcp_task = asyncio.create_task(_connect_mcp_background())
+        # Let the connection start before the synchronous initialize() blocks
+        # the event loop.
+        await asyncio.sleep(0)
+
+        try:
+            init = runtime.initialize()
+            if init.provider_error:
+                print(f"error: {init.provider_error}", file=sys.stderr)
+                return 2
+
+            agent = runtime.prepare_for_run()
+        except Exception as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+
+        if agent is None:
+            print("error: agent initialization failed", file=sys.stderr)
+            return 2
+
+        try:
+            # Fire session lifecycle events so YAML hooks (SessionStart /
+            # SessionEnd) and extensions see headless runs too.
+            await loaded_extensions.bus.emit(
+                "session_start",
+                cwd=str(Path.cwd()),
+                session_id=runtime.session.id if runtime.session else "",
+            )
+            return _exit_code(await render_run(agent.run(prompt)))
+        finally:
+            with contextlib.suppress(BaseException):
+                mcp_task.cancel()
+                await mcp_task
+            with contextlib.suppress(Exception):
+                await loaded_extensions.bus.emit(
+                    "session_end",
+                    cwd=str(Path.cwd()),
+                    session_id=runtime.session.id if runtime.session else "",
+                )
+            await hook_bridge.unload()
+            await runtime.close()
+    finally:
+        current_config_data = _read_config_data(_ensure_config_file())
+        current_config_data.setdefault("permissions", {})["mode"] = previous_permission_mode
+        _set_config_version(current_config_data)
+        _atomic_write_text(_ensure_config_file(), _serialize_config_yaml(current_config_data))
+        reload_config()

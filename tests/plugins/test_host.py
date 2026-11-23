@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
-
-from vtx.plugins import Context, PluginHost, ServiceMissingError, plugin
-from vtx.plugins.loader import Row
-from vtx.plugins.plugin import Plugin
+from ctx.plugins import Context, PluginHost, ServiceMissingError, plugin
+from ctx.plugins.loader import Row
+from ctx.plugins.plugin import Plugin
 
 
 def _row(row_id: str, name: str, **kwargs) -> Row:
@@ -14,13 +13,13 @@ def _row(row_id: str, name: str, **kwargs) -> Row:
 
 
 def test_a_row_mounts_once_the_service_it_names_exists():
-    host = PluginHost([_row("a", "vtx.plugins.builtins.services.tools:PLUGIN")])
+    host = PluginHost([_row("a", "ctx.plugins.builtins.services.tools:PLUGIN")])
     host.mount()
     assert "tools" in host.base
 
 
 def test_a_row_whose_service_never_appears_fails_the_mount():
-    rows = [_row("orphan", "vtx.coding_agent.tools.read:PLUGIN")]
+    rows = [_row("orphan", "ctx.coding_agent.tools.read:PLUGIN")]
     with pytest.raises(ServiceMissingError, match="orphan"):
         PluginHost(rows).mount()
 
@@ -28,8 +27,8 @@ def test_a_row_whose_service_never_appears_fails_the_mount():
 def test_mount_order_follows_service_availability_not_row_order():
     # The consumer is listed first; it must still mount after its provider.
     rows = [
-        _row("consumer", "vtx.coding_agent.tools.read:PLUGIN"),
-        _row("provider", "vtx.plugins.builtins.services.tools:PLUGIN"),
+        _row("consumer", "ctx.coding_agent.tools.read:PLUGIN"),
+        _row("provider", "ctx.plugins.builtins.services.tools:PLUGIN"),
     ]
     host = PluginHost(rows)
     host.mount()
@@ -37,13 +36,13 @@ def test_mount_order_follows_service_availability_not_row_order():
 
 
 def test_a_disabled_row_does_not_mount():
-    host = PluginHost([_row("a", "vtx.plugins.builtins.services.tools:PLUGIN", disabled=True)])
+    host = PluginHost([_row("a", "ctx.plugins.builtins.services.tools:PLUGIN", disabled=True)])
     host.mount()
     assert host.mounted_ids() == []
 
 
 def test_dispose_unwinds_every_row_and_removes_provided_services():
-    host = PluginHost([_row("a", "vtx.plugins.builtins.services.tools:PLUGIN")])
+    host = PluginHost([_row("a", "ctx.plugins.builtins.services.tools:PLUGIN")])
     host.mount()
     assert "tools" in host.base
     host.dispose()
@@ -53,8 +52,8 @@ def test_dispose_unwinds_every_row_and_removes_provided_services():
 
 def test_unmount_takes_one_row_and_leaves_the_rest():
     rows = [
-        _row("tools", "vtx.plugins.builtins.services.tools:PLUGIN"),
-        _row("read", "vtx.coding_agent.tools.read:PLUGIN"),
+        _row("tools", "ctx.plugins.builtins.services.tools:PLUGIN"),
+        _row("read", "ctx.coding_agent.tools.read:PLUGIN"),
     ]
     host = PluginHost(rows)
     host.mount()
@@ -66,8 +65,8 @@ def test_unmount_takes_one_row_and_leaves_the_rest():
 
 def test_status_reports_each_row_once():
     rows = [
-        _row("tools", "vtx.plugins.builtins.services.tools:PLUGIN"),
-        _row("off", "vtx.plugins.builtins.services.llm:PLUGIN", disabled=True),
+        _row("tools", "ctx.plugins.builtins.services.tools:PLUGIN"),
+        _row("off", "ctx.plugins.builtins.services.llm:PLUGIN", disabled=True),
     ]
     host = PluginHost(rows)
     host.mount()
@@ -110,7 +109,7 @@ def test_a_plugin_that_registers_an_event_is_unwound():
 
 
 def test_an_unimportable_row_fails_at_load_not_at_mount():
-    host = PluginHost([_row("broken", "vtx.plugins.nope:PLUGIN")])
+    host = PluginHost([_row("broken", "ctx.plugins.nope:PLUGIN")])
     with pytest.raises(Exception, match="cannot import"):
         host.mount()
 
@@ -129,8 +128,8 @@ def test_a_plugin_object_can_be_mounted_without_yaml():
 
 
 def test_compose_mounts_in_one_step():
-    from vtx.plugins import compose
+    from ctx.plugins import compose
 
-    host = compose([_row("a", "vtx.plugins.builtins.services.tools:PLUGIN")])
+    host = compose([_row("a", "ctx.plugins.builtins.services.tools:PLUGIN")])
     assert "tools" in host.base
     host.dispose()

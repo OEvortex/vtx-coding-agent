@@ -1,6 +1,5 @@
 import pytest
-
-from vtx.coding_agent.tools.apply_patch import ApplyPatchParams, ApplyPatchTool, PatchEdit, PatchOp
+from ctx.coding_agent.tools.apply_patch import ApplyPatchParams, ApplyPatchTool, PatchEdit, PatchOp
 
 
 @pytest.fixture
@@ -221,7 +220,7 @@ def test_tool_schema_is_self_contained():
     """
     import json
 
-    from vtx.agent.tools import _slim_schema
+    from ctx.agent.tools import _slim_schema
 
     schema = _slim_schema(ApplyPatchParams.model_json_schema())
     dumped = json.dumps(schema)
@@ -236,7 +235,7 @@ def test_codemode_schema_inlines_refs():
     """``base_tool_schema`` drops ``$defs``; it must inline refs first."""
     import json
 
-    from vtx.codemode.integration import base_tool_schema
+    from ctx.codemode.integration import base_tool_schema
 
     schema = base_tool_schema(ApplyPatchTool())
     dumped = json.dumps(schema)

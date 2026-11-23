@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from vtx.mcp.types import LATEST_PROTOCOL_VERSION
+from ctx.mcp.types import LATEST_PROTOCOL_VERSION
 
 Handler = Callable[["Request"], "Reply"]
 

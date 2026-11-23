@@ -7,8 +7,7 @@ passing suite would not otherwise catch a regression.
 from __future__ import annotations
 
 import pytest
-
-from vtx.tui.formatting import (
+from ctx.tui.formatting import (
     MARKDOWN_THEME,
     CustomMarkdown,
     format_markdown,
@@ -65,10 +64,10 @@ def test_table_cell_markup_is_preserved():
     assert "bold" in plain
 
 
-def test_custom_markdown_uses_the_vtx_table_renderer():
-    from vtx.tui.formatting import VtxTableElement
+def test_custom_markdown_uses_the_ctx_table_renderer():
+    from ctx.tui.formatting import CtxTableElement
 
-    assert CustomMarkdown.elements["table_open"] is VtxTableElement
+    assert CustomMarkdown.elements["table_open"] is CtxTableElement
 
 
 @pytest.mark.parametrize(

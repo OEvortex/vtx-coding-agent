@@ -1,6 +1,6 @@
 from typing import cast
 
-from vtx.tui.input import InputBox
+from ctx.tui.input import InputBox
 
 
 class FakeFuture:

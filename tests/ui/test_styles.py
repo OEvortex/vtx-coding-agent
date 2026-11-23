@@ -1,5 +1,5 @@
-from vtx.core.config import Config, reset_config, set_config
-from vtx.tui.styles import get_styles
+from ctx.core.config import Config, reset_config, set_config
+from ctx.tui.styles import get_styles
 
 
 def test_approval_background_blends_terminal_bg_with_accent():

@@ -8,14 +8,14 @@
 
 ## Testing
 
-- If the user asks for e2e tests then run the vtx-tmux e2e test if available
+- If the user asks for e2e tests then run the ctx-tmux e2e test if available
 - Never run the full test suite unless the user explicitly asks for it. It is slow and resource intensive.
 - Test only those files that are relevant to the changes made. If you are unsure, ask the user for clarification.
 - Don't run tests that are not relevant to the changes made. If you are unsure, ask the user for clarification.
 
 ## Skills
 
-- Vtx supports registering a skill as a slash command by setting `register_cmd: true` in the SKILL.md frontmatter. If a user asks for a "registered" skill, include this field.
+- Ctx supports registering a skill as a slash command by setting `register_cmd: true` in the SKILL.md frontmatter. If a user asks for a "registered" skill, include this field.
 
 ## Committing code
 

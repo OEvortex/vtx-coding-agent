@@ -1,9 +1,7 @@
 import asyncio
 
 import pytest
-from pydantic import ValidationError
-
-from vtx.agent.tools.ask_user import (
+from ctx.agent.tools.ask_user import (
     MAX_DESCRIPTION_CHARS,
     MAX_HEADER_CHARS,
     MAX_LABEL_CHARS,
@@ -13,7 +11,8 @@ from vtx.agent.tools.ask_user import (
     AskUserQuestionParam,
     AskUserTool,
 )
-from vtx.core import AskUserAnswer, AskUserEvent, AskUserOption, AskUserQuestion, AskUserResponse
+from ctx.core import AskUserAnswer, AskUserEvent, AskUserOption, AskUserQuestion, AskUserResponse
+from pydantic import ValidationError
 
 
 class TestAskUserParamsValidation:

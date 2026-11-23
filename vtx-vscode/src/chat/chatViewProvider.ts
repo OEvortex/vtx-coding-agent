@@ -1543,6 +1543,11 @@ export class ChatController implements AcpHost {
         case "openSettings":
           await vscode.commands.executeCommand("vtx.openSettings");
           return;
+        case "voiceInput":
+          // The mic is VS Code's own speech to text action, so dictation gets
+          // the workbench's handling rather than a second implementation here.
+          await vscode.commands.executeCommand("workbench.action.chat.toggleSpeechToText");
+          return;
         case "loadSession":
           await this.loadSession(String(msg.id || ""));
           return;

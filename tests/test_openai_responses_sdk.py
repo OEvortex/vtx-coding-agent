@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from vtx.ai.sdk.base import GenerationConfig, Message
-from vtx.ai.sdk.openai_responses import OpenAIResponsesSDK
+from ctx.ai.sdk.base import GenerationConfig, Message
+from ctx.ai.sdk.openai_responses import OpenAIResponsesSDK
 
 
 def _sdk() -> OpenAIResponsesSDK:

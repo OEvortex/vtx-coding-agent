@@ -1,4 +1,4 @@
-"""Tests for the vtx extension system.
+"""Tests for the ctx extension system.
 
 These tests cover the loader, the event bus, the tool-override semantics, and
 the JSON-Schema -> pydantic conversion. They do not exercise the agent loop
@@ -12,10 +12,9 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-
-from vtx.agent.tools.schema import _json_schema_to_pydantic
-from vtx.plugins.bus import EventBus
-from vtx.plugins.event_contract import (
+from ctx.agent.tools.schema import _json_schema_to_pydantic
+from ctx.plugins.bus import EventBus
+from ctx.plugins.event_contract import (
     AGENT_END,
     AGENT_START,
     COMPACTION_END,
@@ -27,13 +26,13 @@ from vtx.plugins.event_contract import (
     TURN_END,
     TURN_START,
 )
-from vtx.plugins.extensions import (
+from ctx.plugins.extensions import (
     ExtensionLoadError,
     discover_extension_paths,
     load_all_extensions,
     load_extension,
 )
-from vtx.protocol.types import ToolResult
+from ctx.protocol.types import ToolResult
 
 # =============================================================================
 # EventBus
@@ -143,7 +142,7 @@ def test_emit_sync_does_not_await_async_handlers(caplog):
 
     bus.on(SESSION_START)(handler)
 
-    with caplog.at_level(logging.WARNING, logger="vtx.agent.extensions"):
+    with caplog.at_level(logging.WARNING, logger="ctx.agent.extensions"):
         result = bus.emit_sync(SESSION_START)
     assert isinstance(result, dict)
     assert "returned a coroutine" in caplog.text
@@ -219,7 +218,7 @@ def test_load_extension_simple(tmp_path: Path):
     ext.write_text(
         dedent(
             """
-            from vtx.agent import AGENT_START
+            from ctx.agent import AGENT_START
 
             def register(api):
                 api.on(AGENT_START, lambda event, payload: None)
@@ -266,7 +265,7 @@ def test_load_extension_registering_tool(tmp_path: Path):
     assert "greet" in loaded.tools
 
     # Execute the registered tool end-to-end
-    from vtx.agent import ExtensionTool
+    from ctx.agent import ExtensionTool
 
     tool = loaded.tools["greet"]
     assert isinstance(tool, ExtensionTool)
@@ -318,16 +317,16 @@ def test_load_all_extensions_collects_errors(tmp_path: Path):
 
 
 def test_discover_extension_paths_project_and_global(tmp_path: Path, monkeypatch):
-    project = tmp_path / "project" / ".vtx" / "extensions"
+    project = tmp_path / "project" / ".ctx" / "extensions"
     project.mkdir(parents=True)
     (project / "first.py").write_text("def register(api): pass\n")
 
-    global_dir = tmp_path / "home" / ".vtx" / "agent" / "extensions"
+    global_dir = tmp_path / "home" / ".ctx" / "agent" / "extensions"
     global_dir.mkdir(parents=True)
     (global_dir / "second.py").write_text("def register(api): pass\n")
 
     paths = discover_extension_paths(
-        cwd=str(tmp_path / "project"), agent_dir=tmp_path / "home" / ".vtx" / "agent"
+        cwd=str(tmp_path / "project"), agent_dir=tmp_path / "home" / ".ctx" / "agent"
     )
     names = sorted(p.stem for p in paths)
     # project-local wins on conflict; here we get one from each.
@@ -373,7 +372,7 @@ def test_discover_extension_paths_resolves_dups(tmp_path: Path):
 
 
 def test_extension_tool_sync_execute(tmp_path: Path):
-    from vtx.agent import ExtensionTool
+    from ctx.agent import ExtensionTool
 
     schema = {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"]}
     params_model = _json_schema_to_pydantic("double", schema)
@@ -394,7 +393,7 @@ def test_extension_tool_sync_execute(tmp_path: Path):
 
 
 def test_extension_tool_async_execute(tmp_path: Path):
-    from vtx.agent import ExtensionTool
+    from ctx.agent import ExtensionTool
 
     schema = {"type": "object", "properties": {"x": {"type": "string"}}}
     params_model = _json_schema_to_pydantic("echo", schema)
@@ -425,11 +424,11 @@ async def _async_value(value):
 def test_extension_tool_override_built_in(tmp_path: Path, monkeypatch):
     """If an extension registers a tool whose name matches a built-in, the
     extension version should win in the merged list."""
-    from vtx.coding_agent.tools import get_tools_with_extensions
+    from ctx.coding_agent.tools import get_tools_with_extensions
 
     schema = {"type": "object", "properties": {"path": {"type": "string"}}}
     params_model = _json_schema_to_pydantic("read", schema)
-    from vtx.agent import ExtensionTool
+    from ctx.agent import ExtensionTool
 
     override = ExtensionTool(
         name="read",

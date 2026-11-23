@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 
 import pytest
-
-from vtx.tui import prompt_history as ph
-from vtx.tui.prompt_history import MAX_HISTORY_ENTRIES, PromptHistory
+from ctx.tui import prompt_history as ph
+from ctx.tui.prompt_history import MAX_HISTORY_ENTRIES, PromptHistory
 
 
 @pytest.fixture(autouse=True)

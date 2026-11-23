@@ -1,15 +1,14 @@
 import pytest
-
-from vtx.ai.providers.mock import MockProvider
-from vtx.core.config import Config
-from vtx.core.recap import (
+from ctx.ai.providers.mock import MockProvider
+from ctx.core.config import Config
+from ctx.core.recap import (
     RECENT_MESSAGE_WINDOW,
     TOOL_RESULT_EDGE_CHARS,
     build_recap_context,
     generate_recap,
     has_meaningful_activity,
 )
-from vtx.protocol.types import (
+from ctx.protocol.types import (
     AssistantMessage,
     TextContent,
     ToolCall,

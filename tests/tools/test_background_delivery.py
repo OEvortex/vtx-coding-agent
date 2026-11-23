@@ -18,15 +18,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from vtx.agent.background import BackgroundTaskManager
-from vtx.agent.loop import Agent
-from vtx.agent.session import Session
-from vtx.ai.providers.mock import MockProvider
-from vtx.core import BackgroundTaskCompletedEvent
+from ctx.agent.background import BackgroundTaskManager
+from ctx.agent.loop import Agent
+from ctx.agent.session import Session
+from ctx.ai.providers.mock import MockProvider
+from ctx.core import BackgroundTaskCompletedEvent
 
 #: The tag the loop wraps a delivered result in.
-NOTIFICATION_TAG = "vtx:background-task-completion"
+NOTIFICATION_TAG = "ctx:background-task-completion"
 
 FINDING = "RATED 7.0/10 — security risks around unrestricted file reads."
 
@@ -70,7 +69,7 @@ async def _settled_task(manager: BackgroundTaskManager, tmp_path: Path) -> str:
         return _Result(FINDING)
 
     record = await manager.register(
-        description="Rate the VTX codebase",
+        description="Rate the CTX codebase",
         prompt="rate it",
         subagent_type="subagent",
         model=None,
@@ -96,7 +95,7 @@ async def test_settled_result_is_injected_before_the_first_model_call(tmp_path: 
     first_call = _text_of_all(provider.calls[0])
     assert NOTIFICATION_TAG in first_call
     assert FINDING in first_call
-    assert "Rate the VTX codebase" in first_call
+    assert "Rate the CTX codebase" in first_call
 
     await manager.close()
 

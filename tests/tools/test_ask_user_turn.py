@@ -11,13 +11,12 @@ import json
 from collections.abc import AsyncIterator
 
 import pytest
-
-from vtx.agent.tools.ask_user import AskUserTool
-from vtx.agent.tools.base import BaseTool
-from vtx.agent.turn import run_single_turn
-from vtx.ai.base import BaseProvider, LLMStream, ProviderConfig
-from vtx.core import AskUserEvent, AskUserResponse, ToolResultEvent, TurnEndEvent
-from vtx.protocol.types import (
+from ctx.agent.tools.ask_user import AskUserTool
+from ctx.agent.tools.base import BaseTool
+from ctx.agent.turn import run_single_turn
+from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig
+from ctx.core import AskUserEvent, AskUserResponse, ToolResultEvent, TurnEndEvent
+from ctx.protocol.types import (
     Message,
     StopReason,
     StreamDone,

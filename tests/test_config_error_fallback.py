@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from vtx.core.config import Config, consume_config_warnings, get_config, reset_config
+from ctx.core.config import Config, consume_config_warnings, get_config, reset_config
 
 
 def test_invalid_toml_falls_back_to_defaults_and_records_warning(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".vtx"
+    config_dir = home / ".ctx"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.yml"
     config_file.write_text("[bad", encoding="utf-8")

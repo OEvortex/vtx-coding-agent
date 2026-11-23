@@ -1,7 +1,6 @@
 import pytest
-
-from vtx.core.config import Config
-from vtx.core.themes import get_theme, get_theme_ids
+from ctx.core.config import Config
+from ctx.core.themes import get_theme, get_theme_ids
 
 NEW_THEME_IDS = [
     "ayu",

@@ -1522,11 +1522,16 @@ test("the status filter is multi select, offers Terminated, and can sort by stat
 
 test("New Session is a split button: the label starts one, the chevron picks where", async () => {
   const h = createHarness();
+  Object.defineProperty(h.document.getElementById("chat"), "clientWidth", { value: 1000, configurable: true });
   h.post({ type: "ready" });
-  h.post({ type: "sessions", sessions: [], activeId: null, statuses: {} });
+  h.post({ type: "body", body: "thread" });
+  h.post({ type: "clear" });
+  h.post({ type: "sessions", sessions: [{ id: "A", short_id: "A", title: "A", working_directory: "/w" }], activeId: "A", statuses: {} });
   await h.settle(20);
+  h.document.getElementById("panel-toggle").click();
+  await h.settle(10);
 
-  const split = h.document.querySelector("#new-session-dd .new-session-split");
+  const split = h.document.querySelector("#sessions-panel .session-new-row .new-session-split");
   assert.ok(split, "the control is a split button");
   const main = split.querySelector(".new-session-btn");
   const more = split.querySelector(".new-session-more");
@@ -1554,7 +1559,7 @@ test("New Session is a split button: the label starts one, the chevron picks whe
   assert.strictEqual(h.errors().length, 0);
 });
 
-test("the session list keeps itself live, with nothing to refresh by hand", async () => {
+test("the session list keeps itself live, with a refresh action in the Copilot-style header", async () => {
   const h = createHarness();
   h.post({ type: "ready" });
   h.post({
@@ -1564,7 +1569,8 @@ test("the session list keeps itself live, with nothing to refresh by hand", asyn
     statuses: {}
   });
   await h.settle(10);
-  assert.strictEqual(h.document.getElementById("list-refresh-btn"), null, "no refresh button in the header");
+  const refresh = h.document.getElementById("refresh-btn");
+  assert.ok(refresh && !refresh.classList.contains("hidden"), "the header offers a refresh action");
   assert.ok(h.posted.some((m) => m.type === "listVisible" && m.value === true), "it says the list is on screen");
 
   // The switcher's own toolbar has no refresh either.
@@ -4689,7 +4695,8 @@ test("the transcript is a log and the composer is labelled", async () => {
   // it overrides the placeholder, so a stale one is what gets read out.
   h.post({ type: "body", body: "list" });
   await h.settle(10);
-  assert.match(input.getAttribute("aria-label"), /new chat/i);
+  assert.strictEqual(input.getAttribute("aria-label"), "Describe what to build");
+  assert.strictEqual(input.placeholder, "Describe what to build");
   const announcer = h.document.querySelector("#announcer");
   assert.strictEqual(announcer.getAttribute("aria-live"), "polite");
   assert.ok(!announcer.classList.contains("hidden"), "display:none would remove it from the accessibility tree");
@@ -6332,6 +6339,59 @@ test("turning the changed files summary off turns it off", async () => {
   h.post({ type: "capabilities", revert: true, showFileChanges: false });
   await h.settle(20);
   assert.ok(ws.classList.contains("hidden"), "and turning it off takes it away now, not next turn");
+  assert.strictEqual(h.errors().length, 0);
+});
+
+test("the empty sessions view is a quiet welcome with a composer", async () => {
+  const h = createHarness();
+  h.post({ type: "ready" });
+  h.post({ type: "capabilities", contextUsage: true });
+  h.post({
+    type: "options", currentMode: "default",
+    modes: [{ value: "default", name: "Default" }, { value: "bypass", name: "Bypass", icon: "shield" }],
+    models: [{ id: "auto", name: "Auto", default: "auto", variants: [{ value: "auto", name: "Auto" }] }],
+    currentModel: "auto"
+  });
+  h.post({ type: "usage", used: 0, size: 266000, cost: 0 });
+  h.post({ type: "sessions", sessions: [], activeId: null, folders: [], statuses: {} });
+  await h.settle(20);
+
+  assert.ok(!h.document.getElementById("landing-pet").classList.contains("hidden"), "the companion waits in the corner");
+  assert.strictEqual(h.document.querySelector("#sessions-list .sessions-empty"), null, "no copy next to it");
+  assert.strictEqual(h.document.getElementById("chat-title").textContent, "Sessions");
+  assert.strictEqual(h.document.getElementById("input").placeholder, "Describe what to build");
+  assert.strictEqual(h.document.getElementById("context-pill").textContent, "266K");
+  assert.strictEqual(h.document.getElementById("permission-label").textContent, "Default permissions");
+
+  // A session removes the companion; the rest of the composer stays.
+  h.post({ type: "sessions", sessions: [{ id: "a", short_id: "a", title: "One" }], activeId: null, statuses: {} });
+  await h.settle(10);
+  assert.ok(h.document.getElementById("landing-pet").classList.contains("hidden"), "and steps aside for a real chat");
+  assert.strictEqual(h.errors().length, 0);
+});
+
+test("the Copilot-style header and input actions talk to the host", async () => {
+  const h = createHarness();
+  h.post({ type: "ready" });
+  h.post({ type: "options", currentMode: "default", modes: [{ value: "default", name: "Default" }, { value: "bypass", name: "Bypass" }], models: [], currentModel: "" });
+  await h.settle(10);
+
+  h.document.getElementById("refresh-btn").click();
+  h.document.getElementById("mic-btn").click();
+  h.document.getElementById("options-btn").click();
+  h.document.getElementById("permission-pill").click();
+  await h.settle(10);
+
+  assert.ok(h.posted.some((m) => m.type === "refreshSessions"), "refresh re-lists sessions");
+  assert.ok(h.posted.some((m) => m.type === "voiceInput"), "the mic delegates dictation to VS Code");
+  assert.ok(h.posted.some((m) => m.type === "openSettings"), "the sliders open Vtx settings");
+  assert.ok(h.document.querySelector(".dv-menu .dv-menu-item"), "the permission picker offers the modes");
+
+  const bypass = [...h.document.querySelectorAll(".dv-menu .dv-menu-item")].find((r) => r.textContent.includes("Bypass"));
+  bypass.click();
+  await h.settle(10);
+  assert.ok(h.posted.some((m) => m.type === "setMode" && m.mode === "bypass"), "and applies the chosen permission");
+  assert.strictEqual(h.document.getElementById("permission-label").textContent, "Bypass");
   assert.strictEqual(h.errors().length, 0);
 });
 });

@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-VTX_THEME_TO_GHOSTTY_THEME = {
+CTX_THEME_TO_GHOSTTY_THEME = {
     "ayu": "Ayu",
     "catppuccin-frappe": "Catppuccin Frappe",
     "catppuccin-latte": "Catppuccin Latte",
@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
         "--project-dir",
         type=Path,
         default=Path.cwd(),
-        help="Directory to open before running `uv run vtx -c`.",
+        help="Directory to open before running `uv run ctx -c`.",
     )
     parser.add_argument(
         "--ghostty-config",
@@ -49,10 +49,10 @@ def parse_args() -> argparse.Namespace:
         help="Ghostty config file to rewrite during previews.",
     )
     parser.add_argument(
-        "--vtx-config",
+        "--ctx-config",
         type=Path,
-        default=Path.home() / ".config" / "vtx" / "config.yml",
-        help="Vtx config file to rewrite during previews.",
+        default=Path.home() / ".config" / "ctx" / "config.yml",
+        help="Ctx config file to rewrite during previews.",
     )
     parser.add_argument(
         "--duration", type=float, default=10.0, help="How long each preview stays open in seconds."
@@ -86,14 +86,14 @@ def list_ghostty_themes() -> set[str]:
 
 def ensure_theme_mapping_is_valid(available_themes: set[str]) -> None:
     missing = {
-        vtx_theme: ghostty_theme
-        for vtx_theme, ghostty_theme in VTX_THEME_TO_GHOSTTY_THEME.items()
+        ctx_theme: ghostty_theme
+        for ctx_theme, ghostty_theme in CTX_THEME_TO_GHOSTTY_THEME.items()
         if ghostty_theme not in available_themes
     }
     if missing:
         lines = ["Missing Ghostty theme mappings:"]
-        for vtx_theme, ghostty_theme in missing.items():
-            lines.append(f"  {vtx_theme} -> {ghostty_theme}")
+        for ctx_theme, ghostty_theme in missing.items():
+            lines.append(f"  {ctx_theme} -> {ghostty_theme}")
         raise RuntimeError("\n".join(lines))
 
 
@@ -132,7 +132,7 @@ def write_ghostty_config(config_path: Path, theme_name: str) -> None:
     config_path.write_text(f"theme = {theme_name}\n", encoding="utf-8")
 
 
-def write_vtx_theme(config_path: Path, theme_name: str) -> None:
+def write_ctx_theme(config_path: Path, theme_name: str) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
     original = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     updated = replace_or_append_theme_line(original, theme_name)
@@ -145,16 +145,16 @@ def sh_quote(value: str) -> str:
 
 def launch_preview(ghostty_app: Path, project_dir: Path, duration: float) -> None:
     trap_cmd = (
-        'trap \'test -n "$vtx_pid" && kill -TERM "$vtx_pid" 2>/dev/null || true\' EXIT INT TERM'
+        'trap \'test -n "$ctx_pid" && kill -TERM "$ctx_pid" 2>/dev/null || true\' EXIT INT TERM'
     )
     shell_script = (
         f"cd {sh_quote(str(project_dir))} && "
-        "vtx_pid='' && "
+        "ctx_pid='' && "
         f"{trap_cmd} && "
-        "uv run vtx -c & vtx_pid=$! && "
+        "uv run ctx -c & ctx_pid=$! && "
         f"sleep {duration} && "
-        'kill -TERM "$vtx_pid" 2>/dev/null || true && '
-        'wait "$vtx_pid" 2>/dev/null || true'
+        'kill -TERM "$ctx_pid" 2>/dev/null || true && '
+        'wait "$ctx_pid" 2>/dev/null || true'
     )
     subprocess.run(
         [
@@ -176,7 +176,7 @@ def main() -> int:
     args = parse_args()
     project_dir = args.project_dir.expanduser().resolve()
     ghostty_config_path = args.ghostty_config.expanduser()
-    vtx_config_path = args.vtx_config.expanduser()
+    ctx_config_path = args.ctx_config.expanduser()
     ghostty_app = args.ghostty_app.expanduser()
 
     if not project_dir.exists():
@@ -190,23 +190,23 @@ def main() -> int:
     original_ghostty_config = (
         ghostty_config_path.read_text(encoding="utf-8") if ghostty_config_path.exists() else None
     )
-    original_vtx_config = (
-        vtx_config_path.read_text(encoding="utf-8") if vtx_config_path.exists() else None
+    original_ctx_config = (
+        ctx_config_path.read_text(encoding="utf-8") if ctx_config_path.exists() else None
     )
 
     try:
-        for vtx_theme, ghostty_theme in VTX_THEME_TO_GHOSTTY_THEME.items():
-            print(f"Previewing vtx={vtx_theme} ghostty={ghostty_theme}")
-            write_vtx_theme(vtx_config_path, vtx_theme)
+        for ctx_theme, ghostty_theme in CTX_THEME_TO_GHOSTTY_THEME.items():
+            print(f"Previewing ctx={ctx_theme} ghostty={ghostty_theme}")
+            write_ctx_theme(ctx_config_path, ctx_theme)
             write_ghostty_config(ghostty_config_path, ghostty_theme)
             launch_preview(ghostty_app, project_dir, args.duration)
             time.sleep(args.duration + args.pause + 2)
     finally:
-        if original_vtx_config is None:
-            if vtx_config_path.exists():
-                vtx_config_path.unlink()
+        if original_ctx_config is None:
+            if ctx_config_path.exists():
+                ctx_config_path.unlink()
         else:
-            vtx_config_path.write_text(original_vtx_config, encoding="utf-8")
+            ctx_config_path.write_text(original_ctx_config, encoding="utf-8")
 
         if original_ghostty_config is None:
             if ghostty_config_path.exists():
@@ -214,7 +214,7 @@ def main() -> int:
         else:
             ghostty_config_path.write_text(original_ghostty_config, encoding="utf-8")
 
-    print("Done. Restored Ghostty and vtx config files.")
+    print("Done. Restored Ghostty and ctx config files.")
     return 0
 
 

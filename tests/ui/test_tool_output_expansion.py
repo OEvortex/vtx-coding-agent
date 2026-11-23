@@ -1,14 +1,13 @@
 import pytest
+from ctx.protocol.types import ImageContent
+from ctx.tui.blocks import ToolBlock
+from ctx.tui.chat import ChatLog
+from ctx.tui.diff_display import DIFF_BG_PAD_MARKER
+from ctx.tui.styles import get_styles
+from ctx.tui.tool_output import format_expand_hint, truncate_tool_output_text
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import Label
-
-from vtx.protocol.types import ImageContent
-from vtx.tui.blocks import ToolBlock
-from vtx.tui.chat import ChatLog
-from vtx.tui.diff_display import DIFF_BG_PAD_MARKER
-from vtx.tui.styles import get_styles
-from vtx.tui.tool_output import format_expand_hint, truncate_tool_output_text
 
 
 class ToolExpansionTestApp(App):

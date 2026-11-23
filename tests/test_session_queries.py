@@ -1,5 +1,5 @@
-from vtx.agent.session import Session
-from vtx.protocol.types import (
+from ctx.agent.session import Session
+from ctx.protocol.types import (
     AssistantMessage,
     FileChanges,
     TextContent,

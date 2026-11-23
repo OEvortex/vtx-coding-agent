@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from ctx.agent.sdk import tool
+from ctx.agent.sdk.tools import FunctionTool, _format_call_from_dict
+from ctx.protocol.types import ToolResult
 from pydantic import BaseModel
-
-from vtx.agent.sdk import tool
-from vtx.agent.sdk.tools import FunctionTool, _format_call_from_dict
-from vtx.protocol.types import ToolResult
 
 
 def test_tool_decorator_basic() -> None:

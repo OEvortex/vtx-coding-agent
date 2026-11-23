@@ -12,10 +12,9 @@ to hang.
 from __future__ import annotations
 
 import pytest
+from ctx.tui.chat import ChatLog
+from ctx.tui.styles import get_styles
 from textual.app import App, ComposeResult
-
-from vtx.tui.chat import ChatLog
-from vtx.tui.styles import get_styles
 
 
 class _TestApp(App):

@@ -1,6 +1,5 @@
 import pytest
-
-from vtx.core.image import IMAGE_EXTENSIONS, get_mime_type, is_image_file
+from ctx.core.image import IMAGE_EXTENSIONS, get_mime_type, is_image_file
 
 
 @pytest.mark.parametrize(

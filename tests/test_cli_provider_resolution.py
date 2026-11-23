@@ -1,6 +1,6 @@
-from vtx.agent.runtime import default_base_url_for_api
-from vtx.ai import resolve_provider_api_type
-from vtx.ai.models import ApiType
+from ctx.agent.runtime import default_base_url_for_api
+from ctx.ai import resolve_provider_api_type
+from ctx.ai.models import ApiType
 
 
 def test_resolve_provider_api_type_known_provider():
@@ -14,7 +14,7 @@ def test_resolve_provider_api_type_unknown_provider_defaults():
 
 
 def testdefault_base_url_for_api_openai(monkeypatch):
-    monkeypatch.setenv("VTX_BASE_URL", "http://localhost:1234/v1")
+    monkeypatch.setenv("CTX_BASE_URL", "http://localhost:1234/v1")
     assert default_base_url_for_api(ApiType(ApiType.OPENAI_SDK)) == "http://localhost:1234/v1"
 
 

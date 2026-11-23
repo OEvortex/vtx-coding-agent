@@ -1,0 +1,141 @@
+# ctx.coding_agent
+
+The product layer: the `ctx` console script, the headless runner, the concrete built-in tools and their default registry, the built-in skills package, and the handoff-agent loader. Use it to run the agent, or to embed its tools in something else. The Textual interface is `ctx.tui`.
+
+Everything here is wiring and choice. The engine it drives - the loop, the session store, the provider adapters - is `ctx.agent` and `ctx.ai`. Importing `ctx.coding_agent.tools` registers nothing by itself; each tool module exports a `PLUGIN` row that the plugin composition mounts.
+
+```
+ctx.coding_agent          CLI, headless runner, built-in tools, skills
+   |- ctx.tui             the Textual interface (app shell + primitives)
+   |- ctx.agent           harness (loop, sessions, tools, hooks)
+   |- ctx.plugins         plugin kernel; extensions are rows in it
+   |- ctx.ai              providers and the model catalog
+   |- ctx.core            config, permissions, events
+   |- ctx.git             branch metadata
+   |- ctx.mcp             MCP client
+```
+
+This package holds the wiring and the choices; the UI is `ctx.tui`, documented in its own README. `cli.py:run_tui_command` is the only thing here that reaches for it.
+
+## Usage
+
+The tools are ordinary `BaseTool` instances, so anything that can drive a tool can drive these. Reach them through the registry:
+
+```python
+import asyncio
+
+from ctx.coding_agent.tools import get_tool
+
+bash = get_tool("bash")
+
+
+async def main() -> None:
+    result = await bash.execute(params=bash.params(command="echo hello", timeout=10))
+    print(result.success, result.result)  # True hello
+
+
+asyncio.run(main())
+```
+
+`get_tool(name)` is the registry's default lookup and returns `None` for an unknown name. `tool.params` is the pydantic input model; `execute()` returns a `ToolResult` with `success`, `result`, `ui_summary`, and optional `images`, `file_changes`, and `structured` fields. Each tool also carries `description`, `needs_approval`, `mutating`, and the presentation hooks `format_call`, `format_preview`, and `ui_block`.
+
+The same registry feeds the agent loop, so a tool added here is immediately available to the model.
+
+## The console script
+
+`pyproject.toml` declares `ctx = "ctx.coding_agent.cli:main"`, so `cli:main` is the entry point for both run surfaces:
+
+```bash
+ctx                                    # interactive
+ctx -p "explain this repo"             # one prompt, then exit
+ctx -p - < prompt.md                   # prompt from stdin
+ctx --continue                         # resume the most recent session
+ctx --resume 4f2a -m anthropic/claude-opus-5
+```
+
+Subcommands are `ctx acp` (Agent Client Protocol server over stdio), `ctx update` (self-update to the latest stable PyPI release and exit), `ctx auth status`, `ctx models list`, `ctx config list|get|set`, and `ctx plugin ...` — `profiles`, `init NAME`, `path NAME`, `enable ROW`, `disable ROW`, `install SPEC`, `allow-version`, `revoke-version`, `version-exemptions` (see `plugin_cmd.py` and [docs/plugins.md](../../docs/plugins.md)).
+
+Flags are `--model/-m`, `--provider`, `--api-key/-k`, `--base-url/-u`, `--prompt/-p`, `--openai-compat-auth` and `--anthropic-compat-auth` (`auto`/`required`/`none`), `--insecure-skip-verify`, `--continue/-c`, `--resume/-r`, `--extension/-e` (repeatable), `--no-extensions`, `--agent/-a`, `--agent-file` (repeatable), `--no-agents`, `--list-agents`, `--list-extensions`, `--profile`, `--patch`, `--dump-config`, and `--version`.
+
+The CLI's first job is composition: it resolves `--profile` and `--patch`, calls `ctx.plugins.boot`, and only then builds a runtime. Extension files are discovered inside that boot and mounted as rows; `--list-extensions` prints the ones that mounted, with their tools, commands and handlers. See [docs/extensions.md](../../docs/extensions.md).
+
+With `-p` the run goes to `headless.run_headless`; otherwise to `tui.launch.run_tui`. `--continue` and `--resume` are rejected together with `-p`.
+
+## Headless
+
+`headless.py` exports `resolve_prompt(prompt_arg, *, stdin)`, `render_run(events, *, out, err)`, and `run_headless(...)`. `run_headless` returns an exit code derived from the `StopReason`: `0` for a normal stop, `1` for an error or an unmapped reason, `3` for a length stop, and `2` for an empty prompt or a provider/agent-init failure. `render_run` is the piece to reuse if you want the event stream without the CLI.
+
+Headless cannot show approval prompts, so it forces auto-approval for the run by writing the config file, running, and restoring it; the saved config is not mutated. A project's `.ctx/mcp.json` is read like any other, so its servers start with the run.
+
+## Built-in tools
+
+Registration goes through the plugin rows in `src/ctx/plugins/builtins/__init__.py`, not through this package's `__init__`: importing it builds nothing. `all_tools` (built lazily on first access) holds `ReadTool`, `ApplyPatchTool`, `BashTool`, `GrepTool`, `SkillTool`, `TodoTool`, plus `WebTool`, `WebSearchTool`, `AskUserTool`, `TaskTool`, `CodemodeTool`, and `ToolSearchTool` from `ctx.agent.tools` and the local `codemode`/`tool_search` modules. `DEFAULT_TOOLS` is `["read", "apply_patch", "bash", "skill", "todo", "web", "ask_user", "delegate_subagent"]`; `grep`, `web_search`, and `tool_search` are registered but not default-on, and `find` (`FindTool` in `tools/find.py`) ships a `PLUGIN` row that no shipped bundle mounts. `PARENT_ONLY_TOOLS` is `frozenset({"delegate_subagent"})` - not offered to a sub-agent.
+
+Every mounted tool row calls `mount_tool(ctx, ..., is_default=..., parent_only=...)` from `ctx.plugins.builtins.tools._register`.
+
+The filesystem tools are local to this package: `ReadTool`, `ApplyPatchTool`, `BashTool`, `GrepTool`, `SkillTool`, `TodoTool`, `FindTool`, `CodemodeTool`, `ToolSearchTool`. `WebTool`, `WebSearchTool`, `AskUserTool`, and `TaskTool` come from `ctx.agent.tools`.
+
+The registry API is `get_tools(default_names)`, `get_tool(name)`, `get_tools_with_extensions(default_names, extension_tools=None)`, `tools_by_name`, and `get_tool_definitions`. `get_tools_with_extensions` replaces by name match, so an extension can override a built-in. The background-task re-exports (`BackgroundTaskManager`, `BackgroundTaskRecord`, `get_manager`, `set_manager`) are here too.
+
+## Handoff agents and skills
+
+`agents/` loads switchable agents from `.ctx/agent/<name>.py`: a bundle of system-prompt instructions, model/provider/thinking/max-turns overrides, a tool allow/deny list, agent-scoped tools and slash commands, and agent-scoped extensions. There are no built-in profiles. `load_all_agents(cwd=..., configured=...)` returns `(loaded, errors)` and collects errors rather than raising, so one bad agent file does not block the rest; `ctx --list-agents` prints that pair. An agent's `extensions` are mounted as rows of the running composition, scoped to that agent.
+
+`builtin_skills/` is registered into the harness by `register_skills_package("ctx.coding_agent")` at package import. It ships `cloud/google-colab`, `cloud/modal`, `code-review/review`, `general/github`, `meta/skill-builder`, `meta/ctx-self-extend`, and `setup/init`.
+
+`meta/ctx-self-extend` is the harness's own self-extension skill: it tells the model which surface to reach for when it needs a capability it does not have (a skill, a plugin row, or an extension), how a registered tool actually reaches the provider, and which paths are forbidden. It is bundled so that any agent composed on the ctx harness - the coding agent, the SDK runner, a sub-agent - inherits it without the project having to ship a copy.
+
+## The interface: `ctx.tui`
+
+See `ctx/tui/README.md`. `ctx.tui.__all__` exports `Ctx`, `run_tui`, `ChatLog`, `InfoBar`, `StatusLine`, `QueueDisplay`, `format_path`, `TreeSelector`, `CommandsMixin`, and `export_session_html`, all lazily.
+
+<details><summary>Module map</summary>
+
+- `app.py` holds `Ctx`, the `App` subclass that composes the widget tree, wires the runtime, and routes input. It is also where `BINDINGS` lives.
+- `launch.py` has `run_tui(args)` and the exit summary printed after the app closes; `startup.py` has the background chores - binary download, update check, file-path scan, git-branch refresh, launch warnings.
+- `chat.py` is `ChatLog`, the scrollback that mounts the `ctx.tui.blocks` widgets; `session_ui.py` renders persisted sessions into it.
+- `widgets.py` has `InfoBar`, `StatusLine`, `QueueDisplay`, `FileChangesModal`, `format_path`, and `get_git_branch`; `status_lines.py` has the context-aware status-line text for model and agent lifecycle states, per-tool activity, and per-tool error lines.
+- `tree.py` is `TreeSelector`, the session-tree navigator. `queue_ui.py` holds the pending and steer message queue state and its rendering. `agent_runner.py` drives agent runs, forwards agent events to the chat UI, and handles the `!` / `!!` shell commands.
+- `completion_ui.py` handles the completion-list and selection-mode picker messages. Its `@on` handlers are re-bound in the `Ctx` class body, because Textual's metaclass only scans the namespace of classes it creates.
+- `extension_ui.py` is `TextualExtensionUI`, implementing `ExtensionUIContext` over the app: confirm / select / input dialogs, chat notifications, and a persistent status/widget footer bar.
+
+</details>
+- `export.py` is `export_session_html`, a standalone exporter that parses session JSONL directly and takes the tool registry as its only ctx dependency. `recap.py` arms a 30s idle timer after a run and drafts a "where you left off" summary with a cheap one-off model call. `app_protocol.py` is the protocol the agent runner and mixins are typed against.
+
+### Key bindings
+
+From the `BINDINGS` table on `Ctx`:
+
+- `ctrl+c` clear, `ctrl+d` delete session, `escape` interrupt the running agent
+- `left` / `right` tree page up / down
+- `ctrl+t` cycle thinking level, `ctrl+shift+t` toggle thinking
+- `ctrl+o` toggle tool output
+- `shift+tab` cycle handoff agent
+- `alt+ctrl+p` cycle permission mode, `alt+ctrl+g` cycle tool group
+
+The editor's own bindings live on `InputBox` in `ctx.tui.input`.
+
+### Slash commands
+
+`commands/` splits handling by domain into `CommandsMixin`: `settings.py`, `models.py`, `sessions.py`, `auth.py`, `providers.py`, `agents.py`, `switch.py`, `update.py`, `reload.py`, and `mcp.py`.
+
+Routing is two-stage. `Ctx` first tries `CommandsMixin._handle_command`, so a built-in always wins a name collision with a skill; anything the router does not know falls through to the skill system, Extension commands — whatever registered on `ctx.commands` — get the last swing, so an extension can shadow a built-in - and a handler that raises is reported in the chat log rather than crashing the app.
+
+Routable commands are `help`, `quit`/`exit`/`q`, `clear`, `model`, `provider`, `new`, `settings`, `themes`, `permissions`, `thinking`, `effort`, `notifications`, `ponytail`, `handoff`, `resume`, `tree`, `undo`, `redo`, `session`, `login`, `logout`, `export`, `copy`, `compact`, `recap`, `agent`, `switch`, `update`, `reload`, and `mcp`.
+
+`DEFAULT_COMMANDS` in `ctx.tui.autocomplete` is the autocomplete list, and it is deliberately **not** the same set. `/effort` is a routable alias of `/thinking` - "effort" is what the wire calls it - and it is not advertised in autocomplete, because `/settings` is the discoverable entry point for the thinking and permissions sub-commands. `/switch` is handled but likewise not advertised.
+
+### Thinking levels
+
+`/thinking` and `ctrl+t` operate on `resolve_thinking_levels` in `ctx.ai.thinking`, the single source of truth also used by session restore and model switching. The offered set is what the models.dev catalog advertises for the model, intersected with what the transport's effort enum can send and what the API style has a wire spelling for.
+
+One rough edge is worth stating plainly. `get_model` matches model ids exactly, so `space-bunny-alpha` misses the catalog entry `stealth/space-bunny-alpha` and the picker falls back to the provider's raw enum, which offers levels the model marks unsupported. `SettingsCommands._thinking_availability` reports this rather than hiding it, with `catalog entry not found, check the exact model id`. The model id format is not flexible; there is no prefix matching to rescue a near-miss.
+
+## Tests
+
+```bash
+uv run --no-sync python -m pytest -p no:cacheprovider tests/ui -q
+uv run --no-sync python -m pytest -p no:cacheprovider tests/test_cli.py tests/test_headless.py tests/test_agent_profiles.py -q
+```
+
+`tests/ui` holds the app, panel, picker, and widget tests; the CLI, headless runner, and agent loader are tested from `tests/` at the top level.

@@ -1,4 +1,4 @@
-"""Integration test: the sandbox driving real VTX tools, not test doubles.
+"""Integration test: the sandbox driving real CTX tools, not test doubles.
 
 The unit tests use trivial coroutines. This exercises the actual
 ``BaseTool`` contract, which is where the interesting mismatch lives: the
@@ -11,10 +11,8 @@ from __future__ import annotations
 import json
 
 import pytest
-from pydantic import BaseModel, Field
-
-from vtx.agent.tools import BaseTool
-from vtx.codemode import (
+from ctx.agent.tools import BaseTool
+from ctx.codemode import (
     CodemodeSandbox,
     Limits,
     ToolError,
@@ -22,8 +20,9 @@ from vtx.codemode import (
     adapt_tools,
     base_tool_schema,
 )
-from vtx.codemode.types import CodemodeTool
-from vtx.protocol.types import ToolResult
+from ctx.codemode.types import CodemodeTool
+from ctx.protocol.types import ToolResult
+from pydantic import BaseModel, Field
 
 
 class Query(BaseModel):
@@ -211,7 +210,7 @@ class RemoteTool(BaseTool):
 
     @property
     def output_schema(self):
-        from vtx.mcp.tool import mcp_result_schema
+        from ctx.mcp.tool import mcp_result_schema
 
         return mcp_result_schema({"type": "array", "items": {"type": "integer"}})
 
@@ -257,7 +256,7 @@ def test_an_mcp_result_schema_renders_as_a_call_tool_result():
     # The declaration is the model's only description of what it gets back. A
     # bare `dict[str, Any]` would not say that structured data is there, or that
     # `isError` is there to be branched on.
-    from vtx.codemode.declarations import render_signature
+    from ctx.codemode.declarations import render_signature
 
     text = render_signature(adapt_tool(RemoteTool()))
     # The tool's own declared output shape is spelled into the envelope, so the
@@ -266,8 +265,8 @@ def test_an_mcp_result_schema_renders_as_a_call_tool_result():
 
 
 def test_the_mcp_types_preamble_appears_only_when_something_uses_it():
-    from vtx.codemode.declarations import render_declarations
-    from vtx.codemode.types import CodemodeTool
+    from ctx.codemode.declarations import render_declarations
+    from ctx.codemode.types import CodemodeTool
 
     plain = CodemodeTool(name="read", description="Read", execute=lambda a, s: None)
 
@@ -284,8 +283,8 @@ def test_the_mcp_types_preamble_appears_only_when_something_uses_it():
 
 
 def test_the_catalog_groups_tools_by_namespace():
-    from vtx.codemode.declarations import render_declarations
-    from vtx.codemode.types import CodemodeTool
+    from ctx.codemode.declarations import render_declarations
+    from ctx.codemode.types import CodemodeTool
 
     tools = [
         CodemodeTool(name="read", description="Read a file", execute=lambda a, s: None),
@@ -309,8 +308,8 @@ def test_a_tiny_budget_still_shows_every_namespace():
     # The property a flat cheapest-first pass does not have: with two servers,
     # the cheaper one must not use the whole budget and leave the other absent
     # with no sign it exists.
-    from vtx.codemode.declarations import render_declarations
-    from vtx.codemode.types import CodemodeTool
+    from ctx.codemode.declarations import render_declarations
+    from ctx.codemode.types import CodemodeTool
 
     def many(namespace: str, count: int) -> list[CodemodeTool]:
         return [
@@ -334,7 +333,7 @@ def test_a_tiny_budget_still_shows_every_namespace():
 
 
 def test_a_listed_and_callable_tool_split_survives_into_the_instructions():
-    from vtx.codemode.types import CodemodeTool
+    from ctx.codemode.types import CodemodeTool
 
     async def noop(args, signal):
         return None
@@ -364,7 +363,7 @@ async def test_search_finds_a_tool_the_catalog_never_listed():
     # A tool that is callable but unlisted is the one a model has least reason
     # to know exists, so hiding it from the search that exists to surface it
     # would make it unreachable in practice rather than merely unadvertised.
-    from vtx.codemode.types import CodemodeTool
+    from ctx.codemode.types import CodemodeTool
 
     async def noop(args, signal):
         return None
@@ -409,7 +408,7 @@ def test_a_hostile_output_schema_degrades_instead_of_raising(schema):
     would take down every request from a session with a badly-behaved server
     connected, rather than that one tool's description.
     """
-    from vtx.codemode.declarations import render_signature
+    from ctx.codemode.declarations import render_signature
 
     async def noop(args, signal):
         return None
@@ -424,8 +423,8 @@ def test_a_hostile_output_schema_degrades_instead_of_raising(schema):
 def test_a_string_structured_content_still_renders_the_envelope():
     # Present but the wrong shape: the envelope is real, so it is named, and the
     # inner type falls back rather than inventing one.
-    from vtx.codemode.declarations import render_signature
-    from vtx.mcp.tool import mcp_result_schema
+    from ctx.codemode.declarations import render_signature
+    from ctx.mcp.tool import mcp_result_schema
 
     async def noop(args, signal):
         return None

@@ -2,9 +2,8 @@ import asyncio
 
 import httpx
 import pytest
-
-from vtx.ai.base import make_http_client
-from vtx.core.config import Config, reset_config, set_config
+from ctx.ai.base import make_http_client
+from ctx.core.config import Config, reset_config, set_config
 
 
 @pytest.fixture(autouse=True)

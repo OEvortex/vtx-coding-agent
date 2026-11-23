@@ -2,12 +2,11 @@ import asyncio
 from io import StringIO
 
 import pytest
-
-from vtx.agent.loop import Agent
-from vtx.agent.session import Session
-from vtx.ai.providers.mock import MockProvider
-from vtx.coding_agent.headless import _exit_code, render_run, resolve_prompt, run_headless
-from vtx.core import (
+from ctx.agent.loop import Agent
+from ctx.agent.session import Session
+from ctx.ai.providers.mock import MockProvider
+from ctx.coding_agent.headless import _exit_code, render_run, resolve_prompt, run_headless
+from ctx.core import (
     AgentEndEvent,
     ApprovalResponse,
     AskUserEvent,
@@ -17,8 +16,8 @@ from vtx.core import (
     ToolApprovalEvent,
     TurnEndEvent,
 )
-from vtx.core.config import get_config
-from vtx.protocol.types import AssistantMessage, StopReason, TextContent
+from ctx.core.config import get_config
+from ctx.protocol.types import AssistantMessage, StopReason, TextContent
 
 
 async def _emit(events):
@@ -127,7 +126,7 @@ async def test_run_headless_prints_and_restores_permissions(monkeypatch, capsys)
     get_config().permissions.mode = "prompt"
     # create_provider is called from the harness runtime, so patch it there.
     monkeypatch.setattr(
-        "vtx.agent.runtime.create_provider",
+        "ctx.agent.runtime.create_provider",
         lambda api_type, config: MockProvider(config, scenario="simple_text"),
     )
     code = await _run_headless("hi")
@@ -140,7 +139,7 @@ async def test_run_headless_prints_and_restores_permissions(monkeypatch, capsys)
 async def test_run_headless_sets_auto_during_run_and_restores(monkeypatch):
     get_config().permissions.mode = "prompt"
     monkeypatch.setattr(
-        "vtx.agent.runtime.create_provider",
+        "ctx.agent.runtime.create_provider",
         lambda api_type, config: MockProvider(config, scenario="simple_text"),
     )
 
@@ -148,7 +147,7 @@ async def test_run_headless_sets_auto_during_run_and_restores(monkeypatch):
         assert get_config().permissions.mode == "auto"
         return StopReason.STOP
 
-    monkeypatch.setattr("vtx.coding_agent.headless.render_run", fake_render_run)
+    monkeypatch.setattr("ctx.coding_agent.headless.render_run", fake_render_run)
 
     code = await _run_headless("hi")
     assert code == 0

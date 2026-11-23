@@ -1,5 +1,5 @@
-from vtx.tui.app import Vtx
-from vtx.tui.blocks import LaunchWarning
+from ctx.tui.app import Ctx
+from ctx.tui.blocks import LaunchWarning
 
 
 class _StubInputBox:
@@ -13,8 +13,8 @@ class _StubInputBox:
         pass
 
 
-def _make_app() -> Vtx:
-    return Vtx(cwd=".")
+def _make_app() -> Ctx:
+    return Ctx(cwd=".")
 
 
 def test_flush_launch_warnings_sends_to_chat(fake_chat) -> None:
@@ -31,7 +31,7 @@ def test_flush_launch_warnings_sends_to_chat(fake_chat) -> None:
 
 
 def test_on_mount_continue_recent_error_shows_launch_warning(fake_chat, monkeypatch) -> None:
-    app = Vtx(cwd=".", continue_recent=True)
+    app = Ctx(cwd=".", continue_recent=True)
     input_box = _StubInputBox()
 
     def _query_one(selector, cls=None):
@@ -54,7 +54,7 @@ def test_on_mount_continue_recent_error_shows_launch_warning(fake_chat, monkeypa
     ):
         raise ValueError("Invalid session file (no header): /tmp/bad.jsonl")
 
-    monkeypatch.setattr("vtx.tui.app.Session.continue_recent", _fail_continue_recent)
+    monkeypatch.setattr("ctx.tui.app.Session.continue_recent", _fail_continue_recent)
 
     app.on_mount()
 

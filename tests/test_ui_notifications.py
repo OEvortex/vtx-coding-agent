@@ -1,11 +1,11 @@
-from vtx.core import AgentEndEvent, ToolApprovalEvent, TurnStartEvent
-from vtx.core.config import get_config
-from vtx.protocol.types import StopReason
-from vtx.tui.app import Vtx
+from ctx.core import AgentEndEvent, ToolApprovalEvent, TurnStartEvent
+from ctx.core.config import get_config
+from ctx.protocol.types import StopReason
+from ctx.tui.app import Ctx
 
 
-def _make_app() -> Vtx:
-    return Vtx(cwd=".")
+def _make_app() -> Ctx:
+    return Ctx(cwd=".")
 
 
 def test_should_notify_for_event_respects_config() -> None:

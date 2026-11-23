@@ -8,10 +8,9 @@ while a task is running, and it repaints on resize.
 from __future__ import annotations
 
 import pytest
+from ctx.coding_agent.tools.todo import TodoTool, current_todo_tool
+from ctx.tui.todo_panel import IDLE_TICK_SECONDS, TICK_SECONDS, TodoPanel
 from textual.app import App, ComposeResult
-
-from vtx.coding_agent.tools.todo import TodoTool, current_todo_tool
-from vtx.tui.todo_panel import IDLE_TICK_SECONDS, TICK_SECONDS, TodoPanel
 
 
 class _PanelApp(App):
@@ -35,7 +34,7 @@ async def tool_add(subject: str) -> None:
     replaces on construction, so each test starts from a tool that has never
     seen another test's tasks.
     """
-    from vtx.coding_agent.tools.todo import TodoParams
+    from ctx.coding_agent.tools.todo import TodoParams
 
     tool = TodoTool()
     await tool.execute(TodoParams(todos=[{"content": subject}]))
@@ -65,7 +64,7 @@ async def test_panel_shows_once_a_task_exists() -> None:
 
 @pytest.mark.asyncio
 async def test_panel_hides_again_when_the_plan_is_cleared() -> None:
-    from vtx.coding_agent.tools.todo import TodoParams
+    from ctx.coding_agent.tools.todo import TodoParams
 
     await tool_add("Read the code")
     app = _PanelApp(current_todo_tool())
@@ -87,7 +86,7 @@ async def test_panel_hides_again_when_the_plan_is_cleared() -> None:
 
 @pytest.mark.asyncio
 async def test_timer_runs_fast_only_while_a_task_is_running() -> None:
-    from vtx.coding_agent.tools.todo import TodoParams
+    from ctx.coding_agent.tools.todo import TodoParams
 
     tool = TodoTool()
     await tool.execute(TodoParams(todos=[{"content": "Idle task"}]))
@@ -108,7 +107,7 @@ async def test_timer_runs_fast_only_while_a_task_is_running() -> None:
 
 @pytest.mark.asyncio
 async def test_counts_mirrors_the_plan() -> None:
-    from vtx.coding_agent.tools.todo import TodoParams
+    from ctx.coding_agent.tools.todo import TodoParams
 
     tool = TodoTool()
     await tool.execute(TodoParams(todos=[{"content": "A"}, {"content": "B"}]))
@@ -126,7 +125,7 @@ async def test_counts_mirrors_the_plan() -> None:
 @pytest.mark.asyncio
 async def test_refresh_after_a_tool_call_paints_the_new_row() -> None:
     """The tool calls the registered refresh callback, not the panel itself."""
-    from vtx.coding_agent.tools.todo import (
+    from ctx.coding_agent.tools.todo import (
         TodoParams,
         register_todo_refresh,
         unregister_todo_refresh,

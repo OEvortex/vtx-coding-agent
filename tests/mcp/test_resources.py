@@ -12,8 +12,7 @@ import json
 from collections.abc import Callable
 
 import pytest
-
-from vtx.mcp.resources import (
+from ctx.mcp.resources import (
     LIST_MCP_RESOURCE_TEMPLATES_TOOL,
     LIST_MCP_RESOURCES_TOOL,
     READ_MCP_RESOURCE_TOOL,
@@ -117,7 +116,7 @@ def _tool(name: str, servers: list[McpResourceServer]):
 
 def _tool_from(name: str, servers: Callable[[], list[McpResourceServer]]):
     """Build a tool over an already-callable server source."""
-    from vtx.mcp.resources import (
+    from ctx.mcp.resources import (
         McpListResourcesTool,
         McpListResourceTemplatesTool,
         McpReadResourceTool,

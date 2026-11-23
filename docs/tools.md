@@ -1,19 +1,19 @@
 # Tools
 
 A tool is the only way the model acts on the world beyond talking. This page is the
-complete reference: every tool Vtx registers, its exact parameter schema, and a worked
-example. Read [how-vtx-works.md](how-vtx-works.md) for how a tool reaches the model in
+complete reference: every tool Ctx registers, its exact parameter schema, and a worked
+example. Read [how-ctx-works.md](how-ctx-works.md) for how a tool reaches the model in
 the first place.
 
 ## The tool set
 
-Vtx registers 14 tools. The composition decides which are on, so the authoritative
+Ctx registers 14 tools. The composition decides which are on, so the authoritative
 default set is the one the running profile resolves, not a constant in the source.
 
 Run this to see what your profile actually boots with:
 
 ```bash
-vtx --dump-config | grep -E "id:|disabled:"
+ctx --dump-config | grep -E "id:|disabled:"
 ```
 
 | Tool | Default on | Mutating | Purpose |
@@ -34,9 +34,9 @@ vtx --dump-config | grep -E "id:|disabled:"
 | `tool_search` | on demand | no | Find a tool by what it does |
 
 The default set is resolved by the plugin composition
-(`ctx.tools.defaults()`, `src/vtx/plugins/services.py:108`). `find`, `grep`, and
+(`ctx.tools.defaults()`, `src/ctx/plugins/services.py:108`). `find`, `grep`, and
 `web_search` are registered but off by default - `find`'s row is not even in the
-`base` bundle (`src/vtx/plugins/builtins/__init__.py:48`) - so turn one on by
+`base` bundle (`src/ctx/plugins/builtins/__init__.py:48`) - so turn one on by
 naming its row in your profile, or let `tool_search` surface it.
 
 `tool_search` is the one row that is neither simply on nor simply off. It is
@@ -44,7 +44,7 @@ naming its row in your profile, or let `tool_search` surface it.
 only when the session has tools it has not been offered: `tool-search` is off by
 default and `ConversationRuntime.declared_tools` adds it back when an MCP server's
 tools are `codemode`, `codemode-deferred`, or `deferred`
-(`src/vtx/agent/runtime.py:795-818`). A declaration is sent on every turn, so a session
+(`src/ctx/agent/runtime.py:795-818`). A declaration is sent on every turn, so a session
 with nothing to search should not pay for the tool that finds it -- the same rule
 pi-mono uses, activating `tool_search` for a `deferred` server. Name it in a
 profile's tool list to force it on; `tools_deny: ["tool_search"]` keeps it off
@@ -55,10 +55,10 @@ gate before it runs. See [permissions.md](permissions.md).
 
 ### Turning a tool off is not always one command
 
-Every tool above belongs to a plugin row, so `vtx plugin disable <row-id>` is the way to
+Every tool above belongs to a plugin row, so `ctx plugin disable <row-id>` is the way to
 remove one - except that three rows do not take effect. `web`, `ask_user`, and
 `delegate_subagent` are also registered at *import time* with `is_default=True`
-(`src/vtx/agent/tools/__init__.py:216-218`), so `vtx plugin disable tool-web`,
+(`src/ctx/agent/tools/__init__.py:216-218`), so `ctx plugin disable tool-web`,
 `tool-ask-user`, and `tool-subagent` unmount their rows while the tools stay
 in the registry and the model keeps calling them. `tool-read`, `tool-edit`, `tool-write`,
 `tool-bash`, `tool-grep`, `tool-skill`, `tool-todo`, `tool-codemode`, `tool-search`,
@@ -68,7 +68,7 @@ in the registry and the model keeps calling them. `tool-read`, `tool-edit`, `too
 ## How a tool is described to the model
 
 Each tool carries a JSON Schema derived from its `params` pydantic model
-(`json_schema_to_pydantic`, `src/vtx/agent/tools/schema.py`), plus the tool's
+(`json_schema_to_pydantic`, `src/ctx/agent/tools/schema.py`), plus the tool's
 description string. The model sees the name, the description, and the schema - never
 the docstring. That is why the parameter descriptions below matter: they are the only
 contract the model has.
@@ -86,7 +86,7 @@ Read a file or list a directory. Non-mutating, so it never prompts.
 | `limit` | `int \| None` | `None` | Line count (for large files) |
 
 Reads are capped at 2000 lines and 2000 characters per line
-(`src/vtx/coding_agent/tools/read.py:19-20`), and a directory listing at 1000 entries. Use
+(`src/ctx/coding_agent/tools/read.py:19-20`), and a directory listing at 1000 entries. Use
 `offset` and `limit` to page through anything larger.
 
 ```json
@@ -94,7 +94,7 @@ Reads are capped at 2000 lines and 2000 characters per line
 ```
 
 ```json
-{"path": "src/vtx/agent", "limit": 40}
+{"path": "src/ctx/agent", "limit": 40}
 ```
 
 Listing a directory returns its entries rather than file contents.
@@ -112,13 +112,13 @@ Replace text in an existing file. Mutating.
 
 `old_string` must appear in the file; without `replace_all` only the **first**
 occurrence is replaced (`content.replace(old, new, 1)`,
-`src/vtx/coding_agent/tools/edit.py:227-230`), so include enough surrounding
+`src/ctx/coding_agent/tools/edit.py:227-230`), so include enough surrounding
 context to make the target unambiguous. Read the file first; the model has no
 file cache.
 
 ```json
 {
-  "path": "/repo/src/vtx/core/version.py",
+  "path": "/repo/src/ctx/core/version.py",
   "old_string": "VERSION = \"1.2.2\"",
   "new_string": "VERSION = \"1.3.0\""
 }
@@ -128,7 +128,7 @@ file cache.
 {
   "path": "/repo/README.md",
   "old_string": "pi agent",
-  "new_string": "vtx agent",
+  "new_string": "ctx agent",
   "replace_all": true
 }
 ```
@@ -162,9 +162,9 @@ about.
 | `command` | `str` | required | Command line string to execute |
 | `timeout` | `int` | `180` | Timeout in seconds |
 
-The default timeout is 180 seconds (`src/vtx/coding_agent/tools/bash.py:21`). Output
+The default timeout is 180 seconds (`src/ctx/coding_agent/tools/bash.py:21`). Output
 is tail-truncated to the last 2000 lines and 50 KB, with the full log written to a temp
-file (`src/vtx/coding_agent/tools/bash.py:22-23`, `:92`, `:376-378`).
+file (`src/ctx/coding_agent/tools/bash.py:22-23`, `:92`, `:376-378`).
 
 ```json
 {"command": "git status --short"}
@@ -181,7 +181,7 @@ chain with `&&` inside a single command.
 
 Find files and directories by glob. Registered but off by default: its
 `tool-find` row is not in the `base` bundle, so a profile has to add it
-explicitly (`src/vtx/plugins/builtins/__init__.py:48`).
+explicitly (`src/ctx/plugins/builtins/__init__.py:48`).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -189,10 +189,10 @@ explicitly (`src/vtx/plugins/builtins/__init__.py:48`).
 | `path` | `str \| None` | `None` | Directory to search within (defaults to cwd) |
 
 Respects `.gitignore`. Results are sorted by modification time and truncated to 100
-entries (`src/vtx/coding_agent/tools/find.py:17`).
+entries (`src/ctx/coding_agent/tools/find.py:17`).
 
 ```json
-{"pattern": "*.py", "path": "src/vtx/agent"}
+{"pattern": "*.py", "path": "src/ctx/agent"}
 ```
 
 ```json
@@ -237,14 +237,14 @@ Search the web through Exa's MCP endpoint. No API key required.
 ```
 
 `web_search` is the same tool under a second name, registered but off by default
-(`src/vtx/agent/tools/web.py:135`, mounted with `is_default=False` at
-`src/vtx/plugins/builtins/tools/web.py:13`). It exists so a provider that reserves
+(`src/ctx/agent/tools/web.py:135`, mounted with `is_default=False` at
+`src/ctx/plugins/builtins/tools/web.py:13`). It exists so a provider that reserves
 `web` can still reach the capability.
 
 ## `todo`
 
 Track a task list for multi-step work. Default-on, and `mutating=False` in the
-code (`src/vtx/coding_agent/tools/todo.py:182`) because it only mutates its own
+code (`src/ctx/coding_agent/tools/todo.py:182`) because it only mutates its own
 task state, never the filesystem - so it never prompts.
 
 | Parameter | Type | Default | Description |
@@ -263,7 +263,7 @@ task state, never the filesystem - so it never prompts.
 | `include_deleted` | `bool` | `False` | Include deleted tasks in `list` |
 
 `action` may be omitted: it is inferred from which fields are present
-(`src/vtx/coding_agent/tools/todo.py:116-147`). Plan the whole list in one
+(`src/ctx/coding_agent/tools/todo.py:116-147`). Plan the whole list in one
 `set` call rather than creating tasks one at a time - the tool's own guidelines
 say so.
 
@@ -286,7 +286,7 @@ only tool that stops the agent to get input.
 
 Use `questions` when you need several answers at once; use the single-question shape
 only for a genuinely one-off. Options need 2-4 entries with a label and an
-explanation (`src/vtx/agent/tools/ask_user.py:112`).
+explanation (`src/ctx/agent/tools/ask_user.py:112`).
 
 ```json
 {
@@ -318,12 +318,12 @@ Run a sub-agent in an isolated session. Non-mutating from the parent's perspecti
 |---|---|---|---|
 | `description` | `str` | required | Concise 3-5 word imperative label, 1-128 chars |
 | `prompt` | `str` | required | Detailed task instructions; the sub-agent cannot see this chat |
-| `subagent_type` | `str` | `""` | Agent from `.vtx/agent/<name>.py`; empty runs the default with the parent's tool surface |
+| `subagent_type` | `str` | `""` | Agent from `.ctx/agent/<name>.py`; empty runs the default with the parent's tool surface |
 | `model` | `str \| None` | `None` | Model override (defaults to the parent agent's model) |
 | `background` | `bool` | `False` | Return a `task_id` immediately; completion arrives next turn |
 
 The prompt is the only context the sub-agent gets, so put everything it needs in
-there (`src/vtx/agent/tools/task.py:30`).
+there (`src/ctx/agent/tools/task.py:30`).
 
 ```json
 {
@@ -352,7 +352,7 @@ chain of direct calls costs one turn each.
 
 Tools are reached as `tools.<identifier>(**kwargs)` inside the script, so a gated tool
 needs an admission the first time. `tools.search(query=..., limit=...)` lists what is
-available (`src/vtx/coding_agent/tools/codemode.py`).
+available (`src/ctx/coding_agent/tools/codemode.py`).
 
 ```json
 {"code": "paths = (await tools.find(pattern='src/**/*.py')).splitlines()[:20]\ntexts = await asyncio.gather(*(tools.read(path=p) for p in paths))\nreturn [{'path': p, 'lines': len(t.splitlines())} for p, t in zip(paths, texts)]"}
@@ -422,7 +422,7 @@ Load, create, and patch skills. Mutating, because `create`, `edit`, `patch`, and
 | `scope` | `"project" \| "global"` | `"project"` | Target scope for `create` |
 
 ```json
-{"action": "load", "name": "vtx-self-extend"}
+{"action": "load", "name": "ctx-self-extend"}
 ```
 
 ```json
@@ -451,5 +451,5 @@ See [skills.md](skills.md) for the full authoring contract.
 - `find`, `grep`, and `web_search` are off by default, so an agent that needs them
   must have them enabled by profile or find them with `tool_search`.
 - A tool that a plugin registers by overriding a built-in's name replaces it
-  (`ToolService.assemble`, `src/vtx/plugins/services.py:118`), which also
+  (`ToolService.assemble`, `src/ctx/plugins/services.py:118`), which also
   means a buggy plugin can silently take `bash` away.

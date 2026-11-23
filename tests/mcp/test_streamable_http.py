@@ -3,10 +3,8 @@ import json
 import threading
 
 import pytest
-
-from tests.mcp.http_helpers import Reply, Request, protocol_reply, serve, shutdown
-from vtx.mcp import McpClient, McpClientOptions, McpError, McpRequestOptions
-from vtx.mcp.transports.streamable_http import (
+from ctx.mcp import McpClient, McpClientOptions, McpError, McpRequestOptions
+from ctx.mcp.transports.streamable_http import (
     McpAuthRequiredError,
     McpHttpError,
     McpSessionExpiredError,
@@ -14,7 +12,9 @@ from vtx.mcp.transports.streamable_http import (
     StreamableHttpTransport,
     StreamableHttpTransportOptions,
 )
-from vtx.mcp.types import LATEST_PROTOCOL_VERSION
+from ctx.mcp.types import LATEST_PROTOCOL_VERSION
+
+from tests.mcp.http_helpers import Reply, Request, protocol_reply, serve, shutdown
 
 
 @pytest.fixture
