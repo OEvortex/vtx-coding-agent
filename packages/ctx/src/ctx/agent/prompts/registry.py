@@ -79,10 +79,3 @@ def unregister_prompt_section(name: str) -> None:
 def prompt_sections() -> list[PromptSection]:
     """Registered sections sorted by ``(order, name)``."""
     return sorted(_sections.values(), key=lambda s: (s.order, s.name))
-
-
-def reset_prompt_registry() -> None:
-    """Clear all registrations (tests)."""
-    global _base_provider
-    _base_provider = None
-    _sections.clear()

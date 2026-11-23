@@ -125,16 +125,6 @@ ALL_EVENTS: tuple[str, ...] = (
 # --------------------------------------------------------------------------
 
 
-class SourceInfo:
-    """Provenance metadata for an extension registration."""
-
-    path: str
-    source: str
-    scope: str = "temporary"
-    origin: str = "top-level"
-    base_dir: str | None = None
-
-
 # =============================================================================
 # Event payload types
 # =============================================================================
@@ -333,89 +323,6 @@ class InputEvent:
     streaming_behavior: str | None = None
 
 
-# =============================================================================
-# Result types
-# =============================================================================
-
-
-@dataclass
-class ToolCallEventResult:
-    block: bool = False
-    reason: str | None = None
-    terminate: bool = False
-    args: dict[str, Any] | None = None
-
-
-@dataclass
-class ToolResultEventResult:
-    content: list[Any] | None = None
-    details: Any = None
-    is_error: bool | None = None
-    output: str | None = None
-
-
-@dataclass
-class UserBashEventResult:
-    operations: dict[str, Any] | None = None
-    result: dict[str, Any] | None = None
-
-
-@dataclass
-class InputEventResult:
-    action: str = "continue"
-    text: str | None = None
-    images: list[Any] | None = None
-
-
-@dataclass
-class ContextEventResult:
-    messages: list[Any] | None = None
-
-
-@dataclass
-class SessionBeforeSwitchResult:
-    cancel: bool = False
-
-
-@dataclass
-class SessionBeforeForkResult:
-    cancel: bool = False
-    skip_conversation_restore: bool = False
-
-
-@dataclass
-class SessionBeforeCompactResult:
-    cancel: bool = False
-    compaction: dict[str, Any] | None = None
-
-
-@dataclass
-class SessionBeforeTreeResult:
-    cancel: bool = False
-    summary: str | None = None
-    custom_instructions: str | None = None
-    replace_instructions: bool = False
-    label: str | None = None
-
-
-@dataclass
-class MessageEndEventResult:
-    message: Any = None
-
-
-@dataclass
-class BeforeAgentStartEventResult:
-    message: dict[str, Any] | None = None
-    system_prompt: str | None = None
-
-
-@dataclass
-class ResourcesDiscoverResult:
-    skill_paths: list[str] = field(default_factory=list)
-    prompt_paths: list[str] = field(default_factory=list)
-    theme_paths: list[str] = field(default_factory=list)
-
-
 @dataclass
 class SessionStartEvent:
     type: Literal["session_start"] = "session_start"
@@ -562,10 +469,6 @@ def build_event_object(event: str, payload: dict[str, Any]) -> Any:
     except Exception:
         return payload
 
-
-#: The events whose handler results the caller acts on: the first ``block``
-#: stops the work, and ``args`` and ``output`` chain through what follows.
-BLOCKING_EVENTS = frozenset({TOOL_CALL, TOOL_RESULT, USER_BASH, INPUT})
 
 #: Every event's dispatch mode. All are ``serial`` so registration order stays
 #: meaningful, which is what a blocking handler and an observer both expect.

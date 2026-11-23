@@ -57,11 +57,6 @@ GLYPH_PENDING = "○"  # U+25CB WHITE CIRCLE
 GLYPH_COMPLETED = "✓"  # U+2713 CHECK MARK
 GLYPH_BLOCKED = "⊘"  # U+2298 CIRCLED DIVISION SLASH
 
-#: A pending task with an unmet dependency. Pending-but-blocked is a different
-#: state from pending-and-next, and the agent re-plans differently depending on
-#: which one it is looking at.
-GLYPH_IN_PROGRESS = SPINNER[0]
-
 #: Rows drawn in the pinned strip before the rest collapse to ``+N more``. The
 #: strip sits above the editor, not in the scrollback, so it must not grow
 #: until it pushes the prompt box off screen.

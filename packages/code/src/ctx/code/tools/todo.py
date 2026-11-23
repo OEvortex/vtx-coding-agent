@@ -274,13 +274,6 @@ class TodoTool(BaseTool):
             error=None,
         )
 
-    def _format_task_line(self, task: TaskRecord) -> str:
-        active_part = (
-            f" ({task.active_form})" if task.status == "in_progress" and task.active_form else ""
-        )
-        dep_part = f" ⛓ #{','.join(map(str, task.blocked_by))}" if task.blocked_by else ""
-        return f"[{task.status}] #{task.id} {task.subject}{active_part}{dep_part}"
-
     def _snapshot(self) -> dict[int, str]:
         """``{id: status}`` for the live tasks, taken before a mutation.
 

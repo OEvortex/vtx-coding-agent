@@ -198,7 +198,7 @@ Methods: `compiled_tools`, `compiled_handoff_tools`, `all_tools`, `as_tool`, `cl
 
 ### Providers
 
-`provider` accepts a live provider object, or a dict with any of `_PROVIDER_DICT_KEYS` (`src/ctx/agent/sdk/agent.py:42-54`):
+`provider` accepts a live provider object, or a dict with any of the keys listed below:
 
 ```python
 {

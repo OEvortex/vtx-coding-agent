@@ -71,26 +71,6 @@ def _fit_text(text: Text, budget: int) -> Text:
     return clipped
 
 
-def visible_len(text: str) -> int:
-    """Length of ``text`` ignoring Rich markup tags."""
-    out = []
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if ch == "\\" and i + 1 < len(text):
-            out.append(text[i + 1])
-            i += 2
-            continue
-        if ch == "[":
-            end = text.find("]", i)
-            if end != -1:
-                i = end + 1
-                continue
-        out.append(ch)
-        i += 1
-    return len(out)
-
-
 def strip_markup(text: str) -> str:
     """Plain text of a possibly-marked-up string."""
     try:
@@ -230,12 +210,6 @@ def box_line(content: Text | str, width: int, *, failed: bool = False) -> Text:
         out.append(" " * pad)
     out.append(f" {BOX_V}", style=side)
     return out
-
-
-def box_blank(width: int, *, failed: bool = False) -> Text:
-    w = box_width(width)
-    side = str(_colors().failed) if failed else "dim"
-    return Text(f"{BOX_V}{' ' * (w - 2)}{BOX_V}", style=side)
 
 
 def _soft_wrap_segments(line: Text, width: int) -> list[Text]:
@@ -547,22 +521,6 @@ def highlight_diff(text: Text, path: str | None) -> Text:
     return out
 
 
-def numbered_lines(content: str, *, max_lines: int = 15) -> list[str]:
-    """``cat -n`` style numbered preview of file content (write tool)."""
-    normalized = content.replace("\t", "    ").replace("\r", "")
-    if not normalized:
-        return []
-    lines = normalized.split("\n")
-    gutter = max(1, len(str(len(lines))))
-    shown = lines[-max_lines:] if len(lines) > max_lines else lines
-    out = []
-    for i, line in enumerate(shown):
-        num = str(len(lines) - len(shown) + i + 1).rjust(gutter)
-        esc = line.replace("[", "\\[")
-        out.append(f"[dim]{num} [/dim]{esc}")
-    return out
-
-
 def elapsed_footer(elapsed_s: float, summary: str = "") -> str:
     """``0.4s · summary`` footer text for a settled tool call.
 
@@ -582,12 +540,3 @@ def running_footer(elapsed_s: float | None = None) -> str:
     if elapsed_s is None:
         return base
     return f"{base}[dim] · {elapsed_s:.1f}s[/dim]"
-
-
-def format_words_or_lines(text: str) -> str:
-    """Compact ``~N words`` / ``N lines`` metric for footers."""
-    lines = text.count("\n") + 1 if text else 0
-    words = len(text.split())
-    if words >= lines * 4:
-        return f"~{words} words"
-    return f"{lines} lines"

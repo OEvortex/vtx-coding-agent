@@ -32,7 +32,6 @@ from ctx.plugins.errors import ConfigError, DuplicateRowError, PatchError, RowEr
 from ctx.plugins.plugin import Plugin, as_plugin
 
 RowDict = Mapping[str, Any]
-PatchDict = Mapping[str, Any]
 
 
 class _CallableString(str):

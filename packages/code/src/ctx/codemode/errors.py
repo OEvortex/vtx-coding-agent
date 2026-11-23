@@ -239,18 +239,3 @@ class ScriptStalled(CodemodeError):  # noqa: N818 - see above
 
 class ScriptTimeout(CodemodeError):  # noqa: N818 - see above
     kind = TIMEOUT
-
-
-#: Maps a script-visible exception class to the kind recorded for its tool
-#: call. The script raises these by name; the worker catches them per call.
-_EXCEPTION_KINDS: Final = {
-    "ToolError": TOOL_FAILURE,
-    "UnknownTool": UNKNOWN_TOOL,
-    "InvalidInput": INVALID_INPUT,
-    "InvalidOutput": INVALID_OUTPUT,
-    "HostUnavailable": HOST_UNAVAILABLE,
-    "ScriptTimeout": TIMEOUT,
-    "ScriptAborted": ABORTED,
-    "SandboxError": SANDBOX,
-    "ScriptError": SCRIPT,
-}

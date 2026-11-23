@@ -141,10 +141,6 @@ class LoadedMcpConfig:
     servers: list[McpServerConfig] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
-    @property
-    def enabled_servers(self) -> list[McpServerConfig]:
-        return [s for s in self.servers if s.enabled]
-
     def get(self, name: str) -> McpServerConfig | None:
         return next((s for s in self.servers if s.name == name), None)
 
@@ -314,10 +310,6 @@ def load_mcp_config(*, cwd: str, config_dir: Path | None = None) -> LoadedMcpCon
         Path(cwd) / PROJECT_CONFIG_DIRNAME / MCP_CONFIG_FILENAME, "project", servers, errors
     )
     return LoadedMcpConfig(servers=list(servers.values()), errors=errors)
-
-
-def project_config_path(cwd: str | Path) -> Path:
-    return Path(cwd) / PROJECT_CONFIG_DIRNAME / MCP_CONFIG_FILENAME
 
 
 def update_mcp_server_config(path: Path, name: str, patch: dict[str, Any]) -> None:

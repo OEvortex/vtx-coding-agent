@@ -8,7 +8,6 @@ from ctx.agent.context.skills import Skill
 from ctx.agent.tools import BaseTool
 from ctx.core import ApprovalResponse
 from ctx.core.config import config
-from ctx.core.paths import get_agents_dir
 from ctx.protocol.types import ImageContent
 from ctx.term.blocks import (
     CompactionBlock,
@@ -48,14 +47,6 @@ PRUNE_TO = 200
 WITTY_ROTATE_EVERY_TICKS = 20
 
 _pick_witty_line = pick_witty_line
-
-
-def _format_skill_label(skill: Skill) -> str:
-    global_skills_dir = (get_agents_dir() / "skills").resolve(strict=False)
-    skill_path = Path(skill.path).resolve(strict=False)
-    if skill_path.is_relative_to(global_skills_dir):
-        return f"{skill.name} (global)"
-    return skill.name
 
 
 # Five-row block wordmark. The old three-line kerning-less mark read as noise

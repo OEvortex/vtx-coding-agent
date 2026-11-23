@@ -116,9 +116,6 @@ class AgentRunnerMixin:
         ) -> tuple[str, str | None]: ...
         async def _load_session_by_id(self, session_id: str) -> None: ...
 
-    def _should_notify_for_event(self, event: object) -> bool:
-        return self._notification_event_type(event) is not None
-
     # ------------------------------------------------------------------
     # Background sub-agent wake-up
     # ------------------------------------------------------------------

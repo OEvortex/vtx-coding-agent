@@ -17,8 +17,6 @@ from ctx.plugins.events import EventHub
 from ctx.plugins.loader import Row, resolve_plugin, validate_config
 from ctx.plugins.plugin import Plugin, apply_plugin, as_plugin
 
-MountHook = Any
-
 
 class PluginHost:
     """One mounted composition, with its own :class:`Context` and teardown."""

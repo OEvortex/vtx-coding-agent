@@ -12,15 +12,15 @@ the TUI/headless/sdk callers of the loop.
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from ctx.agent.hooks.agent_hook import AgentHook
 from ctx.agent.tools import BaseTool
 from ctx.ai import BaseProvider
-from ctx.core.events import Event, StreamEvent
+from ctx.core.events import Event
 from ctx.plugins.bus import EventBus
-from ctx.protocol.types import AssistantMessage, Message, StopReason, ToolResultMessage
+from ctx.protocol.types import Message
 
 
 @dataclass
@@ -51,25 +51,6 @@ class AgentRunSpec:
     # In-process lifecycle hooks (AgentHook). Fired by the engine around
     # run/iteration boundaries and stream deltas.
     hooks: list[AgentHook] | None = None
-
-
-@dataclass
-class AgentRunResult:
-    """Output contract for one engine turn.
-
-    ``events`` carries the fully-typed stream (think/text/tool UI events) the
-    loop forwards verbatim. ``assistant_message`` / ``tool_results`` /
-    ``stop_reason`` are the structured outcome the loop persists and branches on.
-
-    Not yet returned to the loop (the loop reads these from the yielded
-    :class:`~ctx.events.TurnEndEvent`); it becomes the engine's return value
-    once later phases wrap the turn in their own recovery/injection loop.
-    """
-
-    events: list[StreamEvent] = field(default_factory=list)
-    assistant_message: AssistantMessage | None = None
-    tool_results: list[ToolResultMessage] = field(default_factory=list)
-    stop_reason: StopReason = StopReason.STOP
 
 
 async def run_agent_turn(spec: AgentRunSpec) -> AsyncIterator[Event]:

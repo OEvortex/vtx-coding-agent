@@ -29,8 +29,6 @@ from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
 
 F = TypeVar("F", bound=Callable[..., Any])
-# Match ``Optional[X]``/``Union[X, None]`` and strip the ``None``.
-_OPTIONAL_RE = re.compile(r"Optional\[(?P<inner>[^\]]+)\]|^Union\[(?P<inner2>[^\]]+),\s*None\]$")
 
 
 def _function_to_params_model(func: Callable[..., Any]) -> tuple[type[BaseModel], dict[str, Any]]:

@@ -36,23 +36,6 @@ from ctx.agent.sdk.handoffs import Handoff
 from ctx.agent.sdk.tools import FunctionTool
 from ctx.agent.tools.base import BaseTool
 
-# Keys recognized in the ``provider`` dict. Kept as a module constant so
-# tests and the docstring can stay in sync with the resolution code in
-# :meth:`Agent.resolve_provider`.
-_PROVIDER_DICT_KEYS = frozenset(
-    {
-        "name",
-        "sdk",
-        "api_key",
-        "base_url",
-        "model",
-        "max_tokens",
-        "temperature",
-        "thinking_level",
-        "default_headers",
-    }
-)
-
 TContext = TypeVar("TContext")
 
 

@@ -20,17 +20,6 @@ class _RegistryEntry:
     registration_order: int
 
 
-def _entry_matches(entry: _RegistryEntry, config: HookConfig) -> bool:
-    return (
-        entry.config.event == config.event
-        and entry.config.type == config.type
-        and entry.config.command == config.command
-        and entry.config.prompt_text == config.prompt_text
-        and entry.config.agent_instructions == config.agent_instructions
-        and entry.config.matcher == config.matcher
-    )
-
-
 class HookRegistry:
     def __init__(self) -> None:
         self._entries: dict[str, list[_RegistryEntry]] = {event: [] for event in HOOK_EVENTS}

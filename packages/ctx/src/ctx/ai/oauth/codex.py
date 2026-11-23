@@ -42,12 +42,6 @@ _SUCCESS_HTML = """<!doctype html>
 # Codex CLI default originator.
 _DEFAULT_ORIGINATOR = "codex_cli_rs"
 
-# Latest stable Codex CLI release. The backend rejects requests from clients
-# older than the current release, so bump this when a newer version ships.
-# ponytail: hardcoded version; consider reading from a bundled VERSION file
-# or env override if you want this to auto-update.
-_CODEX_CLI_VERSION = "0.153.4"
-
 
 @dataclass
 class CodexCredentials:

@@ -154,20 +154,8 @@ class McpClient:
     # ---- introspection ---------------------------------------------------
 
     @property
-    def connection_state(self) -> str:
-        return self._state
-
-    @property
     def connected(self) -> bool:
         return self._state == "connected"
-
-    @property
-    def server_info(self) -> Implementation | None:
-        return self._server_info
-
-    @property
-    def server_capabilities(self) -> ServerCapabilities | None:
-        return self._server_capabilities
 
     @property
     def instructions(self) -> str | None:

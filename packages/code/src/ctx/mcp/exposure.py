@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import fnmatch
 import re
-from collections.abc import Iterable
 from typing import Final
 
 #: Every exposure a server or a single tool may declare. There is deliberately
@@ -75,12 +74,6 @@ SCRIPT_DISCOVERABLE: Final = frozenset({"codemode", "codemode-deferred", "deferr
 #: servers, and for collapsing the two deferred variants when reporting. Widest
 #: first, so a group of servers never resolves to its narrowest member.
 _BY_WIDTH: Final = ("codemode", "codemode-deferred", "deferred", "hidden")
-
-#: Exposures that make ``codemode`` worth having in the first place. A session
-#: whose servers are all ``hidden`` gains nothing from it.
-_SCRIPT_REACHING: Final = frozenset({"codemode", "codemode-deferred", "deferred"})
-
-_NAME_RE = re.compile(r"\A[A-Za-z0-9_-]{1,64}\Z")
 
 #: A ``tool_exposure`` key is an exact tool name, or an ``fnmatch`` pattern over
 #: one. The wildcards have to be allowed, or the documented
@@ -177,8 +170,3 @@ def widest(*exposures: str) -> str:
         if candidate in present:
             return candidate
     return "hidden"
-
-
-def needs_script_reach(exposures: Iterable[str]) -> bool:
-    """Whether any of these exposures is only reachable by running a script."""
-    return any(value in _SCRIPT_REACHING for value in exposures)

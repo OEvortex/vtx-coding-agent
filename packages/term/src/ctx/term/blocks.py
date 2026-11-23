@@ -355,11 +355,6 @@ class RunSummaryBlock(Static):
     def compose(self) -> ComposeResult:
         yield Label(self._format_func(self._stats), id="run-summary-label", markup=False)
 
-    def update_stats(self, stats: Any) -> None:
-        self._stats = stats
-        with contextlib.suppress(Exception):
-            self.query_one("#run-summary-label", Label).update(self._format_func(self._stats))
-
     def is_open(self) -> bool:
         return any(not t.has_class("-hidden") for t in self._thoughts) or any(
             not b.has_class("-run-collapsed") for b in self._tools

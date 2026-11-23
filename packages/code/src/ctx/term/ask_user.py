@@ -123,10 +123,6 @@ class AskUserDialog:
                 answered.append(i)
         return answered
 
-    def unanswered_questions(self) -> list[str]:
-        answered = set(self.answered_indices())
-        return [q.question for i, q in enumerate(self.questions) if i not in answered]
-
     def build_answers(self) -> tuple[AskUserAnswer, ...]:
         """Resolved answers in question order; unanswered questions are omitted."""
         answers: list[AskUserAnswer] = []
@@ -170,12 +166,6 @@ class AskUserDialog:
 
     def build_response(self) -> AskUserResponse:
         return AskUserResponse(answers=self.build_answers())
-
-    def has_outstanding_content(self) -> bool:
-        """True when anything (answers, drafts) would be lost."""
-        if self.answered_indices():
-            return True
-        return any(bool(s.draft.strip()) for s in self._states)
 
     # ------------------------------------------------------------------
     # Key handling

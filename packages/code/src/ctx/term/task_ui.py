@@ -10,7 +10,6 @@ Rich :class:`Text`. No timers, no widget state.
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from ctx.core.config import config
@@ -121,42 +120,6 @@ def format_tool_breakdown(tool_counts: dict[str, int] | None) -> str:
     if not parts:
         return f"{total} tool call{'s' if total != 1 else ''}"
     return f"{total} tool call{'s' if total != 1 else ''} ({', '.join(parts)})"
-
-
-def extract_summary_line(text: str, max_chars: int = 90) -> str:
-    """Extract a concise 1-line summary snippet from the subagent's answer."""
-    if not text:
-        return ""
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        # Strip bullets / quotes / markdown formatting
-        cleaned = re.sub(r"^([*+-]\s*|>\s*|\d+\.\s*)", "", line).strip()
-        cleaned = re.sub(r"[*_`]", "", cleaned).strip()
-        if cleaned and len(cleaned) >= 5:
-            if len(cleaned) > max_chars:
-                return cleaned[: max_chars - 1].rstrip() + "…"
-            return cleaned
-    return ""
-
-
-def detect_files_referenced(text: str, transcript: list[str] | None = None) -> int:
-    """Count unique file paths referenced in output text and tool transcripts."""
-    found: set[str] = set()
-    sources = [text]
-    if transcript:
-        sources.extend(transcript)
-
-    pattern = re.compile(
-        r"(?:[\w\-./]+\.(?:py|ts|tsx|js|jsx|json|ya?ml|md|toml|rs|go|c|cpp|h|sh|css|html))\b"
-    )
-    for source in sources:
-        for match in pattern.findall(source):
-            clean = match.strip("`'\"(),;:")
-            if "/" in clean or clean.endswith((".py", ".ts", ".tsx", ".md", ".json", ".yaml")):
-                found.add(clean)
-    return len(found)
 
 
 def describe_activity(active_tool: str | None, last_text: str) -> str:
@@ -292,11 +255,3 @@ def render_finished(
     if error_msg:
         text.append(f"\n  {GLYPHS['sub_line']} {error_msg}", style=Style(color=colors.failed))
     return text
-
-
-def render_background(task_id: str) -> Text:
-    """Background launch acknowledgement line."""
-    return Text(
-        f"  {GLYPHS['sub_line']}  Running in background (ID: {task_id})",
-        style=Style(color=config.ui.colors.dim),
-    )

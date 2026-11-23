@@ -123,11 +123,6 @@ def tree_prefix(*, last: bool, glyph: str, glyph_color: str, depth: int = 0) -> 
     return out
 
 
-def tree_prefix_cells(depth: int = 0) -> int:
-    """Cells :func:`tree_prefix` occupies, so columns can be sized off it."""
-    return cell_len(f"{TREE_GUTTER} {'│' * depth} {TREE_EDGE} x ")
-
-
 def _agent_tag(run: SubagentRun) -> str:
     """The agent name, or ``""`` when it identifies nothing.
 

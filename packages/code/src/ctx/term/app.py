@@ -28,7 +28,7 @@ from ctx.agent.context.skills import (
 )
 from ctx.agent.runtime import ConversationRuntime
 from ctx.agent.session import Session
-from ctx.agent.tools import get_tool, get_tools_with_extensions
+from ctx.agent.tools import get_tools_with_extensions
 from ctx.agent.tools_manager import get_tool_path
 from ctx.ai import BaseProvider
 from ctx.ai.base import AuthMode
@@ -80,7 +80,6 @@ class Ctx(
     CSS = get_styles()
     TITLE = "ctx"
     VERSION = format_version()
-    PAUSE_GC_ON_SCROLL = True
 
     BINDINGS: ClassVar[list] = [
         ("ctrl+c", "handle_ctrl_c", "Clear"),
@@ -562,17 +561,6 @@ class Ctx(
             parts.extend(["", "[query]", query.strip()])
         return "\n".join(parts)
 
-    def _inject_lazy_tools(self, tool_names: list[str]) -> None:
-        """Inject lazily-available tools into the runtime for the active turn."""
-        for name in tool_names:
-            tool = get_tool(name)
-            if tool is None or tool in self._runtime.tools:
-                continue
-            self._runtime.tools.append(tool)
-
-        if self._runtime.agent is not None:
-            self._runtime._rebuild_system_prompt()
-
     def _task_progress_callback(self, tool_call_id: str, event: dict) -> None:
         # The registry feeds the Agents panel. Fold the event in before
         # touching widgets, so a not-yet-mounted screen can't cost us the state.
@@ -606,9 +594,6 @@ class Ctx(
         except Exception:
             return
         panel.refresh_panel()
-
-    def _todo_progress_callback(self, *args, **kwargs) -> None:
-        self._refresh_todo_panel()
 
     def _sync_agent_counts(self) -> None:
         """Push the panel's running/queued counts into the info bar."""

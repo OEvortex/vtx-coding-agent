@@ -1,6 +1,5 @@
 [src]
 exclude = [
-    "tests/",
     ".venv/",
 ]
 

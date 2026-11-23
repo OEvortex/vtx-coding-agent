@@ -903,9 +903,6 @@ class InputBox(Vertical):
         textarea.clear()
         textarea.insert(new_text)
 
-    def apply_file_completion(self, item: ListItem) -> None:
-        self.apply_provider_completion(item)
-
     def apply_tab_path_completion(self, item: ListItem) -> None:
         """Apply a tab path completion selection."""
         textarea = self.query_one("#input-textarea", TextArea)

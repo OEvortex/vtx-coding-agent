@@ -142,12 +142,4 @@ RunItem = (
 )
 
 
-@dataclass
-class _SequenceMetadata:
-    """Lightweight metadata used by items to carry SDK-specific fields."""
-
-    agent_name: str = ""
-    synthetic: bool = False
-
-
 _field = field  # re-exported for type-checkers

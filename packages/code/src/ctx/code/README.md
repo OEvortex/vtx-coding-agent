@@ -107,7 +107,7 @@ See `ctx/term/README.md`. `ctx.term.__all__` exports `Ctx`, `run_tui`, `ChatLog`
 - `extension_ui.py` is `TextualExtensionUI`, implementing `ExtensionUIContext` over the app: confirm / select / input dialogs, chat notifications, and a persistent status/widget footer bar.
 
 </details>
-- `export.py` is `export_session_html`, a standalone exporter that parses session JSONL directly and takes the tool registry as its only ctx dependency. `recap.py` arms a 30s idle timer after a run and drafts a "where you left off" summary with a cheap one-off model call. `app_protocol.py` is the protocol the agent runner and mixins are typed against.
+- `export.py` is `export_session_html`, a standalone exporter that parses session JSONL directly and takes the tool registry as its only ctx dependency. `recap.py` arms a 30s idle timer after a run and drafts a "where you left off" summary with a cheap one-off model call.
 
 ### Key bindings
 

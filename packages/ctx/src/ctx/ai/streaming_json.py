@@ -6,13 +6,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 JsonValue = Any
-JsonPath = tuple[str | int, ...]
 
 # Sentinel for "no value yet" / "not a valid scalar" — distinct from JSON null.
 _UNSET: Any = object()
 _INVALID: Any = object()
 
-MAX_REPORTED_DEPTH = 32  # kept for parity; unused without change reporting
 MAX_PENDING_SCALAR_LENGTH = 64
 
 NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
@@ -533,24 +531,6 @@ def parse_tool_call_arguments(text: str | None) -> ParsedToolCallArguments:
         return ParsedToolCallArguments(arguments=parsed)
     except Exception as error:
         return ParsedToolCallArguments(arguments_error=(f"{error}\n\nReceived arguments:\n{text}"))
-
-
-def parse_streaming_json(text: str | None) -> Any:
-    """Parse potentially incomplete JSON during streaming.
-
-    Returns the best-effort value (``{}`` when nothing parses yet). Unlike the
-    TypeScript original's ``partial-json`` fallback, this reuses
-    ``StreamingJsonParser``, whose tolerant rules already cover malformed text.
-    """
-    if not text or text.strip() == "":
-        return {}
-    try:
-        return parse_json_with_repair(text)
-    except Exception:
-        parser = StreamingJsonParser()
-        parser.append(text)
-        snapshot = parser.snapshot()
-        return {} if snapshot is _UNSET else snapshot
 
 
 class ToolCallArgumentsStream:
