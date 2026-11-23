@@ -158,6 +158,7 @@ class BashTool(BaseTool):
     name = "bash"
     tool_icon = "$"
     params = BashParams
+    mutating = True
     prompt_guidelines = ("bash for git/builds/tests/scripts (not file read/search/edit)",)
     description = (
         "Run a shell command in the cwd (builds, tests, git, package managers). "
