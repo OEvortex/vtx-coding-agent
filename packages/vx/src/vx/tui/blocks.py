@@ -215,6 +215,39 @@ class ToolStatus(Block):
 
 
 @dataclass
+class ToolGroup(Block):
+    """A compact group of tool calls, with one indented row per call."""
+
+    calls: list[ToolStatus] = field(default_factory=list)
+    status: str = "running"
+    kind: str = "tool"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        n = len(self.calls)
+        failed = sum(call.status == "error" for call in self.calls)
+        names = {call.name for call in self.calls}
+        verb = self.calls[0]._verb() if len(names) == 1 and self.calls else "Tools"
+        noun = "tool" if n == 1 else "tools"
+        if self.status == "running":
+            heading = f"{t.dim_style}● Running {n} {noun}{ansi.RESET}"
+        else:
+            heading = f"{t.dim_style}● {verb} {n} {noun}{ansi.RESET}"
+            if failed:
+                heading += f" {t.dim_style}({failed} failed){ansi.RESET}"
+            else:
+                heading += f" {t.task_completed_open}✓{ansi.RESET}"
+        out = [ansi.clip_ellipsis(heading, width)]
+        for call in self.calls:
+            marker = f"{t.dim_style}│{ansi.RESET}"
+            rows = call.rows(max(1, width - 4)) or [call.target or call._verb()]
+            for i, row in enumerate(rows):
+                prefix = f"  {marker} " if i == 0 else "    "
+                out.append(ansi.clip_ellipsis(prefix + row, width))
+        return out
+
+
+@dataclass
 class ToolOutput(Block):
     """Folded command output: dim ``│ `` rows under the status line."""
 
@@ -329,6 +362,7 @@ class Sections(Block):
 class ReadToolStatus(Block):
     """Read tool: `F path:12-30` with line count."""
 
+    name: str = "read"
     path: str = ""
     start_line: int = 0
     end_line: int = 0
@@ -336,6 +370,9 @@ class ReadToolStatus(Block):
     is_dir: bool = False
     status: str = "running"
     kind: str = "tool"
+
+    def _verb(self) -> str:
+        return _TOOL_VERBS.get(self.name, self.name)
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
@@ -364,10 +401,14 @@ class ReadToolStatus(Block):
 class BashToolStatus(Block):
     """Bash tool: ``$ command`` with exit code."""
 
+    name: str = "bash"
     command: str = ""
     exit_code: int | None = None
     status: str = "running"
     kind: str = "tool"
+
+    def _verb(self) -> str:
+        return _TOOL_VERBS.get(self.name, self.name)
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
@@ -393,12 +434,16 @@ class BashToolStatus(Block):
 class ApplyPatchToolStatus(Block):
     """apply_patch tool: ``± path +3 -1`` with diff summary."""
 
+    name: str = "apply_patch"
     path: str = ""
     added: int = 0
     removed: int = 0
     ops_count: int = 0
     status: str = "running"
     kind: str = "tool"
+
+    def _verb(self) -> str:
+        return _TOOL_VERBS.get(self.name, self.name)
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
@@ -428,11 +473,15 @@ class ApplyPatchToolStatus(Block):
 class GrepToolStatus(Block):
     """grep tool: `? pattern in path` with match count."""
 
+    name: str = "grep"
     pattern: str = ""
     path: str = ""
     match_count: int = 0
     status: str = "running"
     kind: str = "tool"
+
+    def _verb(self) -> str:
+        return _TOOL_VERBS.get(self.name, self.name)
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
@@ -458,16 +507,19 @@ class GrepToolStatus(Block):
 class WebToolStatus(Block):
     """web/web_search tool: `W query` or `L url`."""
 
+    name: str = "web"
     query: str = ""
     url: str = ""
-    tool_name: str = "web"
     result_count: int = 0
     status: str = "running"
     kind: str = "tool"
 
+    def _verb(self) -> str:
+        return _TOOL_VERBS.get(self.name, self.name)
+
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
-        is_search = self.tool_name == "web_search"
+        is_search = self.name == "web_search"
         if self.status == "running":
             verb = "Searching" if is_search else "Fetching"
             line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}{verb}{ansi.RESET}"

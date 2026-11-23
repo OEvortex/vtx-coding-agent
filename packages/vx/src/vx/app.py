@@ -62,7 +62,7 @@ import vx.tools
 from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
 from vx.commands import SLASH_COMMANDS, CommandsMixin
-from vx.permissions import PermissionRuntime, VxPermissionHook, mode_spec
+from vx.permissions import BUILTIN_MODES, PermissionRuntime, VxPermissionHook, mode_spec
 from vx.tui import ansi, blocks, footer, theme
 from vx.tui.canvas import Painter
 from vx.tui.keys import KeyDecoder
@@ -132,6 +132,7 @@ class VxApp(CommandsMixin):
         self._live_assistant: blocks.Assistant | None = None
         self._live_thinking: blocks.Thinking | None = None
         self._tool_blocks: dict[str, blocks.ToolStatus] = {}
+        self._tool_groups: dict[str, blocks.ToolGroup] = {}
         self._tool_outputs: dict[str, blocks.ToolOutput] = {}
         self._last_ctrl_c = 0.0
         self._usage = {"in": 0, "out": 0}
@@ -143,6 +144,7 @@ class VxApp(CommandsMixin):
         self._approval: dict[str, Any] | None = None
         self._ask: dict[str, Any] | None = None
         self._menu: dict[str, Any] | None = None
+        self._permissions_panel_scroll = 0
         self._prompt: dict[str, Any] | None = None
         self._activity: str = ""
 
@@ -360,40 +362,10 @@ class VxApp(CommandsMixin):
             self._ask_key(key)
             return
         if key == "tab" and not self._input:
-            # Tab cycles permission mode when composer is empty, like fx
-            new_mode = self._permission_runtime.toggle_mode()
-            spec = mode_spec(new_mode)
-            name = spec.name if spec else new_mode
-            desc = spec.description if spec else ""
-            self.viewport.add(
-                blocks.ModeChanged(
-                    from_mode=self._permission_runtime.mode,
-                    to_mode=new_mode,
-                    to_name=name,
-                    description=desc,
-                )
-            )
-            from vx.commands.settings import _sync_mode_to_config
-
-            _sync_mode_to_config(new_mode)
+            self._toggle_permission_mode(1)
             return
         if key == "shift+tab" and not self._input:
-            # Shift+Tab also cycles permission mode, like fx
-            new_mode = self._permission_runtime.toggle_mode()
-            spec = mode_spec(new_mode)
-            name = spec.name if spec else new_mode
-            desc = spec.description if spec else ""
-            self.viewport.add(
-                blocks.ModeChanged(
-                    from_mode=self._permission_runtime.mode,
-                    to_mode=new_mode,
-                    to_name=name,
-                    description=desc,
-                )
-            )
-            from vx.commands.settings import _sync_mode_to_config
-
-            _sync_mode_to_config(new_mode)
+            self._toggle_permission_mode(-1)
             return
 
         if key == "esc" and self._prompt is not None:
@@ -702,6 +674,12 @@ class VxApp(CommandsMixin):
                 self._cursor = 0
             self._menu = None
             return
+        if kind == "permissions":
+            if key == "up":
+                self._permissions_panel_scroll = max(0, self._permissions_panel_scroll - 1)
+            elif key == "down":
+                self._permissions_panel_scroll += 1
+            return
         if key == "up":
             menu["selected"] = (menu["selected"] - 1) % max(1, len(self._menu_view()))
             return
@@ -809,6 +787,46 @@ class VxApp(CommandsMixin):
             after = self._input[replace_end:].lstrip()
             self._input = f"{before}{token} {after}"
             self._cursor = len(before) + len(token) + 1
+
+    def _toggle_permission_mode(self, step: int) -> None:
+        order = [spec.id for spec in BUILTIN_MODES]
+        old_mode = self._permission_runtime.mode
+        index = order.index(old_mode) if old_mode in order else 0
+        new_mode = order[(index + step) % len(order)]
+        self._permission_runtime.set_mode(new_mode)
+        spec = mode_spec(new_mode)
+        self.viewport.add(
+            blocks.ModeChanged(
+                from_mode=old_mode,
+                to_mode=new_mode,
+                to_name=spec.name if spec else new_mode,
+                description=spec.description if spec else "",
+            )
+        )
+        from vx.commands.settings import _sync_mode_to_config
+
+        _sync_mode_to_config(new_mode)
+
+    def open_permissions_panel(self) -> None:
+        mode = next(
+            (spec for spec in BUILTIN_MODES if spec.id == self._permission_runtime.mode), None
+        )
+        self._menu = {
+            "kind": "permissions",
+            "selected": 0,
+            "filterable": False,
+            "view": footer.PermissionsView(
+                mode_name=mode.name if mode else self._permission_runtime.mode,
+                description=mode.description if mode else "",
+                grants=[
+                    f"{grant.tool_name} {grant.target_path}"
+                    for grant in self._permission_runtime.grants
+                ],
+                rules=[],
+            ),
+        }
+        self._permissions_panel_scroll = 0
+        self._draw()
 
     def _menu_choose_mode(self) -> None:
         """Handle selecting a mode from the mode picker."""
@@ -964,9 +982,19 @@ class VxApp(CommandsMixin):
             self._notice("agent not initialized", tone="error")
             self._is_running = False
             return
-        # Wire the vx permission hook into the agent's hook chain
-        hook = VxPermissionHook(self._permission_runtime)
-        agent._hooks.append(hook)
+        # Reuse one hook per run; prepare_for_run may return the same Agent.
+        agent._hooks[:] = [hook for hook in agent._hooks if not isinstance(hook, VxPermissionHook)]
+        agent._hooks.append(VxPermissionHook(self._permission_runtime))
+        # Sync vx's permission mode to ctx config so check_permission() respects it
+        try:
+            from ctx.core.config import config as ctx_config
+
+            perms = getattr(ctx_config, "permissions", None)
+            if perms is not None:
+                mode_map = {"ask": "prompt", "auto": "auto", "yolo": "yolo"}
+                perms.mode = mode_map.get(self._permission_runtime.mode, "prompt")
+        except Exception:
+            pass
         asyncio.get_running_loop().create_task(self._run_agent(agent, prompt))
 
     async def _run_agent(self, agent: Any, prompt: str) -> None:
@@ -1058,7 +1086,13 @@ class VxApp(CommandsMixin):
         if isinstance(ev, ToolStartEvent):
             block = _make_tool_status_block(ev.tool_name)
             self._tool_blocks[ev.tool_call_id] = block
-            self.viewport.add(block)
+            group = self._tool_groups.get(ev.tool_call_id)
+            if group is None:
+                group = blocks.ToolGroup()
+                self._tool_groups[ev.tool_call_id] = group
+                self.viewport.add(group)
+            group.calls.append(block)
+            self.viewport.touch()
             self._run_label = f"running {ev.tool_name}"
             return
         if isinstance(ev, ToolArgsDeltaEvent):
@@ -1099,6 +1133,9 @@ class VxApp(CommandsMixin):
                 ok = not result.is_error
             if block is not None:
                 block.status = "ok" if ok else "error"
+                group = self._tool_groups.get(ev.tool_call_id)
+                if group is not None and all(call.status != "running" for call in group.calls):
+                    group.status = "done"
                 # For apply_patch, populate diff stats from file_changes
                 if ev.file_changes and hasattr(block, "added"):
                     block.added = sum(f.added for f in ev.file_changes)
@@ -1167,7 +1204,11 @@ class VxApp(CommandsMixin):
                 block.status = "ok"
         self._live_assistant = None
         self._live_thinking = None
+        for group in self._tool_groups.values():
+            if group.status == "running":
+                group.status = "done"
         self._tool_blocks.clear()
+        self._tool_groups.clear()
         self._tool_outputs.clear()
         self.viewport.touch()
 
@@ -1181,8 +1222,22 @@ class VxApp(CommandsMixin):
         display = _strip_markup(ev.display or "")
         if not display:
             block = self._tool_blocks.get(ev.tool_call_id)
-            if block is not None and block.target:
-                display = f"$ {block.target}"
+            if block is not None:
+                # Get display text from specialized block fields
+                if hasattr(block, "command") and block.command:
+                    display = f"$ {block.command}"
+                elif hasattr(block, "path") and block.path:
+                    display = str(block.path)
+                elif hasattr(block, "pattern") and block.pattern:
+                    display = block.pattern
+                elif hasattr(block, "query") and block.query:
+                    display = block.query
+                elif hasattr(block, "url") and block.url:
+                    display = block.url
+                elif hasattr(block, "target") and block.target:
+                    display = block.target
+        if not display:
+            display = ev.tool_name
         self._approval = {
             "label": ev.tool_name,
             "target": display,
@@ -1190,6 +1245,8 @@ class VxApp(CommandsMixin):
             "selected": 0,
             "future": ev.future,
         }
+        self.viewport.touch()
+        self._draw()
 
     def _approval_key(self, key: str) -> None:
         ap = self._approval
@@ -1395,6 +1452,18 @@ class VxApp(CommandsMixin):
                         mode_view.hint(cols),
                     ], None
                 return rows, caret
+            if kind == "permissions":
+                view = menu.get("view")
+                if view is not None:
+                    panel_height = max(1, height - 8 - input_rows)
+                    panel = view.panel(cols, panel_height)
+                    panel = panel[self._permissions_panel_scroll :]
+                    return [
+                        footer.rule(cols),
+                        *panel[:panel_height],
+                        footer.rule(cols),
+                        view.hint(cols),
+                    ], None
             view = self._menu_view()
             # fx's budget: 5 fixed footer rows plus the composer, then leave
             # five transcript rows on screen, capped at six picker rows.
@@ -1620,18 +1689,20 @@ def _tool_target(name: str, args: Any) -> str:
 
 
 def _name_rank(prefix: str, name: str) -> int | None:
-    """0 prefix, 1 substring, 2 subsequence, ``None`` no name match."""
+    """0 exact, 1 prefix, 2 substring, 3 subsequence, ``None`` no name match."""
     if not prefix:
         return 0
-    if name.startswith(prefix):
+    if name == prefix:
         return 0
-    if prefix in name:
+    if name.startswith(prefix):
         return 1
+    if prefix in name:
+        return 2
     position = 0
     for char in name:
         if position < len(prefix) and char == prefix[position]:
             position += 1
-    return 2 if position == len(prefix) else None
+    return 3 if position == len(prefix) else None
 
 
 def _skill_source(path: str, cwd: str) -> str:
