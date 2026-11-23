@@ -8,6 +8,7 @@ worry about neighbours.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TypeAlias
 
 from vx.brand import ITALIC_BRAND
 from vx.tui import ansi, markdown
@@ -74,6 +75,10 @@ class Block:
 
     def rows(self, width: int) -> list[str]:
         raise NotImplementedError
+
+
+# Type alias for all tool status block variants (defined later in this file)
+ToolStatusBlock: TypeAlias = "ToolStatus | ReadToolStatus | BashToolStatus | ApplyPatchToolStatus | GrepToolStatus | WebToolStatus"
 
 
 @dataclass
@@ -218,7 +223,7 @@ class ToolStatus(Block):
 class ToolGroup(Block):
     """A compact group of tool calls, with one indented row per call."""
 
-    calls: list[ToolStatus] = field(default_factory=list)
+    calls: list[ToolStatusBlock] = field(default_factory=list)
     status: str = "running"
     kind: str = "tool"
 
@@ -240,7 +245,7 @@ class ToolGroup(Block):
         out = [ansi.clip_ellipsis(heading, width)]
         for call in self.calls:
             marker = f"{t.dim_style}│{ansi.RESET}"
-            rows = call.rows(max(1, width - 4)) or [call.target or call._verb()]
+            rows = call.rows(max(1, width - 4)) or [getattr(call, "target", "") or call._verb()]
             for i, row in enumerate(rows):
                 prefix = f"  {marker} " if i == 0 else "    "
                 out.append(ansi.clip_ellipsis(prefix + row, width))

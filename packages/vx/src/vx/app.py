@@ -131,7 +131,7 @@ class VxApp(CommandsMixin):
         self._events: asyncio.Queue[Any] = asyncio.Queue()
         self._live_assistant: blocks.Assistant | None = None
         self._live_thinking: blocks.Thinking | None = None
-        self._tool_blocks: dict[str, blocks.ToolStatus] = {}
+        self._tool_blocks: dict[str, blocks.ToolStatusBlock] = {}
         self._tool_groups: dict[str, blocks.ToolGroup] = {}
         self._tool_outputs: dict[str, blocks.ToolOutput] = {}
         self._last_ctrl_c = 0.0
@@ -1138,7 +1138,7 @@ class VxApp(CommandsMixin):
                 if group is not None and all(call.status != "running" for call in group.calls):
                     group.status = "done"
                 # For apply_patch, populate diff stats from file_changes
-                if ev.file_changes and hasattr(block, "added"):
+                if ev.file_changes and isinstance(block, blocks.ApplyPatchToolStatus):
                     block.added = sum(f.added for f in ev.file_changes)
                     block.removed = sum(f.removed for f in ev.file_changes)
             # For apply_patch, show fx-style diff preview
@@ -1567,7 +1567,7 @@ class VxApp(CommandsMixin):
 # -- helpers -----------------------------------------------------------------
 
 
-def _make_tool_status_block(tool_name: str) -> blocks.Block:
+def _make_tool_status_block(tool_name: str) -> blocks.ToolStatusBlock:
     """Create a specialized status block for the given tool name."""
     if tool_name == "read":
         return blocks.ReadToolStatus(status="running")
@@ -1578,7 +1578,7 @@ def _make_tool_status_block(tool_name: str) -> blocks.Block:
     if tool_name == "grep":
         return blocks.GrepToolStatus(status="running")
     if tool_name in ("web", "web_search", "web_fetch"):
-        return blocks.WebToolStatus(tool_name=tool_name, status="running")
+        return blocks.WebToolStatus(name=tool_name, status="running")
     # Fallback to generic block for unknown tools
     return blocks.ToolStatus(name=tool_name, status="running")
 

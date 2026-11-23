@@ -1,5 +1,6 @@
 """Apply patch tool for vx — apply edits to files."""
 
+import asyncio
 import difflib
 from pathlib import Path
 
@@ -42,9 +43,7 @@ def generate_diff_preview(old: str, new: str, max_lines: int = 12) -> list[tuple
 
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
-            for _k, (oi, ni) in enumerate(
-                zip(range(i1, i2), range(j1, j2), strict=True)
-            ):
+            for _k, (oi, ni) in enumerate(zip(range(i1, i2), range(j1, j2), strict=True)):
                 old_line_num = oi + 1
                 new_line_num = ni + 1
                 if len(result) < max_lines:
@@ -149,7 +148,7 @@ class ApplyPatchTool(BaseTool):
             return (
                 f"Created {path}",
                 FileChanges(
-                    file_path=str(path), added=len(op.new_file_content.splitlines()), removed=0
+                    path=str(path), added=len(op.new_file_content.splitlines()), removed=0
                 ),
                 diff_lines,
             )
@@ -170,7 +169,7 @@ class ApplyPatchTool(BaseTool):
             diff_lines = generate_diff_preview(old_content, new_content)
             return (
                 f"Inserted at line {op.insert_line} in {path}",
-                FileChanges(file_path=str(path), added=added, removed=0),
+                FileChanges(path=str(path), added=added, removed=0),
                 diff_lines,
             )
 
@@ -193,13 +192,15 @@ class ApplyPatchTool(BaseTool):
             diff_lines = generate_diff_preview(old_content, new_content)
             return (
                 f"Edited {path}",
-                FileChanges(file_path=str(path), added=new_line_count, removed=old_line_count),
+                FileChanges(path=str(path), added=new_line_count, removed=old_line_count),
                 diff_lines,
             )
 
         return f"No operation specified for {path}", None, []
 
-    async def execute(self, params: ApplyPatchParams) -> ToolResult:
+    async def execute(
+        self, params: ApplyPatchParams, cancel_event: asyncio.Event | None = None
+    ) -> ToolResult:
         if not params.ops:
             return ToolResult(success=False, result="No operations provided")
 

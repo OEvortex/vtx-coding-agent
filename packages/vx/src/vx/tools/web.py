@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import urllib.error
+import urllib.request
 
 from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
@@ -31,9 +34,9 @@ class WebTool(BaseTool):
     def format_call(self, params: WebParams) -> str:
         return params.url[:100]
 
-    async def execute(self, params: WebParams) -> ToolResult:
-        import urllib.request
-
+    async def execute(
+        self, params: WebParams, cancel_event: asyncio.Event | None = None
+    ) -> ToolResult:
         url = params.url
         if not url.startswith(("http://", "https://")):
             return ToolResult(
@@ -121,10 +124,11 @@ class WebSearchTool(BaseTool):
     def format_call(self, params: WebSearchParams) -> str:
         return f'search: "{params.query}"'
 
-    async def execute(self, params: WebSearchParams) -> ToolResult:
+    async def execute(
+        self, params: WebSearchParams, cancel_event: asyncio.Event | None = None
+    ) -> ToolResult:
         """Search using DuckDuckGo HTML (no API key needed)."""
         import urllib.parse
-        import urllib.request
 
         query = params.query
         try:
