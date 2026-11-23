@@ -39,7 +39,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-For a remote server use `StreamableHttpTransport(StreamableHttpTransportOptions(url=..., headers=...))`. An `httpx.AsyncClient` can be injected for proxying or custom networking.
+For a remote server use `StreamableHttpTransport(StreamableHttpTransportOptions(url=..., headers=...))`. An `aiohttp.ClientSession` can be injected for proxying or custom networking.
 
 The dataclasses are the API surface:
 
@@ -230,7 +230,7 @@ Errors are typed: `McpError` is the base, with `McpTimeoutError`, `McpAbortError
 ## Operational notes
 
 - A stdio server is a child process holding a pipe. `McpManager.close()` is not optional. The child starts in its own session and is signalled by process *group*, so a server spawned through `npx` or `uvx` leaves no grandchildren holding the pipe. On Windows, where there are no process groups and no graceful signals, the tree is taken with `taskkill /T /F`. An `atexit` hook SIGTERMs anything still live.
-- An HTTP response whose body is an SSE stream is fetched with `client.send(..., stream=True)` and closed explicitly; leaving it inside an `async with` would close the stream the moment `send()` returns, and `send()` returns long before the server answers.
+- An HTTP response whose body is an SSE stream is read incrementally from the live `ClientResponse`: `await client.request(...)` returns as soon as the headers arrive, and the reader consumes `response.content` chunk by chunk and closes the response when the stream ends. An `async with client.get(...) as response` block keeps the stream open for the whole block, but closing it on block exit means a response that must outlive the function that opened it is owned explicitly instead.
 - Messages are capped at 16 MiB each (`DEFAULT_MAX_MESSAGE_BYTES`) at the transport layer. stdio stderr is captured up to 64 KiB and attached to connection errors.
 - A listener that raises is reported and the transport keeps running; a bad listener cannot take down a connection.
 - A 404 that names a session ctx was using raises `McpSessionExpiredError` rather than a generic HTTP error, because the recovery is to start a new session, not to retry.

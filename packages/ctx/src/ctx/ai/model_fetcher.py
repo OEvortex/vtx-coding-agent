@@ -302,15 +302,33 @@ def _fetch_models_sync(provider) -> list[FetchedModel]:
     if api_key and api_key != "ctx-local":
         headers["Authorization"] = f"Bearer {api_key}"
 
-    try:
-        import httpx
+    # This fetcher is synchronous and is called from sync-only code paths, so an
+    # async HTTP client cannot be used here without a running event loop. Use the
+    # stdlib urllib for this single GET instead of pulling in a sync HTTP stack.
+    from urllib.parse import urlsplit, urlunsplit
+    from urllib.request import Request, urlopen
 
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.get(url, headers=headers)
-            if resp.status_code >= 400:
-                logger.debug("Failed to fetch models for %s: %s", provider.slug, resp.status_code)
+    try:
+        # The old client collapsed dot segments in URLs (e.g. the freepi endpoint
+        # "/v1/../client-version" -> "/client-version"); urllib does not, so do it
+        # here to keep the request path identical.
+        parts = urlsplit(url)
+        path = parts.path
+        if ".." in path:
+            from posixpath import normpath
+
+            path = normpath(path)
+        request = Request(
+            urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment)),
+            # Avoid gzip/deflate payloads: unlike the old client, urllib does not
+            # transparently decompress response bodies.
+            headers={**headers, "Accept-Encoding": "identity"},
+        )
+        with urlopen(request, timeout=10.0) as resp:
+            if resp.status >= 400:
+                logger.debug("Failed to fetch models for %s: %s", provider.slug, resp.status)
                 return []
-            payload = resp.json()
+            payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         logger.debug("Error fetching models for %s: %s", provider.slug, exc)
         return []

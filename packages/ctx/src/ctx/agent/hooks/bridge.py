@@ -275,22 +275,27 @@ async def _run_http_hook(
     effective_timeout = timeout if timeout and timeout > 0 else 30
     # Lazy import keeps the hook subsystem import-light.
     try:
-        import httpx
+        import aiohttp
     except ImportError:
         return HookResult(
-            exit_code=1, output="", blocking_error="hook type 'http' requires the 'httpx' package"
+            exit_code=1,
+            output="",
+            blocking_error="hook type 'http' requires the 'aiohttp' package",
         )
     try:
-        async with httpx.AsyncClient(timeout=effective_timeout) as client:
-            resp = await client.post(url, json=context)
-        body = resp.text.strip()
-        if resp.status_code >= 400:
+        async with (
+            aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=effective_timeout)
+            ) as client,
+            client.post(url, json=context) as resp,
+        ):
+            body = (await resp.text()).strip()
+            status = resp.status
+        if status >= 400:
             return HookResult(
-                exit_code=resp.status_code,
-                output=body,
-                blocking_error=f"hook http {url} returned {resp.status_code}",
+                exit_code=status, output=body, blocking_error=f"hook http {url} returned {status}"
             )
-        return HookResult(exit_code=resp.status_code, output=body)
+        return HookResult(exit_code=status, output=body)
     except Exception as exc:  # network/timeout
         return HookResult(exit_code=1, output="", blocking_error=f"hook http failed: {exc}")
 

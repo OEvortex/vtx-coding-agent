@@ -52,12 +52,15 @@ def is_rate_limit_error(error: Exception) -> bool:
     if any(s in msg for s in ("provider returned error", "overloaded", "capacity")):
         return True
 
-    # httpx / openai / anthropic SDK error classes
+    # openai / anthropic SDK error classes
     if name in ("RateLimitError", "TooManyRequestsError"):
         return True
 
-    # HTTPStatusError variants — check status code attribute
+    # HTTP error variants — check status code attribute (aiohttp uses `.status`,
+    # other SDKs may expose `.status_code`)
     status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(error, "status", None)
     return status == 429
 
 

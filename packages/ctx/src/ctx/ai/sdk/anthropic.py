@@ -1,4 +1,4 @@
-"""Anthropic-native SDK. Direct HTTP via httpx."""
+"""Anthropic-native SDK. Direct HTTP via aiohttp."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import os
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import httpx
+import aiohttp
 
 from ctx.ai.provider_hooks import prepare_request
 from ctx.ai.sdk.base import BaseLLMSDK, GenerationConfig, GenerationResponse, Message, ToolCall
@@ -32,10 +32,17 @@ def _is_anthropic_api(base_url: str | None) -> bool:
 
 
 def _is_transient(exc: Exception) -> bool:
-    if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500 or exc.response.status_code == 429
+    if isinstance(exc, aiohttp.ClientResponseError):
+        return exc.status >= 500 or exc.status == 429
     if isinstance(
-        exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.RemoteProtocolError)
+        exc,
+        (
+            aiohttp.ClientConnectorError,
+            asyncio.TimeoutError,
+            aiohttp.ServerTimeoutError,
+            aiohttp.ClientPayloadError,
+            aiohttp.ClientOSError,
+        ),
     ):
         return True
     msg = str(exc).lower()
@@ -228,15 +235,15 @@ class AnthropicSDK(BaseLLMSDK):
     def __init__(self, api_key: str, base_url: str | None = None, **_: Any):
         url: str = base_url or ANTHROPIC_API_ROOT
         super().__init__(api_key, url)
-        self._client: httpx.AsyncClient | None = None
+        self._client: aiohttp.ClientSession | None = None
 
     @property
-    def client(self) -> httpx.AsyncClient:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def client(self) -> aiohttp.ClientSession:  # pyright: ignore[reportIncompatibleMethodOverride]
         if self._client is None:
             assert self.base_url is not None
-            self._client = httpx.AsyncClient(
+            self._client = aiohttp.ClientSession(
                 base_url=self.base_url,
-                timeout=httpx.Timeout(60.0, read=300.0),
+                timeout=aiohttp.ClientTimeout(total=None, connect=60, sock_read=300),
                 headers={
                     "x-api-key": self.api_key,
                     "anthropic-version": ANTHROPIC_VERSION,
@@ -332,16 +339,16 @@ class AnthropicSDK(BaseLLMSDK):
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
-                resp = await self.client.post("/v1/messages", **request_kwargs)
-                if resp.status_code >= 400:
-                    if _is_transient(
-                        httpx.HTTPStatusError("err", request=resp.request, response=resp)
-                    ):
-                        raise httpx.HTTPStatusError("err", request=resp.request, response=resp)
-                    body = resp.text
-                    raise RuntimeError(f"Anthropic API error {resp.status_code}: {body[:300]}")
-                data = resp.json()
-                return _parse_anthropic_response(data, payload["model"])
+                async with self.client.post("/v1/messages", **request_kwargs) as resp:
+                    if resp.status >= 400:
+                        if resp.status >= 500 or resp.status == 429:
+                            # ClientResponseError carries `.status`, which _is_transient
+                            # uses to decide whether to retry.
+                            resp.raise_for_status()
+                        body = await resp.text()
+                        raise RuntimeError(f"Anthropic API error {resp.status}: {body[:300]}")
+                    data = await resp.json()
+                    return _parse_anthropic_response(data, payload["model"])
             except Exception as exc:
                 last_exc = exc
                 if not _is_transient(exc) or attempt == _MAX_RETRIES - 1:
@@ -372,17 +379,20 @@ class AnthropicSDK(BaseLLMSDK):
         if extra_headers:
             stream_kwargs["headers"] = extra_headers
         try:
-            async with self.client.stream("POST", "/v1/messages", **stream_kwargs) as resp:
-                if resp.status_code >= 400:
-                    body = await resp.aread()
+            async with self.client.post("/v1/messages", **stream_kwargs) as resp:
+                if resp.status >= 400:
+                    body = await resp.read()
                     raise RuntimeError(
-                        f"Anthropic API error {resp.status_code}: "
+                        f"Anthropic API error {resp.status}: "
                         f"{body.decode('utf-8', errors='replace')[:300]}"
                     )
                 # Passthrough raw SSE events — the provider layer (AnthropicSDKProvider)
                 # owns the StreamPart mapping (TextPart/ThinkPart/ToolCall*), including
                 # thinking_delta / signature_delta / redacted_thinking handling.
-                async for line in resp.aiter_lines():
+                # aiohttp's content iterator yields raw byte lines (with the trailing
+                # newline), so decode and strip it before parsing the SSE payload.
+                async for raw_line in resp.content:
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
                     if not line:
                         continue
                     if not line.startswith("data: "):
@@ -414,5 +424,5 @@ class AnthropicSDK(BaseLLMSDK):
 
     async def aclose(self) -> None:
         if self._client is not None:
-            await self._client.aclose()
+            await self._client.close()
             self._client = None

@@ -38,7 +38,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-import httpx
+import aiohttp
 
 from ctx.ai.context_length import safe_max_output_tokens
 from ctx.ai.models import ApiType, Model
@@ -53,7 +53,8 @@ logger = logging.getLogger(__name__)
 CACHE_DIR_NAME = "models"
 CACHE_TTL_SECONDS = 60 * 60 * 6
 FETCH_TIMEOUT_SECONDS = 7.0
-HTTP_LIMITS = httpx.Limits(max_keepalive_connections=20, max_connections=40)
+HTTP_CONNECTOR_LIMIT = 40
+HTTP_CONNECTOR_LIMIT_PER_HOST = 20
 MAX_CONCURRENT_FETCHES = 10
 
 # In-memory cache for cline free ids to avoid per-model I/O
@@ -453,14 +454,25 @@ def _raw_model_list(payload: Any, response_format: str) -> list[dict[str, Any]]:
 # Models.dev specifications URL
 MODELS_DEV_URL = "https://models.dev/models.json"
 
-_FETCH_TIMEOUT = httpx.Timeout(FETCH_TIMEOUT_SECONDS, connect=3.0)
+_FETCH_TIMEOUT = aiohttp.ClientTimeout(total=FETCH_TIMEOUT_SECONDS, connect=3.0)
+
+
+def _new_client_session() -> aiohttp.ClientSession:
+    """Create an aiohttp session with the shared timeout and connection limits."""
+    return aiohttp.ClientSession(
+        timeout=_FETCH_TIMEOUT,
+        connector=aiohttp.TCPConnector(
+            limit=HTTP_CONNECTOR_LIMIT, limit_per_host=HTTP_CONNECTOR_LIMIT_PER_HOST
+        ),
+    )
+
 
 # In-memory cache for models.dev to avoid re-reading/parsing per provider.
 _models_dev_mem: dict[str, Any] | None = None
 _models_dev_mem_at: float = 0.0
 
 
-async def _fetch_models_dev(client: httpx.AsyncClient | None = None) -> dict[str, Any]:
+async def _fetch_models_dev(client: aiohttp.ClientSession | None = None) -> dict[str, Any]:
     global _models_dev_mem, _models_dev_mem_at
     # Reuse in-memory cache for 1 hour to avoid repeated disk/IO in batch fetches.
     if _models_dev_mem is not None and (time.time() - _models_dev_mem_at) < 3600:
@@ -479,16 +491,16 @@ async def _fetch_models_dev(client: httpx.AsyncClient | None = None) -> dict[str
     except Exception as exc:
         logger.debug("Failed to read models.dev cache: %s", exc)
 
-    async def _do_fetch(c: httpx.AsyncClient) -> dict[str, Any] | None:
+    async def _do_fetch(c: aiohttp.ClientSession) -> dict[str, Any] | None:
         try:
-            response = await c.get(MODELS_DEV_URL)
-            if response.is_success:
-                data = response.json()
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-                _models_dev_mem = data
-                _models_dev_mem_at = time.time()
-                return data
+            async with c.get(MODELS_DEV_URL, allow_redirects=False) as response:
+                if 200 <= response.status < 400:
+                    data = await response.json(content_type=None)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                    _models_dev_mem = data
+                    _models_dev_mem_at = time.time()
+                    return data
         except Exception as exc:
             logger.debug("Failed to fetch models.dev: %s", exc)
         return None
@@ -499,7 +511,7 @@ async def _fetch_models_dev(client: httpx.AsyncClient | None = None) -> dict[str
             return fetched
     else:
         try:
-            async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as _client:
+            async with _new_client_session() as _client:
                 fetched = await _do_fetch(_client)
                 if fetched is not None:
                     return fetched
@@ -784,7 +796,7 @@ async def _async_fetch_catalog(
     *,
     api_key: str | None,
     force: bool = False,
-    client: httpx.AsyncClient | None = None,
+    client: aiohttp.ClientSession | None = None,
     models_dev: dict[str, Any] | None = None,
 ) -> CachedCatalog:
     """Fetch the live model list for a single provider, refreshing the cache.
@@ -816,14 +828,27 @@ async def _async_fetch_catalog(
         endpoint = "/" + endpoint
     url = f"{base}{endpoint}"
 
-    async def _fetch(client: httpx.AsyncClient) -> httpx.Response:
-        return await client.get(url, headers=headers)
+    async def _fetch(
+        c: aiohttp.ClientSession,
+    ) -> tuple[int, str, Any, json.JSONDecodeError | None]:
+        async with c.get(url, headers=headers, allow_redirects=False) as response:
+            raw = await response.read()
+            payload: Any = None
+            json_error: json.JSONDecodeError | None = None
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                json_error = exc
+            return response.status, response.reason or "", payload, json_error
 
-    response: httpx.Response | None = None
+    status = 0
+    reason = ""
+    payload: Any = None
+    json_error: json.JSONDecodeError | None = None
     if client is not None:
         try:
-            response = await _fetch(client)
-        except httpx.HTTPError as exc:
+            status, reason, payload, json_error = await _fetch(client)
+        except (aiohttp.ClientError, TimeoutError) as exc:
             cached = _read_cache(config.name)
             if cached:
                 logger.debug("Falling back to stale cache for %s: %s", config.name, exc)
@@ -831,33 +856,29 @@ async def _async_fetch_catalog(
             raise RuntimeError(f"Network error fetching models for {config.name}: {exc}") from exc
     else:
         try:
-            async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as _client:
-                response = await _fetch(_client)
-        except httpx.HTTPError as exc:
+            async with _new_client_session() as _client:
+                status, reason, payload, json_error = await _fetch(_client)
+        except (aiohttp.ClientError, TimeoutError) as exc:
             cached = _read_cache(config.name)
             if cached:
                 logger.debug("Falling back to stale cache for %s: %s", config.name, exc)
                 return cached
             raise RuntimeError(f"Network error fetching models for {config.name}: {exc}") from exc
 
-    if response.status_code == 401 or response.status_code == 403:
+    if status == 401 or status == 403:
         cached = _read_cache(config.name)
         if cached:
             logger.debug("Auth error fetching %s; using cached snapshot", config.name)
             return cached
         error_detail = ""
-        try:
-            payload = response.json()
-            if isinstance(payload, dict):
-                raw_error = payload.get("error") or payload.get("message", "")
-                if isinstance(raw_error, dict):
-                    error_detail = raw_error.get("message", "")
-                elif isinstance(raw_error, str):
-                    error_detail = raw_error
-            elif isinstance(payload, str):
-                error_detail = payload
-        except json.JSONDecodeError:
-            pass
+        if isinstance(payload, dict):
+            raw_error = payload.get("error") or payload.get("message", "")
+            if isinstance(raw_error, dict):
+                error_detail = raw_error.get("message", "")
+            elif isinstance(raw_error, str):
+                error_detail = raw_error
+        elif isinstance(payload, str):
+            error_detail = payload
         if error_detail:
             raise RuntimeError(
                 f"Authentication error for {config.name}: {error_detail}. "
@@ -868,30 +889,25 @@ async def _async_fetch_catalog(
             f"Set {config.env_var} or /login for this provider."
         )
 
-    if response.status_code >= 500:
+    if status >= 500:
+        cached = _read_cache(config.name)
+        if cached:
+            return cached
+        raise RuntimeError(f"Server error {status} fetching models for {config.name}")
+
+    if not 200 <= status < 400:
+        cached = _read_cache(config.name)
+        if cached:
+            return cached
+        raise RuntimeError(f"Failed to fetch models for {config.name}: {status} {reason}")
+
+    if json_error is not None:
         cached = _read_cache(config.name)
         if cached:
             return cached
         raise RuntimeError(
-            f"Server error {response.status_code} fetching models for {config.name}"
-        )
-
-    if not response.is_success:
-        cached = _read_cache(config.name)
-        if cached:
-            return cached
-        raise RuntimeError(
-            f"Failed to fetch models for {config.name}: "
-            f"{response.status_code} {response.reason_phrase}"
-        )
-
-    try:
-        payload = response.json()
-    except json.JSONDecodeError as exc:
-        cached = _read_cache(config.name)
-        if cached:
-            return cached
-        raise RuntimeError(f"Invalid JSON from {config.name} /models: {exc}") from exc
+            f"Invalid JSON from {config.name} /models: {json_error}"
+        ) from json_error
 
     raw_models = _raw_model_list(payload, config.response_format)
     if not raw_models:
@@ -962,7 +978,7 @@ async def aget_provider_models(
     provider: str,
     *,
     force_refresh: bool = False,
-    client: httpx.AsyncClient | None = None,
+    client: aiohttp.ClientSession | None = None,
     models_dev: dict[str, Any] | None = None,
 ) -> list[DynamicModelEntry]:
     """Async variant of :func:`get_provider_models`."""
@@ -1002,7 +1018,7 @@ def refresh_all_providers() -> dict[str, int]:
         return {}
 
     async def _run() -> dict[str, int]:
-        async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as client:
+        async with _new_client_session() as client:
             models_dev = await _fetch_models_dev(client)
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 
@@ -1132,7 +1148,7 @@ async def _aget_all_dynamic_models(force_refresh: bool = False) -> list[Model]:
     if not providers:
         return []
 
-    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as client:
+    async with _new_client_session() as client:
         models_dev = await _fetch_models_dev(client)
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 
@@ -1213,7 +1229,7 @@ async def _aget_all_dynamic_model_ids(force_refresh: bool = False) -> dict[str, 
     if not providers:
         return {}
 
-    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, limits=HTTP_LIMITS) as client:
+    async with _new_client_session() as client:
         models_dev = await _fetch_models_dev(client)
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 

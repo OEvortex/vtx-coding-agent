@@ -267,7 +267,7 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             supports_vision=True,
             supports_thinking=True,
             fetch_models=True,
-            # httpx normalizes "/v1/../client-version" -> "/client-version".
+            # The fetcher collapses "/v1/../client-version" -> "/client-version".
             models_endpoint="/../client-version",
             headers={"x-client-version": "0.6.18", "x-session-id": "ctx"},
         ),

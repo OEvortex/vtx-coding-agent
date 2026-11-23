@@ -7,6 +7,7 @@ in the FreePi CLI. ``FREEPI_API_KEY`` env var overrides the file.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import json
@@ -15,7 +16,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
+import aiohttp
 
 _FREEPI_CLI_DIR = Path.home() / ".free-pi" / "agent"
 _CREDENTIALS_PATH = _FREEPI_CLI_DIR / "credentials.json"
@@ -88,16 +89,21 @@ async def ensure_freepi_ad_impression(session_id: str = "ctx") -> None:
     base = os.environ.get("FREEPI_BASE_URL", "https://api.freepi.ai").rstrip("/")
     headers = {"Authorization": f"Bearer {token}", "x-session-id": session_id}
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.get(f"{base}/ads/next?slot=banner", headers=headers)
-            if res.status_code != 200:
-                return
-            ad = res.json()
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10.0)) as client:
+            async with client.get(
+                f"{base}/ads/next?slot=banner", headers=headers, allow_redirects=False
+            ) as res:
+                if res.status != 200:
+                    return
+                ad = await res.json(content_type=None)
             imp_url = ad.get("imp_url")
             if imp_url:
-                with contextlib.suppress(httpx.HTTPError):
-                    await client.get(imp_url, timeout=5.0)
-            await client.post(
+                with contextlib.suppress(aiohttp.ClientError, asyncio.TimeoutError):
+                    async with client.get(
+                        imp_url, timeout=aiohttp.ClientTimeout(total=5.0), allow_redirects=False
+                    ) as imp_res:
+                        await imp_res.read()
+            async with client.post(
                 f"{base}/ads/impression",
                 headers={**headers, "Content-Type": "application/json"},
                 json={
@@ -105,7 +111,8 @@ async def ensure_freepi_ad_impression(session_id: str = "ctx") -> None:
                     "click_token": ad.get("click_token"),
                     "imp_fired": True,
                 },
-            )
+            ) as imp_res:
+                await imp_res.read()
             _ads_last[session_id] = now
     except Exception:
         pass

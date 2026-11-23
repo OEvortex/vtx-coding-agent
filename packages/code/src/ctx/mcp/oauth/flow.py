@@ -21,9 +21,13 @@ import base64
 import hashlib
 import logging
 import secrets
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import urlencode, urljoin, urlparse
+
+import aiohttp
 
 from ..auth import AuthProvider, UnauthorizedContext
 from .discovery import (
@@ -56,12 +60,13 @@ LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 ClientAuthMethod = str  # "client_secret_basic" | "client_secret_post" | "none"
 
 
-def _client(fetch: HttpClient | None) -> HttpClient:
+@asynccontextmanager
+async def _client(fetch: HttpClient | None) -> AsyncGenerator[HttpClient]:
     if fetch is not None:
-        return fetch
-    import httpx
-
-    return httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+        yield fetch
+        return
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30.0)) as session:
+        yield session
 
 
 def is_loopback(hostname: str) -> bool:
@@ -159,19 +164,21 @@ async def _token_request(
         params,
     )
 
-    client = _client(options.fetch)
-    response = await client.post(endpoint, headers=headers, content=urlencode(params).encode())
-    text = response.text
-    try:
-        body = response.json()
-    except ValueError:
-        body = None
-    # Servers report OAuth errors with any status, so the body decides.
-    if isinstance(body, dict) and isinstance(body.get("error"), str):
-        raise parse_oauth_error(response.status_code, body)
-    if not response.is_success:
-        raise OAuthError("server_error", f"HTTP {response.status_code}: {text}")
-    return parse_oauth_tokens(body)
+    async with _client(options.fetch) as client:
+        response = await client.post(
+            endpoint, headers=headers, data=urlencode(params).encode(), allow_redirects=True
+        )
+        text = await response.text()
+        try:
+            body = await response.json(content_type=None)
+        except ValueError:
+            body = None
+        # Servers report OAuth errors with any status, so the body decides.
+        if isinstance(body, dict) and isinstance(body.get("error"), str):
+            raise parse_oauth_error(response.status, body)
+        if not response.ok:
+            raise OAuthError("server_error", f"HTTP {response.status}: {text}")
+        return parse_oauth_tokens(body)
 
 
 async def start_authorization(
@@ -240,15 +247,16 @@ async def register_client(
     body = dict(client_metadata.to_dict())
     if scope:
         body["scope"] = scope
-    client = _client(fetch)
-    response = await client.post(
-        endpoint,
-        headers={"Accept": "application/json", "Content-Type": "application/json"},
-        json=body,
-    )
-    if not response.is_success:
-        raise OAuthRegistrationError(response.status_code, response.text)
-    return OAuthClientInformation.from_dict(response.json())
+    async with _client(fetch) as client:
+        response = await client.post(
+            endpoint,
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            json=body,
+            allow_redirects=True,
+        )
+        if not response.ok:
+            raise OAuthRegistrationError(response.status, await response.text())
+        return OAuthClientInformation.from_dict(await response.json(content_type=None))
 
 
 async def exchange_authorization_code(
@@ -330,109 +338,108 @@ class OAuthFlowOptions:
 
 
 async def _run_flow(provider: OAuthClientProvider, options: OAuthFlowOptions) -> str:
-    client = _client(options.fetch)
-
-    cached = await provider.discovery_state()
-    if cached and cached.authorization_server_url:
-        discovered = OAuthDiscoveryState(
-            authorization_server_url=cached.authorization_server_url,
-            authorization_server_metadata=cached.authorization_server_metadata
-            or await discover_authorization_server_metadata(
-                cached.authorization_server_url,
+    async with _client(options.fetch) as client:
+        cached = await provider.discovery_state()
+        if cached and cached.authorization_server_url:
+            discovered = OAuthDiscoveryState(
+                authorization_server_url=cached.authorization_server_url,
+                authorization_server_metadata=cached.authorization_server_metadata
+                or await discover_authorization_server_metadata(
+                    cached.authorization_server_url,
+                    fetch=client,
+                    skip_issuer_validation=options.skip_issuer_validation,
+                ),
+                resource_metadata=cached.resource_metadata,
+                resource_metadata_url=cached.resource_metadata_url,
+            )
+        else:
+            info = await discover_oauth_server_info(
+                options.server_url,
+                resource_metadata_url=options.resource_metadata_url,
                 fetch=client,
                 skip_issuer_validation=options.skip_issuer_validation,
-            ),
-            resource_metadata=cached.resource_metadata,
-            resource_metadata_url=cached.resource_metadata_url,
-        )
-    else:
-        info = await discover_oauth_server_info(
-            options.server_url,
-            resource_metadata_url=options.resource_metadata_url,
-            fetch=client,
-            skip_issuer_validation=options.skip_issuer_validation,
-        )
-        discovered = OAuthDiscoveryState(
-            authorization_server_url=info.authorization_server_url,
-            authorization_server_metadata=info.authorization_server_metadata,
-            resource_metadata=info.resource_metadata,
-            resource_metadata_url=options.resource_metadata_url,
-        )
-    await provider.save_discovery_state(discovered)
+            )
+            discovered = OAuthDiscoveryState(
+                authorization_server_url=info.authorization_server_url,
+                authorization_server_metadata=info.authorization_server_metadata,
+                resource_metadata=info.resource_metadata,
+                resource_metadata_url=options.resource_metadata_url,
+            )
+        await provider.save_discovery_state(discovered)
 
-    metadata = discovered.authorization_server_metadata
-    resource = select_resource(options.server_url, discovered.resource_metadata)
-    advertised = (
-        discovered.resource_metadata.scopes_supported if discovered.resource_metadata else []
-    )
-    scope = (
-        options.scope
-        or (" ".join(advertised) if advertised else None)
-        or (provider.client_metadata.scope)
-    )
+        metadata = discovered.authorization_server_metadata
+        resource = select_resource(options.server_url, discovered.resource_metadata)
+        advertised = (
+            discovered.resource_metadata.scopes_supported if discovered.resource_metadata else []
+        )
+        scope = (
+            options.scope
+            or (" ".join(advertised) if advertised else None)
+            or (provider.client_metadata.scope)
+        )
 
-    client_info = await provider.client_information()
-    if client_info is None:
+        client_info = await provider.client_information()
+        if client_info is None:
+            if options.authorization_code:
+                raise ValueError("OAuth client information is missing during code exchange")
+            client_info = await register_client(
+                discovered.authorization_server_url,
+                metadata=metadata,
+                client_metadata=provider.client_metadata,
+                scope=scope,
+                fetch=client,
+            )
+            await provider.save_client_information(client_info)
+
+        token_options = TokenRequestOptions(
+            metadata=metadata, client_information=client_info, resource=resource, fetch=client
+        )
+
         if options.authorization_code:
-            raise ValueError("OAuth client information is missing during code exchange")
-        client_info = await register_client(
+            tokens = await exchange_authorization_code(
+                discovered.authorization_server_url,
+                code=options.authorization_code,
+                code_verifier=await provider.code_verifier(),
+                redirect_url=provider.redirect_url,
+                options=token_options,
+            )
+            await provider.save_tokens(tokens)
+            return "AUTHORIZED"
+
+        if not options.skip_refresh:
+            existing = await provider.tokens()
+            if existing and existing.refresh_token:
+                try:
+                    tokens = await refresh_authorization(
+                        discovered.authorization_server_url,
+                        refresh_token=existing.refresh_token,
+                        options=token_options,
+                    )
+                    await provider.save_tokens(tokens)
+                    return "AUTHORIZED"
+                except OAuthInsecureEndpointError:
+                    raise
+                except OAuthError as exc:
+                    # ``server_error`` is the one refresh failure worth retrying
+                    # with a fresh authorization; the rest (invalid_grant,
+                    # invalid_client) will fail again identically.
+                    if exc.code != "server_error":
+                        raise
+                    log.debug("OAuth refresh failed (%s); falling back to authorize", exc.code)
+
+        state = await provider.state()
+        url, verifier = await start_authorization(
             discovered.authorization_server_url,
             metadata=metadata,
-            client_metadata=provider.client_metadata,
-            scope=scope,
-            fetch=client,
-        )
-        await provider.save_client_information(client_info)
-
-    token_options = TokenRequestOptions(
-        metadata=metadata, client_information=client_info, resource=resource, fetch=client
-    )
-
-    if options.authorization_code:
-        tokens = await exchange_authorization_code(
-            discovered.authorization_server_url,
-            code=options.authorization_code,
-            code_verifier=await provider.code_verifier(),
+            client_information=client_info,
             redirect_url=provider.redirect_url,
-            options=token_options,
+            scope=scope,
+            state=state,
+            resource=resource,
         )
-        await provider.save_tokens(tokens)
-        return "AUTHORIZED"
-
-    if not options.skip_refresh:
-        existing = await provider.tokens()
-        if existing and existing.refresh_token:
-            try:
-                tokens = await refresh_authorization(
-                    discovered.authorization_server_url,
-                    refresh_token=existing.refresh_token,
-                    options=token_options,
-                )
-                await provider.save_tokens(tokens)
-                return "AUTHORIZED"
-            except OAuthInsecureEndpointError:
-                raise
-            except OAuthError as exc:
-                # ``server_error`` is the one refresh failure worth retrying
-                # with a fresh authorization; the rest (invalid_grant,
-                # invalid_client) will fail again identically.
-                if exc.code != "server_error":
-                    raise
-                log.debug("OAuth refresh failed (%s); falling back to authorize", exc.code)
-
-    state = await provider.state()
-    url, verifier = await start_authorization(
-        discovered.authorization_server_url,
-        metadata=metadata,
-        client_information=client_info,
-        redirect_url=provider.redirect_url,
-        scope=scope,
-        state=state,
-        resource=resource,
-    )
-    await provider.save_code_verifier(verifier)
-    await provider.redirect_to_authorization(url)
-    return "REDIRECT"
+        await provider.save_code_verifier(verifier)
+        await provider.redirect_to_authorization(url)
+        return "REDIRECT"
 
 
 async def authorize_mcp(provider: OAuthClientProvider, options: OAuthFlowOptions) -> str:

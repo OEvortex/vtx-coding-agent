@@ -1,4 +1,4 @@
-"""Web search + URL fetch tool for ctx (Exa MCP search, httpx fetch)."""
+"""Web search + URL fetch tool for ctx (Exa MCP search, aiohttp fetch)."""
 
 from __future__ import annotations
 
@@ -35,22 +35,25 @@ def _extract_text(data: dict) -> str | None:
 
 async def _call_exa(payload: dict) -> tuple[str | None, str | None]:
     """POST a JSON-RPC call to the Exa MCP endpoint."""
-    import httpx
+    import aiohttp
 
     headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(_MCP_URL, headers=headers, json=payload)
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=_TIMEOUT)) as client,
+            client.post(_MCP_URL, headers=headers, json=payload) as resp,
+        ):
             resp.raise_for_status()
-    except httpx.TimeoutException:
+            resp_text = await resp.text()
+    except TimeoutError:
         return None, f"Exa timed out after {_TIMEOUT}s"
-    except httpx.HTTPStatusError as e:
-        return None, f"Exa API error {e.response.status_code}"
+    except aiohttp.ClientResponseError as e:
+        return None, f"Exa API error {e.status}"
     except Exception as e:
         return None, f"Exa request failed: {e}"
 
     # SSE-streamed response: find the first data line with content.
-    for line in resp.text.splitlines():
+    for line in resp_text.splitlines():
         if not line.startswith("data: "):
             continue
         try:
@@ -63,7 +66,7 @@ async def _call_exa(payload: dict) -> tuple[str | None, str | None]:
 
     # Fallback: parse the whole body as a single JSON object.
     try:
-        text = _extract_text(resp.json())
+        text = _extract_text(json.loads(resp_text))
         if text:
             return text, None
     except Exception:
@@ -89,20 +92,24 @@ def _strip_jina_header(text: str) -> str:
 
 async def _fetch_url(url: str) -> tuple[str | None, str | None]:
     """Fetch a URL as markdown via Jina Reader (r.jina.ai)."""
-    import httpx
+    import aiohttp
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(f"https://r.jina.ai/{url}")
-    except httpx.TimeoutException:
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=_TIMEOUT)) as client,
+            client.get(f"https://r.jina.ai/{url}") as resp,
+        ):
+            status = resp.status
+            resp_text = await resp.text()
+    except TimeoutError:
         return None, f"Fetch timed out after {_TIMEOUT}s"
     except Exception as e:
         return None, f"Fetch failed: {e}"
 
-    if resp.status_code != 200:
-        return None, f"Fetch failed: Jina Reader HTTP {resp.status_code}"
+    if status != 200:
+        return None, f"Fetch failed: Jina Reader HTTP {status}"
 
-    text = _strip_jina_header(resp.text)
+    text = _strip_jina_header(resp_text)
     if not text or "<html" in text[:200].lower():
         return None, "Fetch returned no readable content"
     if len(text) > _MAX_FETCH_CHARS:

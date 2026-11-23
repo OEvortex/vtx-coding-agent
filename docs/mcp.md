@@ -98,7 +98,7 @@ POSTs JSON-RPC to a URL, with an optional GET stream for server-initiated messag
 |---|---|---|
 | `url` | - | The MCP endpoint |
 | `headers` | `{}` | Sent on every request |
-| `client` | `None` | Injected `httpx.AsyncClient`; one is created if absent |
+| `client` | `None` | Injected `aiohttp.ClientSession`; one is created if absent |
 | `open_get_stream` | `True` | Keep a GET stream open for server-initiated messages |
 | `max_message_bytes` | `DEFAULT_MAX_MESSAGE_BYTES` | |
 | `auth_provider` | `None` | See [Auth](#auth) |

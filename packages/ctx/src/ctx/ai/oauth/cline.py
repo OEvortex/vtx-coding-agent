@@ -483,8 +483,8 @@ def _write_cline_free_cache(ids: set[str]) -> None:
 
 
 def fetch_cline_free_model_ids_sync() -> set[str]:
-    """Sync fetch of free ids (httpx)."""
-    import httpx
+    """Sync fetch of free ids (stdlib urllib, callable without an event loop)."""
+    import urllib.request
 
     tok = get_valid_cline_token_sync()
     headers = {"Accept": "application/json"}
@@ -492,11 +492,11 @@ def fetch_cline_free_model_ids_sync() -> set[str]:
         headers["Authorization"] = f"Bearer {tok}"
     url = f"{_API_BASE}{_RECOMMENDED_ENDPOINT}"
     try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.get(url, headers=headers)
-            if resp.status_code >= 400:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            if resp.status >= 400:
                 return set()
-            data = resp.json()
+            data = json.loads(resp.read())
     except Exception:
         return set()
     free = data.get("free", []) if isinstance(data, dict) else []

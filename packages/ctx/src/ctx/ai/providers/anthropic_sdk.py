@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from typing import Any
 
-from anthropic import APIConnectionError, APIStatusError
+import aiohttp
 
 from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig, resolve_api_key
 from ctx.ai.providers.sanitize import sanitize_surrogates
@@ -56,6 +56,9 @@ class AnthropicSDKProvider(BaseProvider):
             )
 
         self._sdk = AnthropicSDK(api_key=api_key, base_url=config.base_url)
+
+    async def aclose(self) -> None:
+        await self._sdk.aclose()
 
     def _convert_messages(self, messages: list[Message]) -> list[SDKMessage]:
         result: list[SDKMessage] = []
@@ -305,8 +308,8 @@ class AnthropicSDKProvider(BaseProvider):
 
         if is_rate_limit_error(error):
             return False
-        if isinstance(error, APIConnectionError):
+        if isinstance(error, (aiohttp.ClientConnectionError, OSError)):
             return True
-        if isinstance(error, APIStatusError):
-            return error.status_code >= 500
+        if isinstance(error, aiohttp.ClientResponseError):
+            return error.status >= 500
         return False

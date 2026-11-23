@@ -13,8 +13,12 @@ Adapted from modelcontextprotocol/typescript-sdk v1.29.0 (MIT).
 from __future__ import annotations
 
 import re
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
+
+import aiohttp
 
 from ..types import LATEST_PROTOCOL_VERSION
 from .errors import OAuthIssuerMismatchError
@@ -27,17 +31,18 @@ from .types import (
     parse_protected_resource_metadata,
 )
 
-# Duck-typed to httpx.AsyncClient so callers can inject one, and so a test can
-# pass a client pointed at a loopback server.
+# Duck-typed to aiohttp.ClientSession so callers can inject one, and so a test
+# can pass a session pointed at a loopback server.
 HttpClient = Any
 
 
-def _client(fetch: HttpClient | None) -> HttpClient:
+@asynccontextmanager
+async def _client(fetch: HttpClient | None) -> AsyncGenerator[HttpClient]:
     if fetch is not None:
-        return fetch
-    import httpx
-
-    return httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+        yield fetch
+        return
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30.0)) as session:
+        yield session
 
 
 def _is_discovery_miss(status: int) -> bool:
@@ -85,9 +90,13 @@ def parse_www_authenticate(header: str | None) -> OAuthChallenge:
 
 
 async def _fetch_metadata(client: HttpClient, url: str, protocol_version: str) -> Any:
-    return await client.get(
+    response = await client.get(
         url, headers={"Accept": "application/json", "MCP-Protocol-Version": protocol_version}
     )
+    # Read the small metadata body now so the connection is released; aiohttp
+    # only returns a response's connection to the pool once its body is read.
+    await response.read()
+    return response
 
 
 async def discover_protected_resource_metadata(
@@ -103,30 +112,32 @@ async def discover_protected_resource_metadata(
     is tried first and then the origin form, because servers disagree on which
     one they publish.
     """
-    client = _client(fetch)
-    server = urlparse(server_url)
-    if not server.scheme or not server.netloc:
-        raise ValueError(f"Invalid MCP server URL: {server_url!r}")
-    origin = urlunparse((server.scheme, server.netloc, "", "", "", ""))
+    async with _client(fetch) as client:
+        server = urlparse(server_url)
+        if not server.scheme or not server.netloc:
+            raise ValueError(f"Invalid MCP server URL: {server_url!r}")
+        origin = urlunparse((server.scheme, server.netloc, "", "", "", ""))
 
-    if resource_metadata_url:
-        candidates = [resource_metadata_url]
-    else:
-        candidates = [
-            urljoin(origin, f"/.well-known/oauth-protected-resource{_path_suffix(server.path)}")
-        ]
-        if server.path and server.path != "/":
-            candidates.append(urljoin(origin, "/.well-known/oauth-protected-resource"))
+        if resource_metadata_url:
+            candidates = [resource_metadata_url]
+        else:
+            candidates = [
+                urljoin(
+                    origin, f"/.well-known/oauth-protected-resource{_path_suffix(server.path)}"
+                )
+            ]
+            if server.path and server.path != "/":
+                candidates.append(urljoin(origin, "/.well-known/oauth-protected-resource"))
 
-    last_status = 0
-    for candidate in candidates:
-        response = await _fetch_metadata(client, candidate, protocol_version)
-        last_status = response.status_code
-        if not response.is_success:
-            continue
-        return parse_protected_resource_metadata(response.json())
+        last_status = 0
+        for candidate in candidates:
+            response = await _fetch_metadata(client, candidate, protocol_version)
+            last_status = response.status
+            if not response.ok:
+                continue
+            return parse_protected_resource_metadata(await response.json(content_type=None))
 
-    raise ValueError(f"HTTP {last_status} loading OAuth protected resource metadata")
+        raise ValueError(f"HTTP {last_status} loading OAuth protected resource metadata")
 
 
 def build_authorization_server_discovery_urls(authorization_server_url: str) -> list[str]:
@@ -163,23 +174,23 @@ async def discover_authorization_server_metadata(
     (``/authorize``, ``/token``, ``/register``) are tried instead. So this
     returning ``None`` is not a failure.
     """
-    client = _client(fetch)
-    for url in build_authorization_server_discovery_urls(authorization_server_url):
-        response = await _fetch_metadata(client, url, protocol_version)
-        if not response.is_success:
-            if _is_discovery_miss(response.status_code):
-                continue
-            raise ValueError(
-                f"HTTP {response.status_code} loading authorization server metadata from {url}"
-            )
-        metadata = parse_authorization_server_metadata(response.json())
-        if not skip_issuer_validation:
-            expected = _trim_trailing_slash(authorization_server_url)
-            received = _trim_trailing_slash(metadata.issuer)
-            if expected != received:
-                raise OAuthIssuerMismatchError(expected, received)
-        return metadata
-    return None
+    async with _client(fetch) as client:
+        for url in build_authorization_server_discovery_urls(authorization_server_url):
+            response = await _fetch_metadata(client, url, protocol_version)
+            if not response.ok:
+                if _is_discovery_miss(response.status):
+                    continue
+                raise ValueError(
+                    f"HTTP {response.status} loading authorization server metadata from {url}"
+                )
+            metadata = parse_authorization_server_metadata(await response.json(content_type=None))
+            if not skip_issuer_validation:
+                expected = _trim_trailing_slash(authorization_server_url)
+                received = _trim_trailing_slash(metadata.issuer)
+                if expected != received:
+                    raise OAuthIssuerMismatchError(expected, received)
+            return metadata
+        return None
 
 
 async def discover_oauth_server_info(
@@ -190,13 +201,17 @@ async def discover_oauth_server_info(
     skip_issuer_validation: bool = False,
 ) -> OAuthServerInfo:
     """Resolve a server URL to the authorization server that guards it."""
-    client = _client(fetch)
+    session: aiohttp.ClientSession | None = None
+    client = fetch
+    if client is None:
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30.0))
+        client = session
     resource_metadata: OAuthProtectedResourceMetadata | None = None
     try:
         resource_metadata = await discover_protected_resource_metadata(
             server_url, resource_metadata_url=resource_metadata_url, fetch=client
         )
-    except httpx_transport_errors():
+    except transport_errors():
         # No metadata and no server to ask: the request never left the machine,
         # so there is nothing to authenticate against.
         raise
@@ -210,20 +225,24 @@ async def discover_oauth_server_info(
         if resource_metadata and resource_metadata.authorization_servers
         else origin_of(server_url)
     )
-    return OAuthServerInfo(
-        authorization_server_url=authorization_server_url,
-        authorization_server_metadata=await discover_authorization_server_metadata(
-            authorization_server_url, fetch=client, skip_issuer_validation=skip_issuer_validation
-        ),
-        resource_metadata=resource_metadata,
-    )
+    try:
+        return OAuthServerInfo(
+            authorization_server_url=authorization_server_url,
+            authorization_server_metadata=await discover_authorization_server_metadata(
+                authorization_server_url,
+                fetch=client,
+                skip_issuer_validation=skip_issuer_validation,
+            ),
+            resource_metadata=resource_metadata,
+        )
+    finally:
+        if session is not None:
+            await session.close()
 
 
-def httpx_transport_errors() -> tuple[type[BaseException], ...]:
+def transport_errors() -> tuple[type[BaseException], ...]:
     """Connection-level failures, which are fatal rather than "no metadata"."""
-    import httpx
-
-    return (httpx.TransportError, httpx.InvalidURL, OSError)
+    return (aiohttp.ClientError, aiohttp.InvalidURL, OSError)
 
 
 def origin_of(value: str) -> str:

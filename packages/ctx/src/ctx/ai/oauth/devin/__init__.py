@@ -9,6 +9,7 @@ lazily from the vendored descriptor set in :mod:`ctx.ai.oauth.devin.proto`.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import gzip
@@ -24,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
-import httpx
+import aiohttp
 
 from ctx.ai.base import BaseProvider, LLMStream, ProviderConfig
 from ctx.ai.providers.sanitize import sanitize_surrogates
@@ -164,8 +165,8 @@ CLIENT_VERSION = "3000.12.43"
 _SERVICE = "exa.api_server_pb.ApiServerService"
 _CHAT_PATH = f"/{_SERVICE}/GetChatMessage"
 _MODELS_PATH = f"/{_SERVICE}/GetCascadeModelConfigs"
-_STREAM_TIMEOUT = httpx.Timeout(600.0, connect=30.0)
-_UNARY_TIMEOUT = httpx.Timeout(60.0, connect=30.0)
+_STREAM_TIMEOUT = aiohttp.ClientTimeout(total=600.0, connect=30.0)
+_UNARY_TIMEOUT = aiohttp.ClientTimeout(total=60.0, connect=30.0)
 
 
 def _envelope(payload: bytes) -> bytes:
@@ -192,13 +193,16 @@ def _make_metadata(token: str) -> Any:
 async def _unary_call(method_path: str, request: Any, token: str, base_url: str) -> bytes:
     url = base_url.rstrip("/") + method_path
     headers = {**_auth_headers(token), "Content-Type": "application/proto"}
-    async with httpx.AsyncClient(timeout=_UNARY_TIMEOUT) as client:
-        resp = await client.post(url, content=request.SerializeToString(), headers=headers)
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Devin {method_path.rsplit('/', 1)[-1]} HTTP {resp.status_code}: {resp.text[:500]!r}"
-        )
-    return resp.content
+    async with (
+        aiohttp.ClientSession(timeout=_UNARY_TIMEOUT) as client,
+        client.post(url, data=request.SerializeToString(), headers=headers) as resp,
+    ):
+        raw = await resp.read()
+        status = resp.status
+    if status != 200:
+        text = raw.decode("utf-8", "replace")
+        raise RuntimeError(f"Devin {method_path.rsplit('/', 1)[-1]} HTTP {status}: {text[:500]!r}")
+    return raw
 
 
 async def _stream_chat(request: Any, token: str, base_url: str) -> AsyncIterator[Any]:
@@ -209,14 +213,14 @@ async def _stream_chat(request: Any, token: str, base_url: str) -> AsyncIterator
     response_cls = dp.message_class("GetChatMessageResponse")
 
     async with (
-        httpx.AsyncClient(timeout=_STREAM_TIMEOUT) as client,
-        client.stream("POST", url, content=body, headers=headers) as resp,
+        aiohttp.ClientSession(timeout=_STREAM_TIMEOUT) as client,
+        client.post(url, data=body, headers=headers) as resp,
     ):
-        if resp.status_code != 200:
-            text = await resp.aread()
-            raise RuntimeError(f"Devin GetChatMessage HTTP {resp.status_code}: {text[:500]!r}")
+        if resp.status != 200:
+            text = await resp.read()
+            raise RuntimeError(f"Devin GetChatMessage HTTP {resp.status}: {text[:500]!r}")
         buf = bytearray()
-        async for chunk in resp.aiter_bytes():
+        async for chunk in resp.content.iter_chunked(8192):
             buf.extend(chunk)
             while len(buf) >= 5:
                 flags = buf[0]
@@ -664,7 +668,10 @@ class DevinSDKProvider(BaseProvider):
 
         if is_rate_limit_error(error):
             return False
-        if isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout)):
+        if isinstance(
+            error,
+            (aiohttp.ClientConnectionError, aiohttp.ServerTimeoutError, asyncio.TimeoutError),
+        ):
             return True
         msg = str(error).lower()
         return any(

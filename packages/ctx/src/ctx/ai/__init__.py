@@ -1,8 +1,8 @@
 """Provider catalogue, models, and credential helpers.
 
 Re-exported lazily through :func:`__getattr__`. This package used to import every
-provider client eagerly, so ``import ctx.ai`` pulled in the whole ``aiohttp`` /
-``httpx`` stack (~170ms) even for a caller that only wanted
+provider client eagerly, so ``import ctx.ai`` pulled in the whole ``aiohttp``
+stack (~170ms) even for a caller that only wanted
 ``resolve_provider_api_type`` — which lives in :mod:`ctx.ai.providers` and needs only
 the base provider layer.
 

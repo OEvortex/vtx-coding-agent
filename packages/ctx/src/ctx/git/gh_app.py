@@ -21,37 +21,42 @@ referenced dev-to / josh-ops write-ups):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import aiohttp
+
 from ctx.core.paths import get_config_dir
 
-# NOTE: ``requests`` is imported optionally and ``jwt`` at its point of use.
-# Both ship only in the ``gh-app`` extra, but this module is reachable from
-# ``tools/bash.py`` at import time, so an unconditional module-scope import made
-# a plain ``pip install ctx-code`` fail at ``import ctx``. Every caller
-# fails closed without them (``resolve_committer_vars`` returns ``{}`` when no
-# app is configured), so a plain install never needs either. Do not make these
-# hard imports; keep ``requests`` as a module attribute, the test suite patches
-# ``gh_app.requests.get`` as its HTTP seam.
-try:  # pragma: no cover - trivial guard
-    import requests
-except ImportError:  # the `gh-app` extra is not installed
-    requests = None
+
+# ``jwt`` still ships only in the ``gh-app`` extra and is imported at its
+# point of use so a plain install can import this module. HTTP uses aiohttp,
+# which is a hard dependency of ``ctx``.
+def _run_async(coro: Any) -> Any:
+    """Run *coro* from a synchronous caller, including from inside a loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
-def _requests() -> Any:
-    """The ``requests`` module, or a message naming the extra that carries it."""
-    if requests is None:
-        raise RuntimeError(
-            "GitHub App support needs `requests`, which ships in the `gh-app` extra. "
-            "Install it with: pip install 'ctx-code[gh-app]'"
-        )
-    return requests
+async def _request_json(
+    method: str, url: str, headers: dict[str, str], *, body: dict[str, Any] | None = None
+) -> tuple[int, Any]:
+    timeout = aiohttp.ClientTimeout(total=5)
+    async with (
+        aiohttp.ClientSession(timeout=timeout) as session,
+        session.request(method, url, headers=headers, json=body) as response,
+    ):
+        return response.status, await response.json(content_type=None)
 
 
 _APP_DIR = get_config_dir() / "gh_app"
@@ -146,27 +151,18 @@ def _headers(jwt_or_token: str, as_app: bool = True) -> dict[str, str]:
 _cached_token: tuple[str, float] = ("", 0.0)
 
 
-def get_installation_token(cfg: GitHubAppConfig, owner: str, repo: str) -> str:
-    """Mint (or reuse a still-valid) installation token for owner/repo.
-
-    Tokens live up to 1h. We cache for the process lifetime and refresh ~5 min
-    before expiry to avoid hitting the API on every push.
-    """
+async def _mint_installation_token(cfg: GitHubAppConfig, owner: str, repo: str) -> str:
     global _cached_token
-    token, expires_at = _cached_token
-    if token and time.time() < expires_at:
-        return token
-
     jwt_token = make_jwt(cfg)
-    installation_id = _resolve_installation_id(cfg, jwt_token, owner, repo)
-    r = _requests().post(
+    installation_id = await _resolve_installation_id(cfg, jwt_token, owner, repo)
+    status, body = await _request_json(
+        "POST",
         f"{_GITHUB_API}/app/installations/{installation_id}/access_tokens",
-        headers=_headers(jwt_token),
-        json={"repository": f"{owner}/{repo}"},
-        timeout=5,
+        _headers(jwt_token),
+        body={"repository": f"{owner}/{repo}"},
     )
-    r.raise_for_status()
-    body = r.json()
+    if status >= 400:
+        raise RuntimeError(f"GitHub App token request failed with HTTP {status}")
     token = body["token"]
     raw_expiry = body.get("expires_at")
     if raw_expiry:
@@ -180,17 +176,34 @@ def get_installation_token(cfg: GitHubAppConfig, owner: str, repo: str) -> str:
     return token
 
 
-def _resolve_installation_id(cfg: GitHubAppConfig, jwt_token: str, owner: str, repo: str) -> int:
+def get_installation_token(cfg: GitHubAppConfig, owner: str, repo: str) -> str:
+    """Mint (or reuse a still-valid) installation token for owner/repo.
+
+    Tokens live up to 1h. We cache for the process lifetime and refresh ~5 min
+    before expiry to avoid hitting the API on every push.
+    """
+    token, expires_at = _cached_token
+    if token and time.time() < expires_at:
+        return token
+    return _run_async(_mint_installation_token(cfg, owner, repo))
+
+
+async def _resolve_installation_id(
+    cfg: GitHubAppConfig, jwt_token: str, owner: str, repo: str
+) -> int:
     """Find the installation ID for this app on owner/repo."""
-    r = _requests().get(
-        f"{_GITHUB_API}/repos/{owner}/{repo}/installation", headers=_headers(jwt_token), timeout=5
+    status, body = await _request_json(
+        "GET", f"{_GITHUB_API}/repos/{owner}/{repo}/installation", _headers(jwt_token)
     )
-    if r.status_code == 200:
-        return int(r.json()["id"])
+    if status == 200:
+        return int(body["id"])
     # Fallback: list installations and match by slug + repo.
-    r = _requests().get(f"{_GITHUB_API}/app/installations", headers=_headers(jwt_token), timeout=5)
-    r.raise_for_status()
-    for inst in r.json():
+    status, installations = await _request_json(
+        "GET", f"{_GITHUB_API}/app/installations", _headers(jwt_token)
+    )
+    if status >= 400:
+        raise RuntimeError(f"GitHub App installation lookup failed with HTTP {status}")
+    for inst in installations:
         if inst.get("app_slug") != cfg.app_slug:
             continue
         if f"{owner}/{repo}" in {
@@ -256,9 +269,12 @@ def get_bot_user_id(cfg: GitHubAppConfig, jwt_token: str | None = None) -> int:
     if jwt_token is None:
         jwt_token = make_jwt(cfg)
     encoded = f"{cfg.app_slug}%5Bbot%5D"  # URL-encode [ and ]
-    r = _requests().get(f"{_GITHUB_API}/users/{encoded}", headers=_headers(jwt_token), timeout=5)
-    r.raise_for_status()
-    bot_id = int(r.json()["id"])
+    status, body = _run_async(
+        _request_json("GET", f"{_GITHUB_API}/users/{encoded}", _headers(jwt_token))
+    )
+    if status >= 400:
+        raise RuntimeError(f"GitHub App bot user lookup failed with HTTP {status}")
+    bot_id = int(body["id"])
     _cached_bot_id = (cfg.app_slug, bot_id)
     _cached_bot_id_at = time.time()
     _save_bot_id_to_disk(cfg, bot_id)

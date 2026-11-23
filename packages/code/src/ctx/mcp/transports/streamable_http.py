@@ -5,16 +5,19 @@ an SSE stream. The server may also push its own requests and notifications down
 a GET stream opened after initialization, and may assign SSE event IDs that let
 a dropped stream be resumed with ``Last-Event-ID``.
 
-One httpx detail drives most of this file's shape: a response whose body is an
-SSE stream is fetched with ``client.send(..., stream=True)`` and closed
-explicitly, because leaving it inside an ``async with`` would close the stream
-the moment ``send()`` returns -- and ``send()`` returns long before the server
-answers.
+aiohttp returns a live :class:`aiohttp.ClientResponse` as soon as the response
+headers arrive; its ``content`` is read incrementally. That is what makes SSE
+work here: a response can be handed to a reader task and stays open until that
+task closes it, while a short JSON reply is read and closed in the caller. An
+``async with client.get(...) as response`` block likewise keeps the stream open
+for the whole block -- it is *leaving* the block that closes it -- so a response
+that must outlive the function that opened it is owned explicitly instead.
 """
 
 from __future__ import annotations
 
 import asyncio
+import codecs
 import contextlib
 import json
 import logging
@@ -22,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
+import aiohttp
 
 from ..auth import AuthProvider, UnauthorizedContext
 from ..jsonrpc import (
@@ -45,9 +48,10 @@ DEFAULT_RECONNECT_INITIAL_DELAY_MS = 1_000
 DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000
 DEFAULT_RECONNECT_MAX_RETRIES = 5
 
-# A stream must not be cut off by httpx's default 5s read timeout, so the
-# transport is built with no read timeout and bounds each request itself.
-STREAM_TIMEOUT = httpx.Timeout(connect=30.0, read=None, write=30.0, pool=30.0)
+# A stream must not be cut off by a total read deadline, so the session is
+# built with no total timeout and bounds each request itself. ``connect`` and
+# ``sock_connect`` still cap how long establishing the connection may take.
+STREAM_TIMEOUT = aiohttp.ClientTimeout(total=None, connect=30.0, sock_connect=30.0, sock_read=None)
 
 
 class McpHttpError(Exception):
@@ -94,7 +98,7 @@ class ReconnectOptions:
 class StreamableHttpTransportOptions:
     url: str
     headers: dict[str, str] = field(default_factory=dict)
-    client: httpx.AsyncClient | None = None
+    client: aiohttp.ClientSession | None = None
     """Injected for proxying, custom TLS, or tests. One is created if absent."""
     open_get_stream: bool = True
     max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES
@@ -109,22 +113,22 @@ class _StreamCursor:
     received: bool = False
 
 
-def _content_type(response: httpx.Response) -> str | None:
+def _content_type(response: aiohttp.ClientResponse) -> str | None:
     raw = response.headers.get("content-type")
     if not raw:
         return None
     return raw.split(";", 1)[0].strip().lower()
 
 
-def _needs_authorization(response: httpx.Response) -> bool:
+def _needs_authorization(response: aiohttp.ClientResponse) -> bool:
     """401, or 403 with an ``insufficient_scope`` bearer challenge.
 
     The 403 case is step-up authorization: the token is valid but lacks the
     scope the request needs, and refreshing will not add it.
     """
-    if response.status_code == 401:
+    if response.status == 401:
         return True
-    if response.status_code != 403:
+    if response.status != 403:
         return False
     challenge = response.headers.get("www-authenticate") or ""
     return (
@@ -155,16 +159,16 @@ class StreamableHttpTransport(TransportEvents):
         self._session_id: str | None = None
         self._protocol_version: str | None = None
         self._get_stream_started = False
-        self._open_streams: set[httpx.Response] = set()
+        self._open_streams: set[aiohttp.ClientResponse] = set()
         self._sleep_task: asyncio.Task | None = None
 
     @property
     def session_id(self) -> str | None:
         return self._session_id
 
-    def _get_client(self) -> httpx.AsyncClient:
+    def _get_client(self) -> aiohttp.ClientSession:
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=STREAM_TIMEOUT, follow_redirects=True)
+            self._client = aiohttp.ClientSession(timeout=STREAM_TIMEOUT)
         return self._client
 
     async def start(self) -> None:
@@ -194,23 +198,23 @@ class StreamableHttpTransport(TransportEvents):
         if not is_jsonrpc_request(message):
             # Notifications and responses are acknowledged with 202 and carry no
             # reply, so any body is noise.
-            await response.aclose()
+            response.close()
             # The server-to-client stream may only open once the session exists.
             if message.get("method") == "notifications/initialized":
                 self._start_get_stream()
             return
 
-        if response.status_code in (202, 204):
-            await response.aclose()
+        if response.status in (202, 204):
+            response.close()
             raise McpHttpError(
-                response.status_code,
+                response.status,
                 f"MCP server accepted request {message.get('method')} without a response",
             )
 
         content_type = _content_type(response)
         if content_type == "application/json":
-            body = await response.aread()
-            await response.aclose()
+            body = await response.read()
+            response.close()
             parsed = json.loads(body)
             for item in parsed if isinstance(parsed, list) else [parsed]:
                 self.emit_message(parse_jsonrpc_message(item))
@@ -222,10 +226,9 @@ class StreamableHttpTransport(TransportEvents):
             spawn_logging(self._consume_response_stream(response, message["id"]))
             return
 
-        await response.aclose()
+        response.close()
         raise McpHttpError(
-            response.status_code,
-            f"Unsupported MCP response content type: {content_type or 'missing'}",
+            response.status, f"Unsupported MCP response content type: {content_type or 'missing'}"
         )
 
     async def close(self) -> None:
@@ -240,15 +243,18 @@ class StreamableHttpTransport(TransportEvents):
         # then drop our streams and the client we own.
         if self._started and self._session_id and self._client is not None:
             headers, _token = await self._headers()
+            client = self._client
             with contextlib.suppress(Exception):
-                await asyncio.wait_for(self._client.delete(self.url, headers=headers), timeout=1.0)
+                response = await asyncio.wait_for(
+                    client.delete(self.url, headers=headers), timeout=1.0
+                )
+                response.close()
         for response in list(self._open_streams):
-            with contextlib.suppress(Exception):
-                await response.aclose()
+            response.close()
         self._open_streams.clear()
         if self._owns_client and self._client is not None:
             with contextlib.suppress(Exception):
-                await self._client.aclose()
+                await self._client.close()
             self._client = None
         self.emit_close()
 
@@ -256,25 +262,25 @@ class StreamableHttpTransport(TransportEvents):
 
     async def _authorized_request(
         self, method: str, *, headers: dict[str, str], content: bytes | None = None
-    ) -> httpx.Response:
+    ) -> aiohttp.ClientResponse:
         """Request with auth headers, retrying once through ``on_unauthorized``.
 
         Only the first attempt consults the provider: if a refresh did not fix
         the request, trying again unboundedly turns a broken credential into a
         hang.
+
+        ``await client.request(...)`` returns a live response whose body has not
+        been read. That is essential for SSE: a buffered request would wait for
+        the server to close a stream that is meant to stay open. The caller
+        decides when to read (``read`` for a JSON reply) or hands the live
+        response to a reader task that closes it at the end.
         """
         provider = self.options.auth_provider
         for attempt in range(2):
             request_headers, token = await self._headers(headers)
-            # stream=True is essential, not an optimisation: client.request()
-            # buffers the whole body, and an SSE response deliberately stays
-            # open, so it would block until the server closed it -- forever.
-            # The caller decides when to read (aread for a JSON reply) or to
-            # hand the live stream to a reader task that closes it on the end.
-            request = self._get_client().build_request(
-                method, self.url, headers=request_headers, content=content
+            response = await self._get_client().request(
+                method, self.url, headers=request_headers, data=content, allow_redirects=True
             )
-            response = await self._get_client().send(request, stream=True)
             if attempt > 0 or provider is None or not _needs_authorization(response):
                 return response
             try:
@@ -303,7 +309,7 @@ class StreamableHttpTransport(TransportEvents):
                 ) from exc
             finally:
                 with contextlib.suppress(Exception):
-                    await response.aclose()
+                    response.close()
         raise McpHttpError(401, "MCP authorization retry exhausted")
 
     async def _headers(
@@ -323,31 +329,29 @@ class StreamableHttpTransport(TransportEvents):
                 headers["Authorization"] = f"Bearer {token}"
         return headers, token
 
-    def _capture_session(self, response: httpx.Response) -> None:
+    def _capture_session(self, response: aiohttp.ClientResponse) -> None:
         session_id = response.headers.get("mcp-session-id")
         if session_id:
             self._session_id = session_id
 
-    async def _check_response(self, response: httpx.Response) -> None:
-        if response.is_success:
+    async def _check_response(self, response: aiohttp.ClientResponse) -> None:
+        if response.ok:
             return
         # A body we cannot read is not a reason to lose the status code, which
         # is what the caller actually branches on.
         body = ""
         with contextlib.suppress(Exception):
-            body = (await response.aread()).decode("utf-8", "replace")[:MAX_ERROR_BODY_BYTES]
-        if response.status_code == 401:
+            body = (await response.read()).decode("utf-8", "replace")[:MAX_ERROR_BODY_BYTES]
+        if response.status == 401:
             raise McpAuthRequiredError(response.headers.get("www-authenticate"), body)
-        if response.status_code == 404 and self._session_id:
+        if response.status == 404 and self._session_id:
             raise McpSessionExpiredError(body)
-        raise McpHttpError(
-            response.status_code, _describe_failure(response.status_code, body), body
-        )
+        raise McpHttpError(response.status, _describe_failure(response.status, body), body)
 
     # ---- SSE -------------------------------------------------------------
 
     async def _consume_sse(
-        self, response: httpx.Response, cursor: _StreamCursor, on_message: Any = None
+        self, response: aiohttp.ClientResponse, cursor: _StreamCursor, on_message: Any = None
     ) -> None:
         """Read one SSE stream to completion, dispatching JSON-RPC events."""
         self._open_streams.add(response)
@@ -370,16 +374,21 @@ class StreamableHttpTransport(TransportEvents):
                 cursor.received = True
         finally:
             self._open_streams.discard(response)
-            with contextlib.suppress(Exception):
-                await response.aclose()
+            response.close()
 
     async def _iter_sse(
-        self, response: httpx.Response, max_event_bytes: int, cursor: _StreamCursor | None = None
+        self,
+        response: aiohttp.ClientResponse,
+        max_event_bytes: int,
+        cursor: _StreamCursor | None = None,
     ):
-        """Yield :class:`SseEvent` from an SSE byte stream.
+        """Yield :class:`SseEvent` from a live SSE response.
 
-        Tracks the byte size of the *pending* event's data, not just the
-        buffer: a server streaming many short ``data:`` lines with no
+        ``response.content`` is consumed in small chunks and decoded
+        incrementally, so the body is never buffered in full and a multi-byte
+        character split across two network chunks is still decoded correctly.
+        The byte size of the *pending* event's data is tracked rather than just
+        the buffer: a server streaming many short ``data:`` lines with no
         terminating blank line would otherwise grow without bound.
         """
         buffered = ""
@@ -387,8 +396,9 @@ class StreamableHttpTransport(TransportEvents):
         event_id: str | None = None
         data_lines: list[str] = []
         data_bytes = 0
-        async for raw in response.aiter_text():
-            buffered += raw
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        async for chunk in response.content.iter_chunked(64 * 1024):
+            buffered += decoder.decode(chunk)
             while "\n" in buffered:
                 line, buffered = buffered.split("\n", 1)
                 dispatched, event_name, event_id, data_lines, data_bytes = self._sse_line(
@@ -404,6 +414,7 @@ class StreamableHttpTransport(TransportEvents):
                     yield dispatched
             if len(buffered.encode("utf-8", "replace")) > max_event_bytes:
                 raise ValueError(f"MCP SSE event exceeds {max_event_bytes} bytes")
+        buffered += decoder.decode(b"", final=True)
         if buffered:
             dispatched, event_name, event_id, data_lines, data_bytes = self._sse_line(
                 buffered.rstrip("\r"),
@@ -466,7 +477,7 @@ class StreamableHttpTransport(TransportEvents):
         return None, event_name, event_id, data_lines, data_bytes
 
     async def _consume_response_stream(
-        self, response: httpx.Response, request_id: JsonRpcId
+        self, response: aiohttp.ClientResponse, request_id: JsonRpcId
     ) -> None:
         """Read the stream answering one request, resuming it if it drops.
 
@@ -482,7 +493,7 @@ class StreamableHttpTransport(TransportEvents):
             if is_jsonrpc_response(message) and message.get("id") == request_id:
                 answered = True
 
-        stream: httpx.Response | None = response
+        stream: aiohttp.ClientResponse | None = response
         failure: BaseException | None = None
         attempt = 0
         while True:
@@ -573,24 +584,22 @@ class StreamableHttpTransport(TransportEvents):
                 return
             attempt += 1
 
-    async def _open_sse_stream(self, last_event_id: str | None) -> httpx.Response | None:
+    async def _open_sse_stream(self, last_event_id: str | None) -> aiohttp.ClientResponse | None:
         """Open a GET SSE stream. ``None`` means the server answered 405."""
         headers = {"accept": "text/event-stream"}
         if last_event_id is not None:
             headers["last-event-id"] = last_event_id
         response = await self._authorized_request("GET", headers=headers)
-        if response.status_code == 405:
-            with contextlib.suppress(Exception):
-                await response.aclose()
+        if response.status == 405:
+            response.close()
             return None
         await self._check_response(response)
         self._capture_session(response)
         content_type = _content_type(response)
         if content_type != "text/event-stream":
-            with contextlib.suppress(Exception):
-                await response.aclose()
+            response.close()
             raise McpHttpError(
-                response.status_code,
+                response.status,
                 f"Unsupported MCP GET response content type: {content_type or 'missing'}",
             )
         return response
@@ -605,7 +614,7 @@ class StreamableHttpTransport(TransportEvents):
             return True
         if isinstance(error, McpHttpError):
             return _is_transient_status(error.status)
-        if isinstance(error, (httpx.TransportError, OSError, TimeoutError)):
+        if isinstance(error, (aiohttp.ClientError, OSError, TimeoutError)):
             return True
         return isinstance(error, (ValueError, ConnectionError))
 

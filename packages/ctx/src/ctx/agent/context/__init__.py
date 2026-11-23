@@ -2,7 +2,7 @@
 
 Re-exports resolve lazily through :func:`__getattr__` so importing a light
 submodule (e.g. ``ctx.agent.context.skills`` for skill registration) does not
-pay for ``agent_mds``/``git`` and their httpx graph.
+pay for ``agent_mds``/``git`` and their HTTP client graph.
 """
 
 from __future__ import annotations
