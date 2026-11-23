@@ -4,6 +4,20 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ctx"]
+exclude = [
+    "src/ctx/term",
+    "src/ctx/code",
+    "src/ctx/mcp",
+    "src/ctx/codemode",
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "src/ctx/term",
+    "src/ctx/code",
+    "src/ctx/mcp",
+    "src/ctx/codemode",
+]
 
 [tool.hatch.build]
 artifacts = []

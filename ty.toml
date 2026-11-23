@@ -1,3 +1,9 @@
+# ``ctx.term``, ``ctx.code``, ``ctx.mcp`` and ``ctx.codemode`` are shared
+# namespace packages spread across the three source roots. ty stops at the
+# first regular ``ctx`` package, so packages/ctx/src/ctx contains symlinked
+# views of those four subpackages purely for module resolution. They are
+# excluded from ruff and from the built distributions; the real modules live
+# under packages/code/src and packages/term/src.
 [src]
 exclude = [
     ".venv/",

@@ -125,7 +125,7 @@ Update autoscaler for specific parameter instances:
 ```python
 MyClass = modal.Cls.from_name("my-app", "MyClass")
 obj = MyClass(model_version="3.5")
-obj.update_autoscaler(buffer_containers=2)  # type: ignore
+obj.update_autoscaler(buffer_containers=2)
 ```
 
 ## Input Concurrency

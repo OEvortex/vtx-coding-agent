@@ -166,7 +166,7 @@ class CodemodeToolBlock(ToolBlock):
     def _format_header(self, truncate: bool = True) -> Text:
         # The permission box and the questionnaire are the base class's; both
         # need the tool name and the call text they were built around.
-        if self._awaiting_approval or self._ask_dialog is not None:
+        if self._awaiting_approval:
             return super()._format_header(truncate=truncate)
 
         colors = config.ui.colors

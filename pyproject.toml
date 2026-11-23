@@ -26,6 +26,14 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 99
+# Type-check-only views of the shared ctx namespace. The real modules live
+# under packages/code/src and packages/term/src and are linted there.
+extend-exclude = [
+    "packages/ctx/src/ctx/term/",
+    "packages/ctx/src/ctx/code/",
+    "packages/ctx/src/ctx/mcp/",
+    "packages/ctx/src/ctx/codemode/",
+]
 
 [tool.ruff.lint]
 select = [

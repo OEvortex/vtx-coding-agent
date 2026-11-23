@@ -51,7 +51,8 @@ def json_type_to_python(prop_schema: Any) -> Any:
     if json_type == "boolean":
         return bool
     if json_type == "array":
-        return list[json_type_to_python(prop_schema.get("items") or {})]
+        # The item type is resolved at runtime from untrusted JSON Schema.
+        return list[Any]
     if json_type == "object":
         return dict[str, Any]
     if json_type == "null":

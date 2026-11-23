@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 from ctx.core.config import config
-from ctx.term import boxed  # ty: ignore[missing-module-member]
+from ctx.term import boxed
 from rich.text import Text
 
 from .base import CodingToolBlock

@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-from ctx.term.status_lines import set_live_activity_probe  # ty: ignore[import-not-found]
+from ctx.term.status_lines import set_live_activity_probe
 
 #: Terminal statuses a sub-agent can end in. Anything else is in flight.
 END_STATES = frozenset({"ok", "error", "stopped", "cancelled", "interrupted"})

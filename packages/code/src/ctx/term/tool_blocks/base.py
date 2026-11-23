@@ -8,7 +8,7 @@ the base only gives the simple tools a stable class to point their
 
 from __future__ import annotations
 
-from ctx.term.blocks import ToolBlock  # ty: ignore[import-not-found]
+from ctx.term.blocks import ToolBlock
 
 
 class CodingToolBlock(ToolBlock):

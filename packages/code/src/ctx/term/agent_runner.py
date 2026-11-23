@@ -648,8 +648,10 @@ class AgentRunnerMixin:
         """Execute a shell command and display the result"""
         chat = self.query_one("#chat-log", ChatLog)
         # Look up bash tool dynamically
+        from ctx.code.tools.bash import BashParams, BashTool
+
         bash_tool = get_tool("bash")
-        if bash_tool is None:
+        if not isinstance(bash_tool, BashTool):
             chat.add_message("System", "[red]No shell tool registered in harness.[/red]")
             return
 
@@ -664,8 +666,7 @@ class AgentRunnerMixin:
             status.set_status("running")
             # Manual shell output should render like regular bash tool output:
             # collapsed preview with ctrl+o expansion when details are available.
-            params_cls = getattr(bash_tool, "params", None)
-            params = params_cls(command=command) if params_cls else {"command": command}
+            params = BashParams(command=command)
             result = await bash_tool.execute(
                 params, cancel_event=cancel_event, inline_output=False
             )

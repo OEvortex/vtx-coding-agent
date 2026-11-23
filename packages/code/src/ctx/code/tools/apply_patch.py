@@ -228,7 +228,11 @@ def format_diff_display(diff: str) -> str:
     return "\n".join(formatted)
 
 
-_DELETED = object()  # state sentinel: path removed by an earlier op
+class _Deleted:
+    """State sentinel: path removed by an earlier op."""
+
+
+_DELETED = _Deleted()
 
 
 class ApplyPatchTool(BaseTool):
@@ -282,7 +286,7 @@ class ApplyPatchTool(BaseTool):
     ) -> ToolResult:
         # Validate and simulate every op against an in-memory view first, so a
         # failure anywhere aborts the whole patch before any byte is written.
-        state: dict[Path, str | object] = {}
+        state: dict[Path, str | _Deleted] = {}
         moves_src_to_dst: dict[Path, Path] = {}
         moves_dst_to_src: dict[Path, Path] = {}
 
@@ -290,7 +294,7 @@ class ApplyPatchTool(BaseTool):
             """File content as the patch currently sees it; None if deleted/missing."""
             if path in state:
                 v = state[path]
-                return None if v is _DELETED else v
+                return None if isinstance(v, _Deleted) else v
             if not path.exists():
                 return None
             try:

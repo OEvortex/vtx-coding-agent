@@ -42,7 +42,7 @@ def apply_harness_settings(
     max_turns: int | None = None,
     default_context_window: int | None = None,
     compaction_threshold_percent: float | None = None,
-    compaction_on_overflow: str | None = None,
+    compaction_on_overflow: Literal["continue", "pause"] | None = None,
     tool_call_idle_timeout_seconds: float | None = None,
 ) -> None:
     """Merge user-facing settings into the harness config (None = keep)."""

@@ -10,8 +10,8 @@ know what an ``ops`` payload looks like.
 from __future__ import annotations
 
 from ctx.core.config import config
-from ctx.term import boxed  # ty: ignore[missing-module-member]
-from ctx.term.diff_display import DIFF_BG_PAD_MARKER, blend_hex  # ty: ignore[import-not-found]
+from ctx.term import boxed
+from ctx.term.diff_display import DIFF_BG_PAD_MARKER, blend_hex
 from rich.text import Text
 
 from .base import CodingToolBlock

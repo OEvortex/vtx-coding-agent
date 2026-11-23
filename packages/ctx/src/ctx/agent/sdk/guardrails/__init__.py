@@ -92,17 +92,11 @@ def input_guardrail[F: Callable[..., Any]](func: F) -> InputGuardrail:
     and must return a :class:`GuardrailFunctionOutput`.
     """
 
-    @functools.wraps(func)
-    def _wrapper(*args: Any, **kwargs: Any) -> Any:
-        return func(*args, **kwargs)
-
     spec = InputGuardrailSpec(
         name=getattr(func, "__name__", "input_guardrail"),
         func=func,
         is_async=inspect.iscoroutinefunction(func),
     )
-    # Stash the spec on the function so Agent can introspect.
-    _wrapper._ctx_input_guardrail_spec = spec
     return InputGuardrail(spec=spec)
 
 
@@ -113,16 +107,11 @@ def output_guardrail[F: Callable[..., Any]](func: F) -> OutputGuardrail:
     and must return a :class:`GuardrailFunctionOutput`.
     """
 
-    @functools.wraps(func)
-    def _wrapper(*args: Any, **kwargs: Any) -> Any:
-        return func(*args, **kwargs)
-
     spec = OutputGuardrailOutputSpec(
         name=getattr(func, "__name__", "output_guardrail"),
         func=func,
         is_async=inspect.iscoroutinefunction(func),
     )
-    _wrapper._ctx_output_guardrail_spec = spec
     return OutputGuardrail(spec=spec)
 
 
@@ -133,12 +122,6 @@ def tool_input_guardrail[F: Callable[..., Any]](func: F) -> Callable[..., Any]:
     def _wrapper(*args: Any, **kwargs: Any) -> Any:
         return func(*args, **kwargs)
 
-    spec = ToolGuardrailSpec(
-        name=getattr(func, "__name__", "tool_input_guardrail"),
-        func=func,
-        is_async=inspect.iscoroutinefunction(func),
-    )
-    _wrapper._ctx_tool_input_guardrail_spec = spec
     return _wrapper
 
 
@@ -149,12 +132,6 @@ def tool_output_guardrail[F: Callable[..., Any]](func: F) -> Callable[..., Any]:
     def _wrapper(*args: Any, **kwargs: Any) -> Any:
         return func(*args, **kwargs)
 
-    spec = ToolGuardrailSpec(
-        name=getattr(func, "__name__", "tool_output_guardrail"),
-        func=func,
-        is_async=inspect.iscoroutinefunction(func),
-    )
-    _wrapper._ctx_tool_output_guardrail_spec = spec
     return _wrapper
 
 

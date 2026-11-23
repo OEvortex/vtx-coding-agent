@@ -22,7 +22,7 @@ from ctx.term.ask_user import (
     SUBMIT_PICK_LABEL,
     AskUserDialog,
 )
-from ctx.term.input import AskUserInput  # ty: ignore[import-not-found]
+from ctx.term.input import AskUserInput
 from rich.style import Style
 from rich.text import Text
 from textual.widgets import Label

@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 _PATCHED = False
 
 
+_PATCH_ATTR = "_ctx_patched"
+
+
 def _patch_safe_async_iterate(utils_mod: Any) -> None:
     """Make ``safe_async_iterate`` suppress the buggy RuntimeError."""
     orig = getattr(utils_mod, "safe_async_iterate", None)
@@ -73,7 +76,7 @@ def _patch_safe_async_iterate(utils_mod: Any) -> None:
                 except BaseException:
                     pass
 
-    patched_safe_async_iterate._ctx_patched = True
+    setattr(patched_safe_async_iterate, _PATCH_ATTR, True)
     utils_mod.safe_async_iterate = patched_safe_async_iterate
 
 
@@ -168,7 +171,7 @@ def _patch_http11(http11_mod: Any, pkg: str) -> None:
                     await self.aclose()
                 raise exc
 
-    patched_aiter._ctx_patched = True
+    setattr(patched_aiter, _PATCH_ATTR, True)
     cls.__aiter__ = patched_aiter
     cls._ctx_orig_aiter = orig_aiter
 
@@ -227,7 +230,7 @@ def _patch_pool(pool_mod: Any, pkg: str) -> None:
                     await self.aclose()
                 raise exc
 
-    patched_pool_aiter._ctx_patched = True
+    setattr(patched_pool_aiter, _PATCH_ATTR, True)
     cls.__aiter__ = patched_pool_aiter
     cls._ctx_orig_aiter = orig
 

@@ -57,7 +57,7 @@ class TodoToolBlock(ToolBlock):
     # -- header ------------------------------------------------------------
 
     def _format_header(self, truncate: bool = True) -> Text:
-        if self._awaiting_approval or self._ask_dialog is not None:
+        if self._awaiting_approval:
             return super()._format_header(truncate=truncate)
 
         colors = config.ui.colors
