@@ -1,10 +1,10 @@
 """The Ctx coding agent's built-in tools.
 
 Each tool module here owns both its implementation and its plugin row (the
-``PLUGIN`` export), so all registration goes through the plugins system: the
-base bundle in :mod:`ctx.plugins.builtins` addresses these rows as
-``ctx.coding_agent.tools.<mod>:PLUGIN``, and mounting the composition is what
-puts the tools in the registry. Importing this package registers nothing.
+``PLUGIN`` export), so all registration goes through the plugins system:
+:mod:`ctx.coding_agent.builtin_rows` contributes these rows into the harness's
+``BASE``/``MINIMAL`` bundles, and mounting the composition is what puts the
+tools in the registry. Importing this package registers nothing.
 
 Re-exports resolve lazily through :func:`__getattr__` so importing one tool
 submodule (e.g. ``ctx.coding_agent.tools.todo`` for the panel) does not pay
@@ -30,23 +30,19 @@ if TYPE_CHECKING:
 
 _TOOL_MODULES = {
     "ApplyPatchTool": ".apply_patch",
+    "AskUserTool": ".ask_user",
     "BashTool": ".bash",
     "CodemodeTool": ".codemode",
     "GrepTool": ".grep",
     "ReadTool": ".read",
     "SkillTool": ".skill",
+    "TaskTool": ".subagent",
     "TodoTool": ".todo",
     "ToolSearchTool": ".tool_search",
+    "WebSearchTool": ".web",
+    "WebTool": ".web",
 }
-_AGENT_TOOLS = {
-    "AskUserTool",
-    "BaseTool",
-    "TaskTool",
-    "WebSearchTool",
-    "WebTool",
-    "get_tool_definitions",
-    "get_tools_with_extensions",
-}
+_AGENT_TOOLS = {"BaseTool", "get_tool_definitions", "get_tools_with_extensions"}
 _BACKGROUND = {"BackgroundTaskManager", "BackgroundTaskRecord", "get_manager", "set_manager"}
 _CATALOG = {
     "DEFAULT_TOOLS",
@@ -76,8 +72,10 @@ def _build_catalog() -> None:
         importlib.import_module(".grep", __name__),
         importlib.import_module(".skill", __name__),
         importlib.import_module(".todo", __name__),
+        importlib.import_module(".web", __name__),
+        importlib.import_module(".ask_user", __name__),
+        importlib.import_module(".subagent", __name__),
     ]
-    agent_tools = _agent_tools_module()
     all_tools = [
         modules[0].ReadTool(),
         modules[1].ApplyPatchTool(),
@@ -85,10 +83,10 @@ def _build_catalog() -> None:
         modules[3].GrepTool(),
         modules[4].SkillTool(),
         modules[5].TodoTool(),
-        agent_tools.WebTool(),
-        agent_tools.WebSearchTool(),
-        agent_tools.AskUserTool(),
-        agent_tools.TaskTool(),
+        modules[6].WebTool(),
+        modules[6].WebSearchTool(),
+        modules[7].AskUserTool(),
+        modules[8].TaskTool(),
         importlib.import_module(".codemode", __name__).CodemodeTool(),
         importlib.import_module(".tool_search", __name__).ToolSearchTool(),
     ]

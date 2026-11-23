@@ -39,12 +39,10 @@ BASE: list[Row] = [
     Row(id="extensions", name="ctx.plugins.builtins.services.extensions:PLUGIN"),
     Row(id="hooks", name="ctx.plugins.builtins.hooks:PLUGIN"),
     # ---- tools ----------------------------------------------------------
-    # Engine-level tools only. Product toolsets (e.g. the coding agent's
-    # read/bash/grep rows) are contributed by the product package — it extends
-    # ``BASE``/``MINIMAL`` at import time, keeping this bundle product-neutral.
-    Row(id="tool-web", name="ctx.plugins.builtins.tools.web:PLUGIN"),
-    Row(id="tool-ask-user", name="ctx.plugins.builtins.tools.ask_user:PLUGIN"),
-    Row(id="tool-subagent", name="ctx.plugins.builtins.tools.subagent:PLUGIN"),
+    # No tool rows: the harness ships no concrete tools. Every tool —
+    # including engine-feeling ones like web/ask_user/subagent — is
+    # implemented by a product package and contributed as rows there, so
+    # ``BASE`` stays product-neutral and a bare ``ctx`` install mounts none.
 ]
 
 #: The interactive terminal surface: the UI service the TUI installs, plus the

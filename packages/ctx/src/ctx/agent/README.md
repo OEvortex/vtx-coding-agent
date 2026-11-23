@@ -108,13 +108,13 @@ Three modules, in order:
 
 `tools/base.py` (`BaseTool`) is the contract; `tools/__init__.py` is the global registry (`register_tool`, `register_tools`, `unregister_tool`, `get_tool`, `get_all_tools`, `get_default_tools`, `get_parent_only_tools`, `get_tool_definitions`) plus the JSON-schema slimming that keeps LLM tool definitions small. `tools/schema.py` converts JSON schema to Pydantic for argument validation.
 
-The harness-native tools live here: `ask_user`, `delegate_subagent`, `web`, `codemode`, `tool_search`. **The concrete filesystem tools do not.** `bash`, `edit`, `read`, `write`, `find`, `grep` and `skill` live in `ctx/coding_agent/tools/` and register themselves into the registry at import time, which is why a process that imports the coding agent sees a wider default tool set than a bare `import ctx.agent.tools`.
+**The harness ships no tools.** Every concrete tool — `ask_user`, `delegate_subagent`, `web`, `bash`, `read`, `skill`, `codemode`, `tool_search`, and friends — is implemented by a product package (`ctx/coding_agent/tools/` for the coding agent) and mounted through plugin rows, which is why a bare `import ctx.agent.tools` sees an empty registry while a booted composition sees the product's full tool set.
 
-`get_parent_only_tools()` returns `{"ask_user", "delegate_subagent"}`. Sub-agents inherit the parent's tool surface minus these, so a sub-agent cannot recursively spawn one.
+Tools marked parent-only at mount time (`ask_user`, `delegate_subagent` in the coding product) are excluded from sub-agent tool surfaces, so a sub-agent cannot recursively spawn one or block on a user prompt.
 
 ## Sub-agents
 
-`delegate_subagent` (`tools/task.py`, class `TaskTool`) is the only dispatch path. It was renamed from `task` to avoid ambiguity with the todo list - a model told to "check the task" could mean the todo list or the dispatcher.
+`delegate_subagent` is the only dispatch path. The harness keeps the dispatch *builder* in `subagent.py` (spec resolution, tool-list composition, system prompt, session creation, the run loop, progress events, scheduler admission); the tool itself — `TaskTool`/`TaskParams` — is implemented by the product (`ctx/coding_agent/tools/subagent.py`) on top of that API. It was renamed from `task` to avoid ambiguity with the todo list - a model told to "check the task" could mean the todo list or the dispatcher.
 
 There are **no built-in sub-agent presets**. `subagent_type` resolves against user-defined agents in `.ctx/agent/` and `~/.ctx/agent/`; an empty or unknown name runs a default sub-agent with the parent's tool surface minus the parent-only tools, capped at `DEFAULT_MAX_TURNS = 200`. Results are truncated to `MAX_RESULT_CHARS = 32_000`, and transcripts are shown up to `MAX_TRANSCRIPT_LINES = 200` with a "... (n more)" tail.
 
@@ -128,13 +128,13 @@ Every dispatch goes through `SubagentScheduler` (`subagents.py`), a FIFO admissi
 `subagent_type` resolution, session creation, provider derivation, the run loop and progress events are all internal to `_run_admitted_subagent`. Products override the runner through an explicit hook:
 
 ```python
-from ctx.agent.tools.task import set_subagent_runner, resolve_subagent_runner
+from ctx.agent.subagent import set_subagent_runner, resolve_subagent_runner
 
 set_subagent_runner(my_runner)  # installs a replacement
 resolve_subagent_runner()  # returns it, or the built-in _run_subagent
 ```
 
-That hook replaced three call sites that re-imported `ctx.agent.tools.task` looking for a divergent `_run_subagent`. The module re-exports the very same function object, so the lookup could never have differed, and the back-edge to the product layer existed only to keep old monkeypatches alive.
+That hook replaced three call sites that re-imported `ctx.agent.subagent` looking for a divergent `_run_subagent`. The module re-exports the very same function object, so the lookup could never have differed, and the back-edge to the product layer existed only to keep old monkeypatches alive.
 
 `background: true` schedules through `BackgroundTaskManager` instead and returns a `task_id` immediately. Cancellation differs by design: a background task is not cancelled by the parent's `cancel_event` (its call already returned) and stops only explicitly or via `ConversationRuntime.close()`.
 

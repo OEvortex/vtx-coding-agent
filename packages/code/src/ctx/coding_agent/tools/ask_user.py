@@ -24,10 +24,10 @@ from __future__ import annotations
 
 import asyncio
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-
 from ctx.agent.tools.base import BaseTool
+from ctx.plugins import mount_tool, plugin
 from ctx.protocol.types import ToolResult
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MIN_OPTIONS = 2
 MAX_OPTIONS = 4
@@ -241,3 +241,11 @@ __all__ = [
     "AskUserTool",
     "validate_option_labels",
 ]
+
+
+@plugin(name="tool-ask-user", inject=("tools",))
+def apply(ctx, config):
+    mount_tool(ctx, AskUserTool(), is_default=True, parent_only=True)
+
+
+PLUGIN = apply

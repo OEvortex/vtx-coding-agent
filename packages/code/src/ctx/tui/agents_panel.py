@@ -39,7 +39,7 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 
-from ctx.agent.tools.task import DEFAULT_SUBAGENT
+from ctx.agent.subagent import DEFAULT_SUBAGENT
 from ctx.core.config import config
 from ctx.tui.subagents import (  # ty: ignore[import-not-found]
     DONE_LINGER_SECONDS,

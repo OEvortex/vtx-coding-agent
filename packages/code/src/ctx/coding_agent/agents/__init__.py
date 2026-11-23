@@ -57,7 +57,7 @@ __all__ = [
 
 def __getattr__(name: str) -> str:
     # Re-export the agent event-name constants from ``ctx.extensions``
-    # ``ctx.extensions`` -> ``ctx.tools`` -> ``ctx.tools.task`` ->
+    # ``ctx.extensions`` -> ``ctx.tools`` -> ``ctx.agent.subagent`` ->
     # ``ctx.agents`` -> back to ``ctx.extensions`` (partially
     # initialized) at module load.
     if name in ("AGENT_ACTIVATED", "AGENT_CHANGED", "TOOL_GROUP_CHANGED"):

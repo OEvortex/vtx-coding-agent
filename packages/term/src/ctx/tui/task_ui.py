@@ -40,31 +40,6 @@ GLYPHS = {
 SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 # Tool name -> human-readable action / noun.
-TOOL_DISPLAY = {
-    "read": "reading",
-    "bash": "running command",
-    "apply_patch": "patching files",
-    "grep": "searching",
-    "find": "finding files",
-    "glob": "finding files",
-    "ls": "listing",
-    "skill": "running skill",
-    "web": "searching web",
-    "ask_user": "asking user",
-}
-
-TOOL_NOUNS = {
-    "read": ("read", "reads"),
-    "bash": ("bash", "bash"),
-    "apply_patch": ("patch", "patches"),
-    "grep": ("search", "searches"),
-    "find": ("file search", "file searches"),
-    "glob": ("file search", "file searches"),
-    "ls": ("list", "lists"),
-    "skill": ("skill", "skills"),
-    "web": ("web search", "web searches"),
-    "ask_user": ("user prompt", "user prompts"),
-}
 
 
 def format_tokens(count: int) -> str:
@@ -135,7 +110,11 @@ def format_tool_breakdown(tool_counts: dict[str, int] | None) -> str:
     for tool_name, count in tool_counts.items():
         if count <= 0:
             continue
-        singular, plural = TOOL_NOUNS.get(tool_name, (tool_name, f"{tool_name}s"))
+        from ctx.agent.tools import tool_flair
+
+        flair = tool_flair(tool_name)
+        nouns = flair.nouns if flair else ("", "")
+        singular, plural = nouns if nouns[0] else (tool_name, f"{tool_name}s")
         noun = singular if count == 1 else plural
         parts.append(f"{count} {noun}")
 
@@ -183,7 +162,11 @@ def detect_files_referenced(text: str, transcript: list[str] | None = None) -> i
 def describe_activity(active_tool: str | None, last_text: str) -> str:
     """Human-readable activity line: current tool action or text snippet."""
     if active_tool:
-        return f"{TOOL_DISPLAY.get(active_tool, active_tool)}…"
+        from ctx.agent.tools import tool_flair
+
+        flair = tool_flair(active_tool)
+        activity = flair.activity if flair else ""
+        return f"{activity or active_tool}…"
     snippet = next((line.strip() for line in last_text.splitlines() if line.strip()), "")
     if snippet:
         return snippet[:60] + ("…" if len(snippet) > 60 else "")

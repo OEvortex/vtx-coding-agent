@@ -1,46 +1,35 @@
-"""Harness-level tool infrastructure, dynamic registry, and harness-native tools.
+"""Harness-level tool infrastructure: contract, schema shaping, and registry.
 
 Provides the :class:`BaseTool` contract, schema shaping for LLM tool
-definitions, dynamic tool registration/lookup APIs, and the tools every
-ctx-based product can use (:class:`AskUserTool`, :class:`TaskTool`,
-:class:`WebTool`). Product-specific tools -- the coding
-agent's file and workspace tools -- live with the product that ships them and
-register through the plugin composition; see :mod:`ctx.plugins`.
+definitions, and the dynamic tool registry. The harness ships **no tools** —
+every concrete tool is implemented by a product package and mounted through
+the plugin composition; see :mod:`ctx.plugins`. Sub-agent *dispatch machinery*
+(not a tool) lives in :mod:`ctx.agent.subagent`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from ctx.protocol.types import ToolDefinition
 
-from .ask_user import AskUserParams, AskUserTool
 from .base import BaseTool
 from .schema_tool import SchemaTool, define_tool
-from .task import SubagentSpec, TaskParams, TaskTool
-from .web import SearchParams, WebSearchTool, WebTool
 
 #: Well-known names of the session-wired tools. The tools themselves ship in
-#: the product package (:mod:`ctx.coding_agent.tools`), but the names are
-#: harness-level: the runtime resolves them from the registry without importing
-#: a product package.
+#: the product package, but the names are harness-level: the runtime resolves
+#: them from the registry without importing a product package.
 CODEMODE_TOOL_NAME = "codemode"
 TOOL_SEARCH_TOOL_NAME = "tool_search"
 
 __all__ = [
     "CODEMODE_TOOL_NAME",
     "TOOL_SEARCH_TOOL_NAME",
-    "AskUserParams",
-    "AskUserTool",
     "BaseTool",
     "SchemaTool",
-    "SearchParams",
-    "SubagentSpec",
-    "TaskParams",
-    "TaskTool",
-    "WebSearchTool",
-    "WebTool",
+    "ToolFlair",
     "define_tool",
     "get_all_tools",
     "get_default_tools",
@@ -50,15 +39,62 @@ __all__ = [
     "get_tools_with_extensions",
     "lookup_default_tool",
     "register_tool",
+    "register_tool_flair",
     "register_tools",
     "set_default_tool_lookup",
+    "tool_flair",
     "unregister_tool",
+    "unregister_tool_flair",
 ]
 
 _TOOL_REGISTRY: dict[str, BaseTool] = {}
 _DEFAULT_TOOL_NAMES: list[str] = []
 _PARENT_ONLY_TOOL_NAMES: set[str] = set()
 _default_tool_lookup: Any = None
+
+
+@dataclass(frozen=True)
+class ToolFlair:
+    """Presentation metadata a product attaches to a tool name.
+
+    The harness owns the *mechanism* (status-line pickers, activity labels,
+    tool-breakdown nouns); the product owns the *content*. Registering flair
+    is optional — an unregistered tool renders with generic fallbacks.
+    """
+
+    status_lines: tuple[str, ...] = ()
+    error_lines: tuple[str, ...] = ()
+    activity: str = ""
+    nouns: tuple[str, str] = ("", "")
+
+
+_TOOL_FLAIR: dict[str, ToolFlair] = {}
+
+
+def register_tool_flair(
+    name: str,
+    *,
+    status_lines: tuple[str, ...] = (),
+    error_lines: tuple[str, ...] = (),
+    activity: str = "",
+    nouns: tuple[str, str] = ("", ""),
+) -> None:
+    """Attach presentation flair to a tool name (idempotent, last wins)."""
+    _TOOL_FLAIR[name.lower()] = ToolFlair(
+        status_lines=tuple(status_lines),
+        error_lines=tuple(error_lines),
+        activity=activity,
+        nouns=tuple(nouns),
+    )
+
+
+def unregister_tool_flair(name: str) -> None:
+    _TOOL_FLAIR.pop(name.lower(), None)
+
+
+def tool_flair(name: str) -> ToolFlair | None:
+    """Look up registered flair for ``name`` (case-insensitive)."""
+    return _TOOL_FLAIR.get(name.lower())
 
 
 def register_tool(
@@ -247,9 +283,3 @@ def get_tool_definitions(tools: list[BaseTool]) -> list[ToolDefinition]:
             )
         )
     return defs
-
-
-# Register harness-native tools into the registry by default
-register_tool(AskUserTool(), is_default=True, parent_only=True)
-register_tool(TaskTool(), is_default=True, parent_only=False)
-register_tool(WebTool(), is_default=True, parent_only=False)

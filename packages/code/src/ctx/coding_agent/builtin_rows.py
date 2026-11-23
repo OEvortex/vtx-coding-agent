@@ -19,6 +19,12 @@ CODING_TOOL_ROWS: list[Row] = [
     Row(id="tool-grep", name="ctx.coding_agent.tools.grep:PLUGIN"),
     Row(id="tool-skill", name="ctx.coding_agent.tools.skill:PLUGIN"),
     Row(id="tool-todo", name="ctx.coding_agent.tools.todo:PLUGIN"),
+    # Generic agent tools the coding product also ships: web access, the
+    # user-questionnaire tool, and sub-agent dispatch (built on the harness's
+    # ``ctx.agent.subagent`` machinery).
+    Row(id="tool-web", name="ctx.coding_agent.tools.web:PLUGIN"),
+    Row(id="tool-ask-user", name="ctx.coding_agent.tools.ask_user:PLUGIN"),
+    Row(id="tool-subagent", name="ctx.coding_agent.tools.subagent:PLUGIN"),
     # Registered but not default-on: the harness declares ``tool_search`` only
     # when the session has tools it has not been offered (see
     # ``ConversationRuntime.declared_tools``), and ``codemode`` is what makes the
@@ -46,5 +52,9 @@ def register_builtin_tool_rows() -> None:
     if _registered:
         return
     _registered = True
+    # Presentation flair for the coding toolset (status quips, activity
+    # verbs); registers itself into ``ctx.agent.tools`` on import.
+    import ctx.coding_agent.tools.flair  # noqa: F401
+
     BASE.extend(CODING_TOOL_ROWS)
     MINIMAL.extend(_MINIMAL_TOOL_ROWS)

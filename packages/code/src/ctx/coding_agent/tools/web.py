@@ -7,10 +7,10 @@ import json
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field
-
 from ctx.agent.tools.base import BaseTool
+from ctx.plugins import mount_tool, plugin
 from ctx.protocol.types import ToolResult
+from pydantic import BaseModel, Field
 
 _MCP_URL = "https://mcp.exa.ai/mcp"
 _TIMEOUT = 25.0
@@ -201,3 +201,12 @@ class WebSearchTool(WebTool):
 
 
 __all__ = ["SearchParams", "WebSearchTool", "WebTool"]
+
+
+@plugin(name="tool-web", inject=("tools",))
+def apply(ctx, config):
+    mount_tool(ctx, WebTool(), is_default=True, parent_only=False)
+    mount_tool(ctx, WebSearchTool(), is_default=False, parent_only=False)
+
+
+PLUGIN = apply
