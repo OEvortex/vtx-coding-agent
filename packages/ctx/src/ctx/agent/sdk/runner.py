@@ -629,7 +629,7 @@ class Runner:
         *,
         agent: Agent,
         messages: list[Message],
-        tools: list[BaseTool],  # type: ignore[name-defined]
+        tools: list[BaseTool],
         handoff_by_name: dict[str, Agent],
         system_prompt: str,
         provider: Any,
@@ -759,7 +759,7 @@ class Runner:
         sdk_items: list[RunItem],
         comp: Any | None = None,
         cwd: str | None = None,
-    ) -> tuple[Agent, str, Any, list[BaseTool], dict[str, Agent], dict[str, BaseTool]] | None:  # type: ignore[name-defined]
+    ) -> tuple[Agent, str, Any, list[BaseTool], dict[str, Agent], dict[str, BaseTool]] | None:
         """If the last assistant turn called a handoff, switch active agent."""
         from ctx.protocol.types import ToolCall
 

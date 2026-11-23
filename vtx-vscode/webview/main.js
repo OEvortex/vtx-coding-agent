@@ -766,7 +766,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
 
   // Whether a session list is on screen anywhere here: the full list, the docked
   // panel, or the title switcher. The host keeps the list live only while someone
-  // is looking at one, since every re-listing runs `vtx list`.
+  // is looking at one, since every re-listing runs `ctx list`.
   let listShown = null;
   function reportListVisible() {
     const shown = body === "list" || sessionsPanelOpen || !!menuCtrl;
@@ -970,7 +970,7 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     const items = [
       { icon: "split-horizontal", label: "New Session (Editor)", target: "editor" },
       { icon: "multiple-windows", label: "New Session (Window)", target: "window" },
-      { icon: "terminal", label: "New Vtx CLI Session (Terminal)", target: "terminal" }
+      { icon: "terminal", label: "New Ctx CLI Session (Terminal)", target: "terminal" }
     ];
     for (const it of items) {
       const row = document.createElement("button");
@@ -7394,8 +7394,8 @@ import { renderMarkdown, renderShell, renderCode } from "./markdown.js";
     el.setup.appendChild(h);
     const cliOk = !!health.found;
     el.setup.appendChild(stepBlock(
-      cliOk ? "Vtx CLI found" : "Vtx CLI not found",
-      cliOk ? `${health.path || ""}${health.version ? " (" + health.version + ")" : ""}` : "Set the path to the vtx executable, or install the Vtx CLI first.",
+      cliOk ? "Ctx CLI found" : "Ctx CLI not found",
+      cliOk ? `${health.path || ""}${health.version ? " (" + health.version + ")" : ""}` : "Set the path to the vtx executable, or install the Ctx CLI first.",
       cliOk,
       [btn("Browse...", "secondary", () => vscode.postMessage({ type: "browseCli" })), btn("Re-check", "secondary", () => vscode.postMessage({ type: "recheck" }))]
     ));

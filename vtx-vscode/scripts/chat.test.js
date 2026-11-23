@@ -1136,7 +1136,7 @@ test("a successful recheck resumes the last viewed session", posixOnly, async ()
   const h = createChat({ state: { "vtx.viewingSession.v1": "stored" } });
   const healthCheck = h.controller.runHealthCheck.bind(h.controller);
   h.controller.runHealthCheck = async () => {
-    h.controller.health = { found: false, loggedIn: false, path: "vtx" };
+    h.controller.health = { found: false, loggedIn: false, path: "ctx" };
   };
 
   h.send({ type: "ready" });

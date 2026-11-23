@@ -53,6 +53,6 @@ def apply_harness_settings(
     if compaction_threshold_percent is not None:
         _config.compaction_threshold_percent = compaction_threshold_percent
     if compaction_on_overflow is not None:
-        _config.compaction_on_overflow = compaction_on_overflow  # type: ignore
+        _config.compaction_on_overflow = compaction_on_overflow
     if tool_call_idle_timeout_seconds is not None:
         _config.tool_call_idle_timeout_seconds = tool_call_idle_timeout_seconds

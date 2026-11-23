@@ -124,7 +124,7 @@ class Handoff(BaseTool):
             # optionally pass a free-form ``reason`` field.
             from pydantic import create_model
 
-            self.params = create_model(  # type: ignore[call-overload]
+            self.params = create_model(
                 f"HandoffTo{agent.name.title().replace(' ', '')}_Params", reason=(str | None, None)
             )
 

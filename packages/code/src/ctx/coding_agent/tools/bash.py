@@ -196,6 +196,15 @@ class BashParams(BaseModel):
 class BashTool(BaseTool):
     name = "bash"
     tool_icon = "$"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import BashToolBlock
+
+            return BashToolBlock
+        except ImportError:
+            return None
+
     params = BashParams
     prompt_guidelines = ("bash for git/builds/tests/scripts (not file read/search/edit)",)
     description = (
@@ -219,7 +228,7 @@ class BashTool(BaseTool):
     def _format_display(
         self, output: str, max_lines: int = 5, max_line_chars: int = 500
     ) -> tuple[str, str | None]:
-        from ctx.tui.tool_output import truncate_tool_output_text  # ty: ignore[import-not-found]
+        from ctx.tui.tool_output import truncate_tool_output_text
 
         truncation_color = config.ui.colors.dim
 

@@ -18,7 +18,7 @@ _TIMEOUT = 25.0
 
 def _split_for_expand(text: str) -> tuple[str, str | None]:
     try:
-        from ctx.tui.tool_output import (  # ty: ignore[import-not-found]
+        from ctx.tui.tool_output import (
             escape_tool_output_text,
             truncate_tool_output_text,
         )
@@ -126,6 +126,15 @@ class WebTool(BaseTool):
 
     name = "web"
     tool_icon = "🔍"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import WebToolBlock
+
+            return WebToolBlock
+        except ImportError:
+            return None
+
     params = SearchParams
     mutating = False
     parallel_safe = True

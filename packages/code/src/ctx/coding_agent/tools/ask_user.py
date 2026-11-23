@@ -187,6 +187,15 @@ class AskUserParams(BaseModel):
 class AskUserTool(BaseTool):
     name = "ask_user"
     tool_icon = "?"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import AskUserToolBlock
+
+            return AskUserToolBlock
+        except ImportError:
+            return None
+
     params = AskUserParams
     mutating = False
     prompt_guidelines = ()

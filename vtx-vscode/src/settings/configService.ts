@@ -2,28 +2,28 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-// Reads and writes the Vtx-owned JSON files that back the settings surface.
-// User settings in ~/.vtx/config.yml are YAML and are only touched through
-// `vtx config` (see vtxConfigCli). Direct file writes here are limited to
+// Reads and writes the Ctx-owned JSON files that back the settings surface.
+// User settings in ~/.ctx/config.yml are YAML and are only touched through
+// `ctx config` (see ctxConfigCli). Direct file writes here are limited to
 // Vtx's JSON surfaces: mcp.json and mcp-auth reads.
 
 export type ConfigScope = "user" | "project";
 
-// The user config directory, mirroring vtx's get_config_dir():
-// $XDG_CONFIG_HOME/vtx when set and absolute, otherwise ~/.vtx on every
-// platform (vtx has no %APPDATA% branch).
+// The user config directory, mirroring ctx's get_config_dir():
+// $XDG_CONFIG_HOME/ctx when set and absolute, otherwise ~/.ctx on every
+// platform (ctx has no %APPDATA% branch).
 export function userConfigDir(): string {
   const xdg = process.env.XDG_CONFIG_HOME;
   if (xdg && path.isAbsolute(xdg)) {
-    return path.join(xdg, "vtx");
+    return path.join(xdg, "ctx");
   }
-  return path.join(os.homedir(), ".vtx");
+  return path.join(os.homedir(), ".ctx");
 }
 
 export function userConfigPath(): string {
-  // vtx keeps its settings in config.yml (YAML). This path is display only:
-  // reads and writes for the user scope go through `vtx config` (see
-  // vtxConfigCli), which is the only correct way to touch that file.
+  // ctx keeps its settings in config.yml (YAML). This path is display only:
+  // reads and writes for the user scope go through `ctx config` (see
+  // ctxConfigCli), which is the only correct way to touch that file.
   return path.join(userConfigDir(), "config.yml");
 }
 
@@ -31,22 +31,22 @@ export function userHooksConfigPath(): string {
   return path.join(userConfigDir(), "hooks.yml");
 }
 
-// MCP servers live in mcp.json: ~/.vtx/mcp.json for the user and
-// <project>/.vtx/mcp.json per project (src/vtx/mcp/config.py).
+// MCP servers live in mcp.json: ~/.ctx/mcp.json for the user and
+// <project>/.ctx/mcp.json per project (src/ctx/mcp/config.py).
 export function userMcpConfigPath(): string {
   return path.join(userConfigDir(), "mcp.json");
 }
 
 export function projectMcpConfigPath(root: string): string {
-  return path.join(root, ".vtx", "mcp.json");
+  return path.join(root, ".ctx", "mcp.json");
 }
 
 export function projectHooksConfigPath(root: string): string {
-  return path.join(root, ".vtx", "hooks.yml");
+  return path.join(root, ".ctx", "hooks.yml");
 }
 
-// Skill discovery (src/vtx/agent/context/skills.py): project ancestors'
-// .agents/skills, then ~/.agents/skills, then ~/.vtx/skills for bundled ones.
+// Skill discovery (src/ctx/agent/context/skills.py): project ancestors'
+// .agents/skills, then ~/.agents/skills, then ~/.ctx/skills for bundled ones.
 export function userAgentsDir(): string {
   return path.join(os.homedir(), ".agents");
 }
@@ -87,7 +87,7 @@ export function vtxDataDir(): string {
   const dataHome = process.platform === "win32"
     ? (process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"))
     : (process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"));
-  return path.join(dataHome, "vtx");
+  return path.join(dataHome, "ctx");
 }
 
 // Strip // line comments and /* block */ comments and trailing commas so a

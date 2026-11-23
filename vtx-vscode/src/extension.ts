@@ -8,7 +8,7 @@ import { sweepStaleLocks } from "./cli/sessionLocks";
 import { SettingsPanel } from "./settings/settingsPanel";
 import { shutdownQueryAgents } from "./acp/queryClient";
 
-// Held at module scope so `deactivate` can await the shutdown. A `vtx acp`
+// Held at module scope so `deactivate` can await the shutdown. A `ctx acp`
 // agent runs its commands, file writes and permission prompts through this
 // extension host over our stdio, so it cannot be handed to the next one: the
 // only safe move on the way out is to stop every agent deterministically.
@@ -20,7 +20,7 @@ let working: ChangeTracker | undefined;
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Vtx");
   // Clean up anything left stranded by a previous crash or force-quit before we
-  // start fresh: orphaned `vtx acp` agents (ppid == 1), and session lock
+  // start fresh: orphaned `ctx acp` agents (ppid == 1), and session lock
   // files whose owning PID is dead. Deferred so activation never blocks on the
   // lock-dir scan. Live owners are left untouched.
   reapOrphanedAgents((line) => output.appendLine(line));

@@ -40,29 +40,29 @@ from ctx.plugins.extensions import load_for_runtime
 from ctx.protocol.types import ImageContent
 from ctx.tui.agent_runner import AgentRunnerMixin
 from ctx.tui.agents_panel import AgentsPanel
-from ctx.tui.ask_user import AskUserDialog  # ty: ignore[import-not-found]
-from ctx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand  # ty: ignore[import-not-found]
-from ctx.tui.blocks import (  # ty: ignore[import-not-found]
+from ctx.tui.ask_user import AskUserDialog
+from ctx.tui.autocomplete import DEFAULT_COMMANDS, SlashCommand
+from ctx.tui.blocks import (
     HandoffLinkBlock,
     LaunchWarning,
     RunSummaryBlock,
 )
-from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
+from ctx.tui.chat import ChatLog
 from ctx.tui.commands import CommandsMixin
 from ctx.tui.completion_ui import CompletionUIMixin
-from ctx.tui.extension_ui import TextualExtensionUI  # ty: ignore[import-not-found]
-from ctx.tui.floating_list import FloatingList  # ty: ignore[import-not-found]
-from ctx.tui.input import InputBox  # ty: ignore[import-not-found]
+from ctx.tui.extension_ui import TextualExtensionUI
+from ctx.tui.floating_list import FloatingList
+from ctx.tui.input import InputBox
 from ctx.tui.queue_ui import QueueUIMixin
 from ctx.tui.recap import RecapMixin
-from ctx.tui.selection_mode import SelectionMode  # ty: ignore[import-not-found]
+from ctx.tui.selection_mode import SelectionMode
 from ctx.tui.session_ui import SessionUIMixin
 from ctx.tui.startup import StartupMixin
-from ctx.tui.styles import get_styles  # ty: ignore[import-not-found]
-from ctx.tui.subagents import record_subagent_event  # ty: ignore[import-not-found]
+from ctx.tui.styles import get_styles
+from ctx.tui.subagents import record_subagent_event
 from ctx.tui.todo_panel import TodoPanel
-from ctx.tui.tree import TreeSelector  # ty: ignore[import-not-found]
-from ctx.tui.widgets import (  # ty: ignore[import-not-found]
+from ctx.tui.tree import TreeSelector
+from ctx.tui.widgets import (
     InfoBar,
     QueueDisplay,
     StatusLine,
@@ -672,7 +672,7 @@ class Ctx(
 
         def _warm_usage() -> None:
             try:
-                from ctx.tui.usage_stats import aggregate_usage  # ty: ignore[import-not-found]
+                from ctx.tui.usage_stats import aggregate_usage
 
                 aggregate_usage()
             except Exception:

@@ -102,7 +102,7 @@ def input_guardrail[F: Callable[..., Any]](func: F) -> InputGuardrail:
         is_async=inspect.iscoroutinefunction(func),
     )
     # Stash the spec on the function so Agent can introspect.
-    _wrapper._ctx_input_guardrail_spec = spec  # type: ignore
+    _wrapper._ctx_input_guardrail_spec = spec
     return InputGuardrail(spec=spec)
 
 
@@ -122,7 +122,7 @@ def output_guardrail[F: Callable[..., Any]](func: F) -> OutputGuardrail:
         func=func,
         is_async=inspect.iscoroutinefunction(func),
     )
-    _wrapper._ctx_output_guardrail_spec = spec  # type: ignore
+    _wrapper._ctx_output_guardrail_spec = spec
     return OutputGuardrail(spec=spec)
 
 
@@ -138,7 +138,7 @@ def tool_input_guardrail[F: Callable[..., Any]](func: F) -> Callable[..., Any]:
         func=func,
         is_async=inspect.iscoroutinefunction(func),
     )
-    _wrapper._ctx_tool_input_guardrail_spec = spec  # type: ignore
+    _wrapper._ctx_tool_input_guardrail_spec = spec
     return _wrapper
 
 
@@ -154,7 +154,7 @@ def tool_output_guardrail[F: Callable[..., Any]](func: F) -> Callable[..., Any]:
         func=func,
         is_async=inspect.iscoroutinefunction(func),
     )
-    _wrapper._ctx_tool_output_guardrail_spec = spec  # type: ignore
+    _wrapper._ctx_tool_output_guardrail_spec = spec
     return _wrapper
 
 
@@ -167,7 +167,7 @@ async def run_input_guardrails(guardrails: list[InputGuardrail], data: Any) -> N
         result = g.spec.func(data)
         if inspect.isawaitable(result):
             result = await result
-        return g, result  # type: ignore[return-value]
+        return g, result
 
     results = await asyncio.gather(*[_one(g) for g in guardrails])
     for guardrail, result in results:
@@ -186,7 +186,7 @@ async def run_output_guardrails(guardrails: list[OutputGuardrail], data: Any) ->
         result = g.spec.func(data)
         if inspect.isawaitable(result):
             result = await result
-        return g, result  # type: ignore[return-value]
+        return g, result
 
     results = await asyncio.gather(*[_one(g) for g in guardrails])
     for guardrail, result in results:

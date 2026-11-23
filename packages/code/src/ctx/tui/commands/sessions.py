@@ -9,15 +9,15 @@ from pathlib import Path
 
 from ctx.agent.session import Session, SessionInfo
 from ctx.core.config import config
-from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
-from ctx.tui.clipboard import copy_to_clipboard  # ty: ignore[import-not-found]
+from ctx.tui.chat import ChatLog
+from ctx.tui.clipboard import copy_to_clipboard
 from ctx.tui.commands.base import CommandSupport
-from ctx.tui.floating_list import FloatingList, ListItem  # ty: ignore[import-not-found]
-from ctx.tui.input import InputBox  # ty: ignore[import-not-found]
-from ctx.tui.selection_mode import SelectionMode  # ty: ignore[import-not-found]
-from ctx.tui.tree import TreeSelector  # ty: ignore[import-not-found]
-from ctx.tui.usage_stats import DailyUsage  # ty: ignore[import-not-found]
-from ctx.tui.widgets import InfoBar, StatusLine, format_path  # ty: ignore[import-not-found]
+from ctx.tui.floating_list import FloatingList, ListItem
+from ctx.tui.input import InputBox
+from ctx.tui.selection_mode import SelectionMode
+from ctx.tui.tree import TreeSelector
+from ctx.tui.usage_stats import DailyUsage
+from ctx.tui.widgets import InfoBar, StatusLine, format_path
 
 
 class SessionCommands(CommandSupport):
@@ -186,8 +186,8 @@ class SessionCommands(CommandSupport):
         """
         import asyncio
 
-        from ctx.tui.blocks import UsageBlock  # ty: ignore[import-not-found]
-        from ctx.tui.usage_stats import (  # ty: ignore[import-not-found]
+        from ctx.tui.blocks import UsageBlock
+        from ctx.tui.usage_stats import (
             HEATMAP_DAYS,
             aggregate_usage,
         )

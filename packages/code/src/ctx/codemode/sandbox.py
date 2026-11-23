@@ -852,7 +852,7 @@ def _other_live_tasks(loop: Any, mine: set[asyncio.Task[Any]]) -> list[asyncio.T
         return [t for t in asyncio.all_tasks(loop) if t not in mine and not t.done()]
     except Exception:
         # Unknowable: return something that suppresses the check.
-        return [loop]  # type: ignore[list-item]
+        return [loop]
 
 
 class _StallGuard:
@@ -1090,8 +1090,8 @@ def run(request: dict[str, Any], *, stdin: Any = None) -> dict[str, Any]:
     # Swap stdout for the capture for exactly as long as the script runs, so a
     # `print` reaches the output instead of the /dev/null fd 1 now points at.
     real_stdout, real_stderr = sys.stdout, sys.stderr
-    sys.stdout = console  # type: ignore[assignment]
-    sys.stderr = _NullStream()  # type: ignore[assignment]
+    sys.stdout = console
+    sys.stderr = _NullStream()
     try:
         value = _exec_script(code, namespace, bridge, detect_stalls=detect_stalls)
     except _ExitScript as exc:

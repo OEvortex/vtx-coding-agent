@@ -34,7 +34,7 @@ export interface ListResult {
 const LIST_CONCURRENCY = 4;
 
 // Membership is workspaceState (tracked ids); the CLI is only the source of
-// truth for existence and metadata. `vtx list --format json` is exact-match
+// truth for existence and metadata. `ctx list --format json` is exact-match
 // on cwd, so we query each distinct directory a tracked session was created in,
 // then keep only the tracked ids the CLI still returns. Ids whose directory was
 // queried successfully but no longer contains them are pruned; ids whose query
@@ -109,7 +109,7 @@ export async function listSessions(opts: ListOptions): Promise<ListResult> {
 }
 
 // The same listing, taken from a live agent over ACP (`session/list`) instead of
-// by spawning `vtx list` once per directory. Preferred whenever a session is
+// by spawning `ctx list` once per directory. Preferred whenever a session is
 // open, which is most of the time the list is looked at, and it is better as well
 // as cheaper: the protocol call is not scoped to a directory, so a tracked session
 // created in a subdirectory of the workspace is found rather than silently missing.
@@ -150,7 +150,7 @@ export function fromAcpRows(rows: AcpSessionRow[], trackedIds: string[]): ListRe
   return { sessions, prunedIds };
 }
 
-// `vtx list` reports epoch seconds and the panel sorts and groups on that, so an
+// `ctx list` reports epoch seconds and the panel sorts and groups on that, so an
 // ISO timestamp from the protocol has to arrive in the same units.
 function epochSeconds(iso?: string): number | undefined {
   const ms = iso ? Date.parse(iso) : NaN;

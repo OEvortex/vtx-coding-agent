@@ -43,6 +43,15 @@ class ReadParams(BaseModel):
 class ReadTool(BaseTool):
     name = "read"
     tool_icon = "→"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import ReadToolBlock
+
+            return ReadToolBlock
+        except ImportError:
+            return None
+
     params = ReadParams
     mutating = False
     parallel_safe = True

@@ -1554,7 +1554,7 @@ test("New Session is a split button: the label starts one, the chevron picks whe
   assert.deepStrictEqual(labels, [
     "New Session (Editor)",
     "New Session (Window)",
-    "New Vtx CLI Session (Terminal)"
+    "New Ctx CLI Session (Terminal)"
   ]);
   assert.strictEqual(h.errors().length, 0);
 });
@@ -3457,7 +3457,7 @@ test("the sessions switcher offers the same New Session split button", async () 
   await h.settle(10);
   assert.deepStrictEqual(
     [...h.document.querySelectorAll(".dv-menu .dv-menu-item span")].map((s) => s.textContent),
-    ["New Session (Editor)", "New Session (Window)", "New Vtx CLI Session (Terminal)"],
+    ["New Session (Editor)", "New Session (Window)", "New Ctx CLI Session (Terminal)"],
     "the menu offers the other places, not the one the button already does"
   );
   assert.strictEqual(h.errors().length, 0);
@@ -5057,7 +5057,7 @@ test("the mode picker offers whatever modes the agent reports", async () => {
   const h = createHarness();
   h.post({ type: "ready" });
   h.post({ type: "body", body: "thread" });
-  // The five a real `vtx acp` reports. The extension used to compile in four of
+  // The five a real `ctx acp` reports. The extension used to compile in four of
   // them, so `smart` was unreachable from the panel however new the CLI was.
   h.post({
     type: "options",

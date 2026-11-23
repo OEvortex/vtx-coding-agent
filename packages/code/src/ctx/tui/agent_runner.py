@@ -47,10 +47,11 @@ from ctx.core import (
 from ctx.core.config import config
 from ctx.core.notify import NotificationEvent, notify
 from ctx.protocol.types import ImageContent, StopReason, ToolResultMessage
-from ctx.tui.ask_user import AskUserDialog  # ty: ignore[import-not-found]
-from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
-from ctx.tui.subagents import prune_finished_subagents  # ty: ignore[import-not-found]
-from ctx.tui.widgets import InfoBar, StatusLine  # ty: ignore[import-not-found]
+from ctx.tui.ask_user import AskUserDialog
+from ctx.tui.chat import ChatLog
+from ctx.tui.subagents import prune_finished_subagents
+from ctx.tui.tool_blocks import AskUserToolBlock
+from ctx.tui.widgets import InfoBar, StatusLine
 
 _NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent, BackgroundTaskCompletedEvent)
 
@@ -616,7 +617,7 @@ class AgentRunnerMixin:
             return
 
         dialog = AskUserDialog(questions)
-        chat.show_ask_user(tool_call_id, dialog=dialog)
+        chat.show_ask_user(tool_call_id, dialog=dialog, block_cls=AskUserToolBlock)
 
         self._ask_user_future = future
         self._ask_user_tool_id = tool_call_id
@@ -671,7 +672,7 @@ class AgentRunnerMixin:
             result = await bash_tool.execute(
                 params,
                 cancel_event=cancel_event,
-                inline_output=False,  # ty:ignore[unknown-argument]
+                inline_output=False,
             )
 
             # Persist the command and its output so session resume and /export

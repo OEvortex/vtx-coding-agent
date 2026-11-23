@@ -1,4 +1,4 @@
-// Types for the Agent Client Protocol (ACP) as spoken by `vtx acp`.
+// Types for the Agent Client Protocol (ACP) as spoken by `ctx acp`.
 // Only the subset we use is modelled here, from the spec at agentclientprotocol.com.
 
 export type ContentBlock =
@@ -251,7 +251,7 @@ export function headOf(steps: RevertStep[]): number | null {
 }
 
 // `_vtx.ai/rules/list`: every always-on context file the agent actually loaded.
-// Vtx discovers AGENTS.md and CLAUDE.md in ~/.vtx and project ancestors, so
+// Vtx discovers AGENTS.md and CLAUDE.md in ~/.ctx and project ancestors, so
 // asking the agent is the only way to report what is really in force.
 export interface LoadedRule {
   name: string;

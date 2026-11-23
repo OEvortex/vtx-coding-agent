@@ -89,7 +89,7 @@ async def run_agent_turn(spec: AgentRunSpec) -> AsyncIterator[Event]:
         tools=spec.tools,
         system_prompt=spec.system_prompt,
         turn=spec.turn,
-        cancel_event=spec.cancel_event,  # type: ignore[arg-type]
+        cancel_event=spec.cancel_event,
         retry_delays=spec.retry_delays,
         extensions=spec.extensions,
         injection_callback=spec.injection_callback,

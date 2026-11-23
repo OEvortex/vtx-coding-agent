@@ -61,7 +61,7 @@ const hooksOf = (file) => yaml.load(fs.readFileSync(file, "utf8")) || {};
 test("addHook writes the Vtx hooks.yml entry shape", () => {
   const root = fs.mkdtempSync(path.join(TMP, "ws-"));
   const panel = makePanel(root);
-  const file = path.join(root, ".vtx", "hooks.yml");
+  const file = path.join(root, ".ctx", "hooks.yml");
 
   panel.addHook({
     scope: "project", root, event: "PreToolUse", hookType: "command",
@@ -78,7 +78,7 @@ test("addHook writes the Vtx hooks.yml entry shape", () => {
 test("removing a hook removes that entry by group and index", async () => {
   const root = fs.mkdtempSync(path.join(TMP, "ws-"));
   const panel = makePanel(root);
-  const file = path.join(root, ".vtx", "hooks.yml");
+  const file = path.join(root, ".ctx", "hooks.yml");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, yaml.dump({
     pre_tool_use: [
@@ -99,7 +99,7 @@ test("removing a hook removes that entry by group and index", async () => {
 test("removing the only hook for a group takes the group with it", async () => {
   const root = fs.mkdtempSync(path.join(TMP, "ws-"));
   const panel = makePanel(root);
-  const file = path.join(root, ".vtx", "hooks.yml");
+  const file = path.join(root, ".ctx", "hooks.yml");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, yaml.dump({
     pre_tool_use: [{ event: "PreToolUse", type: "command", command: "lint" }]
@@ -115,7 +115,7 @@ test("removing the only hook for a group takes the group with it", async () => {
 test("mcpServerVerb edits the project mcp.json file", () => {
   const root = fs.mkdtempSync(path.join(TMP, "ws-"));
   const panel = makePanel(root);
-  const file = path.join(root, ".vtx", "mcp.json");
+  const file = path.join(root, ".ctx", "mcp.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify({
     mcpServers: { github: { url: "https://example.com/mcp" } }

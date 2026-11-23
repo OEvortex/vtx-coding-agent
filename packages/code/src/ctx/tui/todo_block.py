@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from ctx.core.config import config
 from ctx.tui import todo_ui
-from ctx.tui.blocks import ToolBlock  # ty: ignore[import-not-found]
+from ctx.tui.blocks import ToolBlock
 from rich.style import Style
 from rich.text import Text
 from textual.widgets import Label
@@ -41,6 +41,8 @@ _NOTE_ALL_DONE = "completed all"
 
 
 class TodoToolBlock(ToolBlock):
+    pinned = True
+
     DEFAULT_CSS = """
     TodoToolBlock #tool-output {
         padding: 0;

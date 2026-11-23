@@ -88,7 +88,7 @@ class TaskTool(BaseTool[TaskParams]):
     @property
     def ui_block(self) -> type | None:
         try:
-            from ctx.tui.blocks import TaskToolBlock  # ty: ignore[import-not-found]
+            from ctx.tui.tool_blocks import TaskToolBlock
         except ImportError:
             return None
 

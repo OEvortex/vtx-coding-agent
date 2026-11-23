@@ -30,6 +30,15 @@ class FindParams(BaseModel):
 class FindTool(BaseTool):
     name = "find"
     tool_icon = "*"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import FindToolBlock
+
+            return FindToolBlock
+        except ImportError:
+            return None
+
     params = FindParams
     mutating = False
     parallel_safe = True

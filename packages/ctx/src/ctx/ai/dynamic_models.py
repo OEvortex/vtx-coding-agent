@@ -144,46 +144,46 @@ def _build_dynamic_providers() -> dict[str, DynamicProviderConfig]:
 _built_dynamic_providers = False
 
 
-class _LazyProviderDict(dict):  # type: ignore[type-arg]
+class _LazyProviderDict(dict):
     """Dict that populates itself from provider.yaml on first access."""
 
     def _ensure(self) -> None:
         _ensure_dynamic_providers()
 
-    def __getitem__(self, key):  # type: ignore[override]
+    def __getitem__(self, key):
         self._ensure()
         return super().__getitem__(key)
 
-    def __contains__(self, key):  # type: ignore[override]
+    def __contains__(self, key):
         self._ensure()
         return super().__contains__(key)
 
-    def get(self, key, default=None):  # type: ignore[override]
+    def get(self, key, default=None):
         self._ensure()
         return super().get(key, default)
 
-    def keys(self):  # type: ignore[override]
+    def keys(self):
         self._ensure()
         return super().keys()
 
-    def values(self):  # type: ignore[override]
+    def values(self):
         self._ensure()
         return super().values()
 
-    def items(self):  # type: ignore[override]
+    def items(self):
         self._ensure()
         return super().items()
 
-    def __iter__(self):  # type: ignore[override]
+    def __iter__(self):
         self._ensure()
         return super().__iter__()
 
-    def __len__(self):  # type: ignore[override]
+    def __len__(self):
         self._ensure()
         return super().__len__()
 
 
-DYNAMIC_PROVIDERS: dict[str, DynamicProviderConfig] = _LazyProviderDict()  # type: ignore[assignment]
+DYNAMIC_PROVIDERS: dict[str, DynamicProviderConfig] = _LazyProviderDict()
 
 
 def _ensure_dynamic_providers() -> None:

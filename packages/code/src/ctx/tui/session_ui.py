@@ -17,14 +17,14 @@ from ctx.protocol.types import (
     ToolResultMessage,
     UserMessage,
 )
-from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
+from ctx.tui.chat import ChatLog
 from ctx.tui.commands import CommandsMixin
-from ctx.tui.input import InputBox  # ty: ignore[import-not-found]
-from ctx.tui.tool_output import (  # ty: ignore[import-not-found]
+from ctx.tui.input import InputBox
+from ctx.tui.tool_output import (
     escape_tool_output_text,
     truncate_tool_output_text,
 )
-from ctx.tui.widgets import InfoBar, StatusLine, format_path  # ty: ignore[import-not-found]
+from ctx.tui.widgets import InfoBar, StatusLine, format_path
 
 
 class SessionUIMixin:

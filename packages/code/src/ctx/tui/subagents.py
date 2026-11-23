@@ -275,3 +275,11 @@ def prune_finished_subagents(max_age: float = FINISHED_TTL_SECONDS) -> None:
     is exactly the kind that outlives the turn that dispatched them.
     """
     REGISTRY.prune_finished(max_age)
+
+
+# Feed the harness status line: while a sub-agent fan-out is live the witty
+# quip is suppressed (the Agents panel already says it better). Registered
+# here because the registry lives in the product package.
+from ctx.tui.status_lines import set_live_activity_probe  # noqa: E402
+
+set_live_activity_probe(REGISTRY.has_live)

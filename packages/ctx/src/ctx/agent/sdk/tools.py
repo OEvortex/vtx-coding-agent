@@ -60,7 +60,7 @@ def _function_to_params_model(func: Callable[..., Any]) -> tuple[type[BaseModel]
     module = getattr(func, "__module__", "agent.sdk")
     qualname = getattr(func, "__qualname__", getattr(func, "__name__", "FunctionTool"))
     model_name = f"{qualname.title().replace('.', '_').replace('_', '')}_Params"
-    model = create_model(model_name, **fields)  # type: ignore[call-overload]
+    model = create_model(model_name, **fields)
     return model, {"module": module, "name": qualname}
 
 
@@ -301,10 +301,10 @@ def tool[F: Callable[..., Any]](
         target_qualname = getattr(target, "__qualname__", None)
         if target_qualname:
             with contextlib.suppress(AttributeError, TypeError):
-                tool.__class__.__qualname__ = target_qualname  # type: ignore[attr-defined]
+                tool.__class__.__qualname__ = target_qualname
         target_doc = getattr(target, "__doc__", None)
         if target_doc is not None:
-            tool.__class__.__doc__ = target_doc  # type: ignore[attr-defined]
+            tool.__class__.__doc__ = target_doc
         return tool
 
     if func is not None:
@@ -344,7 +344,7 @@ class _AgentAsTool(BaseTool):
         from pydantic import create_model
 
         # The model calls this tool with a single ``input`` string.
-        self.params = create_model(  # type: ignore[call-overload]
+        self.params = create_model(
             f"Ask{agent.name.title().replace(' ', '')}_Params",
             input=(str, Field(..., description="The user's request to delegate.")),
         )

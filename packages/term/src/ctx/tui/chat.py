@@ -182,14 +182,10 @@ class ChatLog(VerticalScroll):
         self._recap_labels: list[Label] = []
         # Live compaction block, while a handoff summary is being generated.
         self._compaction_block: CompactionBlock | None = None
-        # Task tool live state: per-tool-call transcript + last text
-        # delta, updated by ``apply_task_progress``. Keyed by tool call
-        # id; the block for that id must already exist (mounted when
-        # the parent turn streamed the tool call).
-        self._task_live: dict[str, dict] = {}
-        # The currently opened todo block, reused for subsequent todo tool
-        # calls so the list updates in place instead of stacking blocks.
-        self._todo_block: ToolBlock | None = None
+        # Blocks that own a persistent view (a plan, a panel) are reused
+        # across calls instead of stacking. Keyed by their block class; tool
+        # blocks opt in with a ``pinned = True`` class attribute.
+        self._pinned_blocks: dict[type, ToolBlock] = {}
         # Merged run summary tracking
         self._current_run_summaries: list[RunSummaryBlock] = []
         self._current_run_thoughts: list[ThinkingBlock] = []
@@ -244,9 +240,10 @@ class ChatLog(VerticalScroll):
         if len(children) <= MAX_CHILDREN:
             return
         to_remove = children[: len(children) - PRUNE_TO]
-        # Keep the pinned todo block alive across pruning.
-        if self._todo_block is not None and self._todo_block in to_remove:
-            to_remove = [c for c in to_remove if c is not self._todo_block]
+        # Keep pinned tool blocks alive across pruning.
+        pinned = set(self._pinned_blocks.values())
+        if pinned:
+            to_remove = [c for c in to_remove if c not in pinned]
         active_tool_ids = {tid for tid, block in self._tool_blocks.items() if block in to_remove}
         for tid in active_tool_ids:
             del self._tool_blocks[tid]
@@ -265,7 +262,7 @@ class ChatLog(VerticalScroll):
         self._last_status_label = None
         self._recap_labels = []
         self._compaction_block = None
-        self._todo_block = None
+        self._pinned_blocks.clear()
         self.reset_run_tracking()
 
     def on_click(self, event) -> None:
@@ -673,25 +670,24 @@ class ChatLog(VerticalScroll):
         call_msg: str | None = None,
         icon: str = "→",
         tool: BaseTool | None = None,
+        block_cls: type[ToolBlock] | None = None,
     ) -> "ToolBlock":
         """Mount a new tool block in the chat log.
 
-        If ``tool`` is given and ``tool.ui_block`` is set, the chat log
-        instantiates that class instead of the default
-        :class:`ToolBlock`. Custom blocks can subclass ``ToolBlock`` to
-        inherit the default rendering, then override ``compose``,
-        ``set_result``, ``show_approval``, etc. as needed.
-
-        ``block.tool`` is always set to ``tool`` after construction so
-        custom blocks can introspect the bound :class:`BaseTool` (e.g.
-        to call ``self.tool.format_call(params)``).
+        The block class comes from ``block_cls`` or ``tool.ui_block``; the
+        chat log itself knows nothing about individual tools. Custom blocks
+        subclass :class:`ToolBlock` to own their header, body, and any
+        interactive state. ``block.tool`` is set to ``tool`` after
+        construction so a block can call ``self.tool.format_call(...)``.
         """
-        is_todo = name == "todo" or (tool is not None and getattr(tool, "name", None) == "todo")
+        cls = block_cls or (tool.ui_block if (tool is not None and tool.ui_block) else ToolBlock)
+        is_pinned = bool(getattr(cls, "pinned", False))
 
-        # Reuse the currently opened todo block for subsequent todo calls, so
-        # the list updates in place instead of mounting a new block each time.
-        if is_todo and self._todo_block is not None and self._todo_block in self.children:
-            block = self._todo_block
+        # A pinned block is reused by later calls of the same tool so its
+        # view updates in place instead of mounting a new block each time.
+        existing = self._pinned_blocks.get(cls) if is_pinned else None
+        if existing is not None and existing in self.children:
+            block = existing
             if tool is not None:
                 block.tool = tool
             self._tool_blocks[tool_id] = block
@@ -699,27 +695,26 @@ class ChatLog(VerticalScroll):
             self.record_tool_block(block, name)
             return block
 
-        block_cls = tool.ui_block if (tool is not None and tool.ui_block) else ToolBlock
-        block = block_cls(
+        block = cls(
             name=name, call_msg=call_msg, icon=icon, expanded=self._tool_output_expanded, tool=tool
         )
 
         # Consecutive tool calls without detail output render compactly (no
-        # margin). Tools with detail output (diffs, bash output, etc.) always
-        # keep a 1-line gap so they don't visually bleed into neighbours.
+        # margin). Tools with detail output (diffs, command output, etc.)
+        # always keep a 1-line gap so they don't visually bleed into neighbours.
         previous = self.children[-1] if self.children else None
         if isinstance(previous, ToolBlock) and not previous.has_class("-with-details"):
             block.add_class("-compact")
 
-        if is_todo:
+        if is_pinned:
             block.add_class("pinned")
 
         self.mount(block)
         self.record_tool_block(block, name)
         self._scroll_if_anchored(animate=False)
         self._tool_blocks[tool_id] = block
-        if is_todo:
-            self._todo_block = block
+        if is_pinned:
+            self._pinned_blocks[cls] = block
         return block
 
     async def append_to_current(self, text: str) -> None:
@@ -949,16 +944,16 @@ class ChatLog(VerticalScroll):
         if block is not None:
             return block
         for candidate in reversed(list(self._tool_blocks.values())):
-            if getattr(candidate, "name", None) == "ask_user":
+            if getattr(candidate, "is_ask_user", False):
                 return candidate
         return None
 
-    def show_ask_user(self, tool_id: str, dialog) -> None:
+    def show_ask_user(self, tool_id: str, dialog, block_cls: type[ToolBlock] | None = None) -> None:
         block = self._ask_user_block(tool_id)
-        if block is None:
+        if block is None and block_cls is not None:
             # The tool block was pruned or never mounted under this id —
             # mount a fresh one so the questionnaire always has a home.
-            block = self.start_tool("ask_user", tool_id)
+            block = self.start_tool("tool", tool_id, block_cls=block_cls)
         block.show_ask_user(dialog=dialog)
         self._scroll_if_anchored(animate=False)
         # A just-mounted block has no height yet, and its dialog body is
@@ -994,93 +989,16 @@ class ChatLog(VerticalScroll):
             block.set_ask_user_custom_value(value)
 
     def apply_task_progress(self, tool_call_id: str, event: dict) -> None:
-        """Render a Task-tool sub-agent event into the parent tool block.
+        """Forward a raw progress event to the block that owns it.
 
-        Called from the Task tool's progress callback. ``event`` is the
-        small dict shape produced by ``TaskTool``:
-
-        * ``kind == "subagent_queued"``: waiting for a scheduler slot
-        * ``kind == "subagent_start"``: opens the live view (model, max_turns)
-        * ``kind == "text_delta"``: updates the activity text snippet
-        * ``kind == "tool_start"``: counts a tool use and names the activity
-        * ``kind == "tool_result"``: clears the active-tool description
-        * ``kind == "turn_end"``: updates turn/token counters
-        * ``kind == "subagent_end" / "error" / "interrupted" / "cancelled"``:
-          freezes the view with an outcome icon; ``set_result`` then
-          finalizes the header
+        The event shape is defined by the tool that emits it; the block
+        class (``tool.ui_block``) is the only place that interprets it.
         """
         block = self._tool_blocks.get(tool_call_id)
         if block is None:
             return
-
-        kind = event.get("kind")
-        state = self._task_live.setdefault(
-            tool_call_id,
-            {
-                "subagent": event.get("subagent", "subagent"),
-                "model": None,
-                "max_turns": None,
-                "turns": 0,
-                "tool_uses": 0,
-                "tool_counts": {},
-                "tokens": 0,
-                "active_tool": None,
-                "last_text": "",
-                "final_text": "",
-                "transcript": [],
-                "started": time.monotonic(),
-                "ended": False,
-                "stop_label": None,
-                "error": None,
-                "queued": False,
-                "queue_position": 0,
-            },
-        )
-        if event.get("tool_counts"):
-            state["tool_counts"] = dict(event["tool_counts"])
-        if event.get("final_text"):
-            state["final_text"] = event["final_text"]
-        if event.get("transcript"):
-            state["transcript"] = list(event["transcript"])
-
-        if kind == "subagent_queued":
-            state["queued"] = True
-            state["queue_position"] = event.get("position") or 0
-        elif kind == "subagent_start":
-            state["model"] = event.get("model")
-            state["max_turns"] = event.get("max_turns")
-            state["queued"] = False
-            state["queue_position"] = 0
-        elif kind == "text_delta":
-            state["last_text"] = (state["last_text"] + event.get("delta", ""))[-400:]
-        elif kind == "tool_start":
-            state["tool_uses"] += 1
-            state["active_tool"] = event.get("tool_name")
-        elif kind == "tool_result":
-            state["active_tool"] = None
-        elif kind == "turn_end":
-            state["turns"] = event.get("turns", state["turns"])
-            state["tokens"] = event.get("tokens", state["tokens"])
-        elif kind == "error":
-            state["error"] = event.get("error")
-        elif kind in ("interrupted", "cancelled"):
-            state["error"] = state["error"] or kind
-            self._end_task_state(state, stop_label=kind)
-        elif kind == "subagent_end":
-            self._end_task_state(state, stop_label=event.get("stop_reason"))
-
-        # Snapshot for the block; internal timing key stripped.
-        snapshot = {k: v for k, v in state.items() if k != "started"}
-        block.set_task_progress(snapshot)
+        block.apply_task_progress(event)
         self._scroll_if_anchored(animate=False)
-
-    @staticmethod
-    def _end_task_state(state: dict, stop_label: str | None) -> None:
-        state["ended"] = True
-        state["stop_label"] = stop_label or state.get("stop_label")
-        state["elapsed_ms"] = (time.monotonic() - state["started"]) * 1000
-        state["queued"] = False
-        state["queue_position"] = 0
 
     def end_block(self) -> None:
         # Finalize content/thinking blocks to render markdown once

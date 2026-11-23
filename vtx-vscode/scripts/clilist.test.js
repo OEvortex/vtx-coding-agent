@@ -1,6 +1,6 @@
-// Tests for the Vtx CLI wrappers (src/settings/vtxConfigCli.ts): `vtx config
-// list|set` for ~/.vtx/config.yml, `vtx --dump-config` for plugin rows, and
-// `vtx plugin enable|disable` for the profile patch layer.
+// Tests for the Ctx CLI wrappers (src/settings/vtxConfigCli.ts): `ctx config
+// list|set` for ~/.ctx/config.yml, `ctx --dump-config` for plugin rows, and
+// `ctx plugin enable|disable` for the profile patch layer.
 //
 // The risk is the same as any parser fed by another program's output: anything
 // accepted becomes a row the user can act on, and a row that is really an error
@@ -43,7 +43,7 @@ function fakeCli(name, stdout, exitCode = 0, stderr = "") {
 }
 
 test("the plugin list is what --dump-config listed, not whatever it printed", async () => {
-  // `vtx --dump-config` prints `<id>\t[enabled|disabled]\t<name>` per row.
+  // `ctx --dump-config` prints `<id>\t[enabled|disabled]\t<name>` per row.
   const good = await listPlugins(fakeCli("plugins-ok",
     "hooks\t[enabled]\tvtx.plugins.builtins.hooks:PLUGIN\n"
     + "tool-grep\t[disabled]\tvtx.plugins.builtins.tool_grep:PLUGIN\n"));
@@ -55,7 +55,7 @@ test("the plugin list is what --dump-config listed, not whatever it printed", as
   // A CLI that failed. Every line here would have become a row with an enable
   // and a disable button, and toggling "Error:" is not something to offer.
   const failed = await listPlugins(fakeCli("plugins-err",
-    "vtx plugin: unknown row 'x'; run `vtx --dump-config` to list them\n", 1));
+    "vtx plugin: unknown row 'x'; run `ctx --dump-config` to list them\n", 1));
   assert.deepStrictEqual(failed, [], "a failure lists nothing");
 
   const noise = await listPlugins(fakeCli("plugins-noise",

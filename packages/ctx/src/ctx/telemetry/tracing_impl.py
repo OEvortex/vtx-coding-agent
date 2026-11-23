@@ -170,7 +170,7 @@ def span(name: str, *, span_data: Any = None, **metadata: Any) -> Generator[Span
 _DECORATOR_MODE = object()
 
 
-def trace(  # type: ignore[no-redef]
+def trace(
     name: Any = _DECORATOR_MODE,
     *,
     group_id: str | None = None,

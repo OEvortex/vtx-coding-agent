@@ -108,8 +108,8 @@ class HandoffOutputItem(RunItemBase):
     """The result of a handoff tool call (target agent's final output)."""
 
     raw_item: dict[str, Any]
-    source_agent: Any = None  # type: ignore[type-arg]
-    target_agent: Any = None  # type: ignore[type-arg]
+    source_agent: Any = None
+    target_agent: Any = None
     type: Literal["handoff_output_item"] = "handoff_output_item"
 
     def to_input_item(self) -> dict[str, Any]:

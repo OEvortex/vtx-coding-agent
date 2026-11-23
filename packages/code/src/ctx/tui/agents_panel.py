@@ -41,12 +41,12 @@ from collections.abc import Sequence
 
 from ctx.agent.subagent import DEFAULT_SUBAGENT
 from ctx.core.config import config
-from ctx.tui.subagents import (  # ty: ignore[import-not-found]
+from ctx.tui.subagents import (
     DONE_LINGER_SECONDS,
     REGISTRY,
     SubagentRun,
 )
-from ctx.tui.task_ui import (  # ty: ignore[import-not-found]
+from ctx.tui.task_ui import (
     SPINNER,
     describe_activity,
     format_tokens,

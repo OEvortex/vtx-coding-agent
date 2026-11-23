@@ -1,13 +1,9 @@
-"""Ctx TUI — the Textual interface.
+"""Ctx TUI — the terminal UI building blocks.
 
-One flat package holding the whole interactive UI: the reusable primitives
-(input editing, fuzzy matching, overlay lists, LaTeX/formatting helpers,
-styling, block renderers) and the app that composes them (``app.Ctx``, the
-agent-runner mixins, the panels, and the slash-command registry).
-
-Anything that renders a terminal conversation can reuse the primitives alone
-without pulling in the app. The agent harness already depends on this package
-for ``blocks.TaskToolBlock`` and tool-output truncation.
+Generic, product-neutral Textual primitives: input editing, fuzzy matching,
+overlay lists, LaTeX/formatting helpers, styling, scrollback blocks, and the
+chat log. The coding-agent app and every tool-specific block live in
+``ctx-code`` and share this namespace via :func:`pkgutil.extend_path`.
 """
 
 from __future__ import annotations

@@ -297,7 +297,7 @@ export class AcpClient extends EventEmitter {
 
   // Every session the CLI knows about, from any directory. Standard ACP (the
   // agent advertises it under sessionCapabilities.list) and it needs no session of
-  // its own, so any live agent can answer it. Unlike `vtx list`, which is exact
+  // its own, so any live agent can answer it. Unlike `ctx list`, which is exact
   // match on cwd, this is not scoped: a session created in a subdirectory of the
   // workspace comes back too.
   async listSessions(timeoutMs = QUERY_TIMEOUT_MS): Promise<AcpSessionRow[]> {
@@ -313,7 +313,7 @@ export class AcpClient extends EventEmitter {
 
   // --- What the agent has actually loaded ----------------------------------
   // Rules and hooks come from more places than any one client can be expected to
-  // know: AGENTS.md and CLAUDE.md in ~/.vtx and project ancestors, hooks.yml,
+  // know: AGENTS.md and CLAUDE.md in ~/.ctx and project ancestors, hooks.yml,
   // plugins, and whatever a later CLI adds. Asking the agent is the only way to
   // report what is really in force, and each entry names the file it came from
   // so it can still be opened.

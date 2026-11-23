@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import json
 import re
-import textwrap
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -14,21 +13,10 @@ from ctx.core import ApprovalResponse
 from ctx.core.compaction import SUMMARY_SECTIONS
 from ctx.core.config import config
 from ctx.protocol.types import ImageContent
-from ctx.tui import boxed, task_ui
-from ctx.tui.ask_user import (
-    INCOMPLETE_WARNING_PREFIX,
-    NEXT_LABEL,
-    NO_INPUT_PLACEHOLDER,
-    OTHER_DISPLAY,
-    REVIEW_HEADING,
-    SUBMIT_PICK_CANCEL,
-    SUBMIT_PICK_LABEL,
-    AskUserDialog,
-)
+from ctx.tui import boxed
 from ctx.tui.diff_display import DIFF_BG_PAD_MARKER
 from ctx.tui.formatting import (
     find_stable_block_boundary,
-    format_bash_command,
     format_markdown,
     format_markdown_block,
     format_tokens,
@@ -49,31 +37,10 @@ from textual.widgets import Label, ProgressBar, Static
 
 _UPDATE_COMMAND = "uv tool upgrade ctx-code"
 
-ACTIVE_POINTER = "❯ "  # noqa: RUF001 - intentional pointer glyph
-INACTIVE_POINTER = "  "
-CHECKED_BOX = "[✔]"
-UNCHECKED_BOX = "[ ]"
-CONFIRMED_MARK = " ✔"
-NUMBER_SEPARATOR = ". "
-CONTINUATION_INDENT = "  "
-
-# Footer hint fragments; joined with " · " into the footer line.
-HINT_ENTER = "enter to select"
-HINT_NAV = "↑/↓ to navigate"
-HINT_TOGGLE = "space to toggle"
-HINT_TAB = "tab to switch questions"
-HINT_CANCEL = "esc to cancel"
-HINT_SAVE_DRAFT = "enter to save"
-HINT_CLEAR = "ctrl+u to clear"
-HINT_COLLAPSE = "ctrl+] to collapse"
-HINT_EXPAND = "ctrl+] to expand"
-# The tool-output toggle is its own binding (ctrl+o), separate from the
-# questionnaire's collapse key above.
+# The tool-output toggle hint is shared by every tool block. Questionnaires
+# and other interactive tool UIs live in the product package and own their
+# own hints.
 HINT_TOOL_EXPAND = "ctrl+o to expand"
-
-# Snug box width bounds for the bordered questionnaire.
-MIN_DIALOG_WIDTH = 48
-MAX_DIALOG_WIDTH = 100
 
 
 @dataclass(frozen=True)
@@ -478,6 +445,11 @@ class ToolBlock(Static):
     ALLOW_SELECT = True
     can_focus = False
     MAX_HEADER_LINES = 2
+    #: Product blocks opt in to being reused across calls instead of stacked.
+    pinned: bool = False
+    #: Product blocks hosting an interactive questionnaire set this so the
+    #: chat log can find them without knowing a tool name.
+    is_ask_user: bool = False
 
     def __init__(
         self,
@@ -501,9 +473,8 @@ class ToolBlock(Static):
         self._ui_summary: str | None = None
         self._ui_details: str | None = None
         self._ui_details_full: str | None = None
-        #: Structured payload for a block that lays out its own result (see
-        #: :class:`ctx.tui.codemode_block.CodemodeToolBlock`). An attribute
-        #: rather than another ``set_result`` keyword because an extension's
+        #: Structured payload for a block that lays out its own result. An
+        #: attribute rather than another ``set_result`` keyword because an extension's
         #: block may override ``set_result`` with the documented signature, and
         #: a kwarg it has never heard of would fail on the first tool that sent
         #: one. ``None`` everywhere else.
@@ -515,16 +486,6 @@ class ToolBlock(Static):
         self._awaiting_approval: bool = False
         self._approval_preview: str | None = None
         self._approval_selection: ApprovalResponse = ApprovalResponse.APPROVE
-        # ask_user questionnaire. The block renders whatever the
-        # :class:`AskUserDialog` state machine holds; the app mutates
-        # the dialog from keypresses and asks for a re-render.
-        self._ask_dialog: AskUserDialog | None = None
-        # Tracks whether an inline input (custom answer) is
-        # currently displayed. Used to move focus to the input on show
-        # and back to the chat input box on hide, since picker keys
-        # would otherwise be forwarded from the chat input and the user
-        # could never type into these fields.
-        self._ask_user_input_visible: bool = False
         self._live_output: str = ""
         self._live_render_pending: bool = False
         self._partial_args: dict | None = None
@@ -542,23 +503,26 @@ class ToolBlock(Static):
         yield Label(self._format_header(), id="tool-header")
         yield Label("", id="tool-output", classes="tool-output -hidden")
         yield Label("", id="tool-footer", classes="tool-footer")
-        yield AskUserInput(placeholder=OTHER_DISPLAY, id="ask-user-input", classes="-hidden")
+        yield AskUserInput(placeholder="Type something.", id="ask-user-input", classes="-hidden")
 
     def _box_w(self) -> int:
         """Shared box width for header/body/footer so corners always align."""
         return boxed.box_width(self.size.width or 80)
 
     def _source_path(self) -> str | None:
-        """File the call touches, used for the language chip and highlighting."""
-        if self._name not in {"read", "apply_patch"}:
-            return None
-        first = boxed.strip_markup(self._call_msg or "").split("\n", 1)[0].strip()
-        if not first or first.startswith("$"):
-            return None
-        # ``read`` renders ``path:12-30``; strip only a trailing line range so
-        # a Windows drive letter is left intact.
-        path = re.sub(r":\d+(?:-\d+)?$", "", first).strip()
-        return path or None
+        """File the call touches, used for the language chip and highlighting.
+
+        Generic blocks have no way to derive a path from an opaque call message;
+        tool blocks that edit or read files override this.
+        """
+        return None
+
+    def _format_call_detail(self, first_line: str) -> str | Text:
+        """Style the first call line shown in the header.
+
+        Overridden by tools with a dedicated call syntax (shell commands).
+        """
+        return first_line
 
     def _refresh_box(self) -> None:
         """Re-render every box surface at the current width (post-layout/resize).
@@ -576,12 +540,17 @@ class ToolBlock(Static):
             lambda: self.query_one("#tool-header", Label).update(self._format_header())
         )
         self._render_result_output()
-        if self._ask_dialog is not None:
-            self._safe_update(self._render_ask_user_output)
-            self._sync_ask_user_widgets()
-        elif self._awaiting_approval:
+        self._render_interactive_output()
+        if self._awaiting_approval:
             self._safe_update(self._render_approval_output)
         self._render_footer()
+
+    def _render_interactive_output(self) -> None:
+        """Extension hook for tool UIs with an interactive body (e.g. dialogs).
+
+        The base block has no interactive body, so this is a no-op. Product
+        tool blocks override it to repaint state attached before mount.
+        """
 
     def on_mount(self) -> None:
         self.call_after_refresh(self._refresh_box)
@@ -596,7 +565,7 @@ class ToolBlock(Static):
         detail: str | Text = ""
         if call_plain:
             first_line = call_plain.split("\n", 1)[0]
-            detail = format_bash_command(first_line) if self._name == "bash" else first_line
+            detail = self._format_call_detail(first_line)
         running = self._success is None and not self._awaiting_approval
         status = ""
         if self._success is True:
@@ -660,9 +629,6 @@ class ToolBlock(Static):
                 content = self._call_msg
         else:
             content = self._call_msg
-
-        if self._name == "bash":
-            return format_bash_command(content)
 
         rendered = self._render_markup_safe(content)
         if rendered.spans:
@@ -801,358 +767,28 @@ class ToolBlock(Static):
         text.append("(← → enter)", style=Style(color=colors.dim))
         return text
 
-    # -- ask_user rendering ---------------------------------------------------
+    # -- interactive tool UI extension hooks ----------------------------------
 
     @property
     def is_awaiting_ask_user(self) -> bool:
-        return self._ask_dialog is not None or self.has_class("-ask-user")
+        """Whether an interactive questionnaire is open. Product overrides answer."""
+        return False
 
-    def show_ask_user(self, dialog: AskUserDialog) -> None:
-        """Attach the questionnaire dialog and render it into the block.
-
-        Safe to call before the widget is mounted — the DOM updates
-        become no-ops, which keeps unit tests from needing a live app.
-        """
-        self._ask_dialog = dialog
-        self.add_class("-ask-user")
-        self._set_state(None)
-        # Best effort now; ``_refresh_box`` repaints after mount when the
-        # block's children did not exist yet (see its docstring).
-        self._safe_update(
-            lambda: self.query_one("#tool-header", Label).update(self._format_header())
-        )
-        self._safe_update(self._render_ask_user_output)
-        self._sync_ask_user_widgets()
+    def show_ask_user(self, dialog: Any) -> None:
+        """Open a questionnaire. No-op on the generic block."""
 
     def rerender_ask_user(self) -> None:
-        """Re-render the dialog from current state machine contents."""
-        if self._ask_dialog is None:
-            return
-        self._safe_update(self._render_ask_user_output)
-        self._sync_ask_user_widgets()
+        """Repaint an open questionnaire. No-op on the generic block."""
 
     def hide_ask_user(self) -> None:
-        self._ask_dialog = None
-        self.remove_class("-ask-user")
-        self._set_state(None)
-        self._safe_update(
-            lambda: self.query_one("#tool-header", Label).update(self._format_header())
-        )
-        self._sync_ask_user_widgets()
-        self._safe_update(self._hide_ask_user_output)
-
-    # Inline input accessors used by the app layer -----------------------------
+        """Close an open questionnaire. No-op on the generic block."""
 
     def ask_user_custom_value(self) -> str:
-        with contextlib.suppress(Exception):
-            return self.query_one("#ask-user-input", AskUserInput).value
+        """Current free-text value of an open questionnaire."""
         return ""
 
     def set_ask_user_custom_value(self, value: str) -> None:
-        with contextlib.suppress(Exception):
-            self.query_one("#ask-user-input", AskUserInput).value = value
-
-    def _hide_ask_user_output(self) -> None:
-        try:
-            output = self.query_one("#tool-output", Label)
-        except Exception:
-            return
-        self.remove_class("-with-details")
-        output.remove_class("-details")
-        output.add_class("-hidden")
-        output.update(Text(""))
-
-    def _safe_update(self, fn) -> None:
-        """Run ``fn`` and swallow DOM errors (e.g. widget not yet mounted)."""
-        with contextlib.suppress(Exception):
-            fn()
-
-    def _render_ask_user_output(self) -> None:
-        try:
-            output = self.query_one("#tool-output", Label)
-        except Exception:
-            return
-        if self._ask_dialog is None:
-            return
-        self.remove_class("-with-details")
-        output.remove_class("-hidden")
-        output.remove_class("-details")
-        output.update(self.format_ask_user_dialog())
-
-    # Dialog drawing ------------------------------------------------------------
-
-    def _dialog_width(self) -> int:
-        try:
-            term_width = self.app.size.width
-        except Exception:
-            term_width = 0
-        if term_width <= 0:
-            return 96
-        return max(MIN_DIALOG_WIDTH, min(MAX_DIALOG_WIDTH, term_width - 4))
-
-    def format_ask_user_dialog(self) -> Text:
-        """The bordered questionnaire (or its collapsed hint row)."""
-        assert self._ask_dialog is not None
-        colors = config.ui.colors
-        if self._ask_dialog.collapsed:
-            return Text(f"  {HINT_EXPAND} · {HINT_CANCEL}", style=Style(color=colors.dim))
-
-        width = self._dialog_width()
-        body = self._build_dialog_body(self._ask_dialog, width)
-        inner = max(line.cell_len for line in body)
-
-        result = Text()
-        result.append(f"╭{'─' * (inner + 2)}╮\n", style=Style(color=colors.accent))
-        for line in body:
-            result.append("│ ")
-            result.append_text(line)
-            padding = inner - line.cell_len
-            if padding > 0:
-                result.append(" " * padding)
-            result.append(" │\n", style=Style(color=colors.accent))
-        result.append(f"╰{'─' * (inner + 2)}╯", style=Style(color=colors.accent))
-
-        hints = self._format_hint_line(self._ask_dialog)
-        if hints.plain.strip():
-            result.append("\n  ")
-            result.append_text(hints)
-        return result
-
-    def _build_dialog_body(self, dialog: AskUserDialog, width: int) -> list[Text]:
-        lines: list[Text] = []
-        if dialog.is_multi_question:
-            lines.append(self._format_tab_bar(dialog))
-            lines.append(Text())
-        if dialog.is_on_submit_tab():
-            lines.extend(self._format_submit_body(dialog))
-        else:
-            lines.extend(self._format_question_body(dialog, width))
-        lines.append(Text())
-        return lines
-
-    def _format_tab_bar(self, dialog: AskUserDialog) -> Text:
-        colors = config.ui.colors
-        answered = set(dialog.answered_indices())
-        row = Text()
-        row.append(" ← ", style=Style(color=colors.dim))
-        for i, question in enumerate(dialog.questions):
-            label = question.header or f"Q{i + 1}"
-            box = "■" if i in answered else "□"
-            if i == dialog.tab:
-                style: Style | str = Style(bgcolor=colors.accent, color=colors.bg, bold=True)
-            elif i in answered:
-                style = Style(color=colors.success)
-            else:
-                style = Style(color=colors.muted)
-            row.append(f" {box} {label} ", style=style)
-            row.append(" ", style=Style(color=colors.dim))
-        all_answered = len(answered) == len(dialog.questions)
-        on_submit = dialog.is_on_submit_tab()
-        submit_style: Style | str = (
-            Style(bgcolor=colors.accent, color=colors.bg, bold=True)
-            if on_submit
-            else Style(color=colors.success if all_answered else colors.dim)
-        )
-        row.append(" ✓ Submit ", style=submit_style)
-        row.append(" → ", style=Style(color=colors.dim))
-        return row
-
-    def _format_question_body(self, dialog: AskUserDialog, width: int) -> list[Text]:
-        colors = config.ui.colors
-        question = dialog.questions[dialog.tab]
-        state = dialog.current_state()
-        content_width = max(20, width - 6)
-
-        lines: list[Text] = []
-        for segment in textwrap.wrap(question.question, content_width) or [""]:
-            lines.append(Text(segment, style=Style(color=colors.fg, bold=True)))
-        lines.append(Text())
-
-        rows = dialog.rows()
-        number_width = len(str(len(rows)))
-        active_preview: str | None = None
-
-        for row_index, (kind, option_index) in enumerate(rows):
-            is_active = row_index == state.row
-            pointer = ACTIVE_POINTER if is_active else INACTIVE_POINTER
-            number = f"{row_index + 1}{NUMBER_SEPARATOR}".rjust(number_width + 2)
-
-            if kind == "option":
-                option = question.options[option_index]
-                checked = option_index in state.toggled
-                confirmed = not question.multi_select and state.selected == option_index
-                label_style = Style(color=colors.accent, bold=True) if is_active else Style()
-                line = Text()
-                line.append(pointer, style=label_style if is_active else Style(color=colors.dim))
-                line.append(number, style=label_style if is_active else Style(color=colors.fg))
-                if question.multi_select:
-                    box = CHECKED_BOX if checked else UNCHECKED_BOX
-                    line.append(
-                        box + " ", style=Style(color=colors.accent if checked else colors.muted)
-                    )
-                line.append(
-                    option.label + (CONFIRMED_MARK if confirmed else ""), style=label_style
-                )
-                lines.append(line)
-                if option.description:
-                    for segment in textwrap.wrap(option.description, content_width - 2) or [""]:
-                        lines.append(
-                            Text(CONTINUATION_INDENT + segment, style=Style(color=colors.dim))
-                        )
-                if is_active and option.preview:
-                    active_preview = option.preview
-            elif kind == "other":
-                draft = state.draft.strip()
-                if draft:
-                    # A fresh draft shows unconfirmed; a draft equal to
-                    # the committed answer keeps its ✔ mark below.
-                    label = draft
-                    confirmed_custom = bool(state.custom.strip()) and draft == state.custom.strip()
-                else:
-                    label = OTHER_DISPLAY
-                    confirmed_custom = False
-                label_style = (
-                    Style(color=colors.accent, bold=True) if is_active else Style(color=colors.fg)
-                )
-                line = Text()
-                line.append(pointer, style=label_style if is_active else Style(color=colors.dim))
-                line.append(number, style=label_style if is_active else Style(color=colors.fg))
-                if question.multi_select:
-                    line.append(UNCHECKED_BOX + " ", style=Style(color=colors.muted))
-                line.append(
-                    label + (CONFIRMED_MARK if confirmed_custom else ""), style=label_style
-                )
-                lines.append(line)
-            else:  # next — commit row for multi-select questions
-                label_style = (
-                    Style(color=colors.accent, bold=True) if is_active else Style(color=colors.fg)
-                )
-                line = Text()
-                line.append(pointer, style=label_style if is_active else Style(color=colors.dim))
-                line.append(NEXT_LABEL, style=label_style)
-                lines.append(line)
-
-        if active_preview:
-            lines.extend(self._format_preview_box(active_preview, width))
-        return lines
-
-    def _format_preview_box(self, preview: str, width: int) -> list[Text]:
-        colors = config.ui.colors
-        border_style = Style(color=colors.dim)
-        inner_width = max(16, min(72, width - 10))
-        wrapped: list[str] = []
-        for raw_line in preview.splitlines() or [""]:
-            wrapped.extend(textwrap.wrap(raw_line, inner_width) or [""])
-            if len(wrapped) >= 12:
-                break
-        if len(wrapped) >= 12:
-            wrapped = wrapped[:12]
-            if wrapped:
-                wrapped[-1] = wrapped[-1][: max(0, inner_width - 1)] + "…"
-        lines = [Text("  ┌" + "─" * (inner_width + 2) + "┐", style=border_style)]
-        for segment in wrapped:
-            pad = " " * (inner_width - len(segment))
-            lines.append(Text("  │ " + segment + pad + " │", style=Style(color=colors.muted)))
-        lines.append(Text("  └" + "─" * (inner_width + 2) + "┘", style=border_style))
-        return lines
-
-    def _question_answer_scalar(self, dialog: AskUserDialog, index: int) -> str | None:
-        question = dialog.questions[index]
-        state = dialog._states[index]
-        if question.multi_select:
-            if state.toggled:
-                ordered = sorted(state.toggled)
-                return ", ".join(question.options[j].label for j in ordered)
-            if state.custom.strip():
-                return state.custom.strip()
-            return None
-        if state.selected is not None:
-            return question.options[state.selected].label
-        if state.custom.strip():
-            return state.custom.strip()
-        return None
-
-    def _format_submit_body(self, dialog: AskUserDialog) -> list[Text]:
-        colors = config.ui.colors
-        lines: list[Text] = [Text(REVIEW_HEADING, style=Style(color=colors.fg, bold=True)), Text()]
-        for i, question in enumerate(dialog.questions):
-            header = question.header or question.question
-            if len(header) > 32:
-                header = header[:29] + "..."
-            answer = self._question_answer_scalar(dialog, i)
-            entry = Text(f"{header}: ")
-            if answer is None:
-                entry.append(NO_INPUT_PLACEHOLDER, style=Style(color=colors.dim))
-            else:
-                entry.append(answer)
-            lines.append(entry)
-        unanswered = []
-        for i, question in enumerate(dialog.questions):
-            if self._question_answer_scalar(dialog, i) is None:
-                unanswered.append(question.header or question.question)
-        if unanswered:
-            warning = Text(INCOMPLETE_WARNING_PREFIX, style=Style(color=colors.notice))
-            warning.append(" " + ", ".join(unanswered), style=Style(color=colors.notice))
-            lines.append(warning)
-        lines.append(Text())
-        for i, label in enumerate((SUBMIT_PICK_LABEL, SUBMIT_PICK_CANCEL)):
-            active = dialog.submit_row == i
-            pointer = ACTIVE_POINTER if active else INACTIVE_POINTER
-            style = Style(color=colors.accent, bold=True) if active else Style(color=colors.fg)
-            line = Text()
-            line.append(pointer, style=style)
-            line.append(f"{i + 1}{NUMBER_SEPARATOR}", style=style)
-            line.append(label, style=style)
-            lines.append(line)
-        return lines
-
-    def _format_hint_line(self, dialog: AskUserDialog) -> Text:
-        colors = config.ui.colors
-        if dialog.collapsed:
-            parts = [HINT_EXPAND, HINT_CANCEL]
-        elif dialog.input_mode:
-            parts = [HINT_SAVE_DRAFT, HINT_NAV, HINT_CLEAR, HINT_CANCEL]
-        elif dialog.is_on_submit_tab():
-            parts = ["enter to confirm", HINT_NAV, HINT_CANCEL]
-        else:
-            parts = [HINT_ENTER, HINT_NAV]
-            if dialog.questions[min(dialog.tab, len(dialog.questions) - 1)].multi_select:
-                parts.append(HINT_TOGGLE)
-            if dialog.is_multi_question:
-                parts.append(HINT_TAB)
-            parts.append(HINT_CANCEL)
-            parts.append(HINT_COLLAPSE)
-        return Text("  " + " · ".join(parts), style=Style(color=colors.dim))
-
-    # Inline widget sync --------------------------------------------------------
-
-    def _sync_ask_user_widgets(self) -> None:
-        """Show/hide + focus the inline input to match dialog state."""
-        dialog = self._ask_dialog
-        custom_visible = bool(dialog and not dialog.collapsed and dialog.input_mode)
-        with contextlib.suppress(Exception):
-            custom_input = self.query_one("#ask-user-input", AskUserInput)
-            custom_input.display = custom_visible
-            if custom_visible and dialog is not None:
-                draft = dialog.current_state().draft
-                if custom_input.value != draft:
-                    custom_input.value = draft
-        focus_changed = custom_visible != self._ask_user_input_visible
-        self._ask_user_input_visible = custom_visible
-        if focus_changed:
-            # Move focus after the DOM has caught up with the visibility
-            # change so the user can actually type into the field.
-            self.call_after_refresh(self._sync_ask_user_focus)
-
-    def _sync_ask_user_focus(self) -> None:
-        with contextlib.suppress(Exception):
-            if self._ask_user_input_visible:
-                self.query_one("#ask-user-input", AskUserInput).focus()
-            else:
-                # Return focus to the chat input box so picker keys
-                # (digits/arrows) keep working after the user navigates
-                # away from an inline field.
-                self.app.query_one("#input-box").focus()
+        """Overwrite the free-text value of an open questionnaire."""
 
     def update_call_msg(self, call_msg: str) -> None:
         self._call_msg = call_msg
@@ -1193,166 +829,21 @@ class ToolBlock(Static):
         self._safe_update(
             lambda: self.query_one("#tool-header", Label).update(self._format_header())
         )
-        if self._name == "apply_patch":
+        if self._rerender_body_on_args():
             self._render_result_output()
         self._render_footer()
 
     def _streaming_file_preview(self, args: dict) -> str:
-        """Live diff-style preview of an apply_patch payload while args stream.
+        """Live call-header preview while arguments stream.
 
-        Deliberately not a real diff: computing one per frame is O(file) and
-        the partial args change every delta. Instead show the incoming
-        content's tail as ``+``/``-`` lines with diff colors — reads like the
-        file filling in, costs a few µs per frame. The real diff still
-        renders from the tool result when the call finishes.
+        Generic blocks have no specialised call syntax; product tool blocks
+        override this to show a diff, tree, or other live preview.
         """
-        if self.tool is None or self.tool.name != "apply_patch":
-            return ""
-        ops = args.get("ops")
-        if not isinstance(ops, list):
-            return ""
-        added_src_parts: list[str] = []
-        removed_src_parts: list[str] = []
-        first_path = ""
-        for op in ops:
-            if not isinstance(op, dict):
-                continue
-            if not first_path and isinstance(op.get("path"), str):
-                first_path = op["path"]
-            if isinstance(op.get("content"), str):
-                added_src_parts.append(op["content"])
-            if isinstance(op.get("old"), str):
-                removed_src_parts.append(op["old"])
-            if isinstance(op.get("new"), str):
-                added_src_parts.append(op["new"])
-            for edit in op.get("edits") or []:
-                if not isinstance(edit, dict):
-                    continue
-                if isinstance(edit.get("new"), str):
-                    added_src_parts.append(edit["new"])
-                if isinstance(edit.get("old"), str):
-                    removed_src_parts.append(edit["old"])
-        added_src = "\n".join(added_src_parts)
-        removed_src = "\n".join(removed_src_parts)
-        if not isinstance(added_src, str) or not added_src:
-            return ""
-        if not isinstance(removed_src, str):
-            removed_src = ""
+        return ""
 
-        from ctx.core.config import config
-        from ctx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex
-
-        colors = config.ui.colors
-        bg_added = blend_hex(colors.diff_added, colors.bg)
-        bg_removed = blend_hex(colors.diff_removed, colors.bg)
-
-        max_side = 15
-
-        def _tail(src: str) -> list[str]:
-            return src[-6000:].splitlines()[-max_side:]
-
-        def _count(src: str) -> int:
-            return src.count("\n") + (0 if src.endswith("\n") else 1)
-
-        removed_tail = _tail(removed_src) if removed_src else []
-        added_tail = _tail(added_src)
-
-        total_added = _count(added_src)
-        total_removed = _count(removed_src) if removed_src else 0
-        hidden_added = total_added - len(added_tail)
-        hidden_removed = total_removed - len(removed_tail)
-
-        meta_parts = []
-        if first_path:
-            meta_parts.append(first_path)
-        if len(ops) > 1:
-            meta_parts.append(f"{len(ops)} ops")
-        meta_parts.append(f"[{colors.diff_added}]+{total_added}[/{colors.diff_added}]")
-        meta_parts.append(f"[{colors.diff_removed}]-{total_removed}[/{colors.diff_removed}]")
-        meta = "  ".join(meta_parts)
-        if hidden_added > 0 or hidden_removed > 0:
-            meta += f"  [dim]…{hidden_added + hidden_removed} earlier[/dim]"
-
-        # The header truncates call messages to MAX_HEADER_LINES, so emit a
-        # compact two-line preview: meta + the freshest content line. Older
-        # lines are covered by the "…N earlier" count.
-        lines = [f"[dim]{meta}[/dim]"]
-        last = ""
-        sign = color = bg = ""
-        if added_tail:
-            last, sign, color, bg = added_tail[-1], "+", colors.diff_added, bg_added
-        elif removed_tail:
-            last, sign, color, bg = (removed_tail[-1], "-", colors.diff_removed, bg_removed)
-        if last:
-            esc = last.replace("[", "\\[")
-            lines.append(f"[{color} on {bg}]{sign} {esc}{DIFF_BG_PAD_MARKER}[/]")
-        return "\n".join(lines)
-
-    def _render_dir_listing(self, data: dict) -> Text:
-        """Directory read result: a panel-style tree.
-
-        Entries arrive as ``{line, path, is_dir}`` dicts. Flat paths are
-        regrouped into a tree drawn with ``├─``/``└─``/``│`` glyphs —
-        directories in accent with a trailing ``/``, files dim. Capped so a
-        huge listing doesn't flood the scrollback.
-        """
-        from ctx.core.config import config
-
-        colors = config.ui.colors
-        entries = [e for e in (data.get("entries") or []) if e.get("path")]
-
-        # Regroup flat paths into a nested tree: {name: {"is_dir": bool, "kids": {}}}
-        root: dict = {}
-        for e in entries:
-            children = root
-            parts = str(e["path"]).split("/")
-            for i, part in enumerate(parts):
-                last = i == len(parts) - 1
-                node = children.setdefault(part, {"is_dir": True, "kids": {}})
-                if last:
-                    node["is_dir"] = bool(e["is_dir"])
-                children = node["kids"]
-
-        lines: list[Text] = []
-        cap = 20
-
-        def _emit(children: dict, prefix: str) -> None:
-            items = sorted(children.items(), key=lambda kv: (not kv[1]["is_dir"], kv[0]))
-            for idx, (name, node) in enumerate(items):
-                if len(lines) >= cap:
-                    return
-                last = idx == len(items) - 1
-                arm = "└─ " if last else "├─ "
-                if node["is_dir"]:
-                    lines.append(Text(prefix + arm + name + "/", style=colors.accent))
-                else:
-                    lines.append(Text(prefix + arm + name, style=colors.dim))
-                if node["kids"]:
-                    _emit(node["kids"], prefix + ("    " if last else "│   "))
-
-        if root:
-            _emit(root, "")
-        else:
-            lines.append(Text("(empty directory)", style=colors.dim))
-
-        total = sum(1 for _ in self._iter_tree(root)) if root else 0
-        if total > len(lines):
-            lines.append(Text(f"  ⋯ +{total - len(lines)} more", style=colors.dim))
-        elif data.get("truncated"):
-            lines.append(Text("  ⋯", style=colors.dim))
-
-        out = Text()
-        for i, line in enumerate(lines):
-            if i:
-                out.append("\n")
-            out.append_text(line)
-        return out
-
-    @staticmethod
-    def _iter_tree(node: dict):
-        for child in node.values():
-            yield child
-            yield from ToolBlock._iter_tree(child["kids"])
+    def _rerender_body_on_args(self) -> bool:
+        """Whether a streaming argument delta should repaint the body."""
+        return False
 
     def append_live_output(self, delta: str) -> None:
         """Stream incremental stdout/stderr chunk into the tool block in real-time."""
@@ -1417,46 +908,9 @@ class ToolBlock(Static):
         self._render_footer()
 
     def _streaming_body_text(self) -> Text | None:
-        """apply_patch body while args stream: numbered preview or diff."""
-        if self.tool is None or self.tool.name != "apply_patch":
-            return None
-        args = self._partial_args or {}
-        ops = args.get("ops")
-        if not isinstance(ops, list) or not ops:
-            return None
-        first = ops[0] if isinstance(ops[0], dict) else {}
-        content = first.get("content")
-        if isinstance(content, str) and content:
-            path = str(first.get("path") or "")
-            return boxed.highlighted_numbered_lines(content, path, max_lines=15)
-        edits = first.get("edits")
-        if not (isinstance(edits, list) and edits) and isinstance(first.get("old"), str):
-            edits = [{"old": first.get("old"), "new": first.get("new")}]
-        if isinstance(edits, list) and edits:
-            olds = [e.get("old", "") for e in edits if isinstance(e, dict)]
-            news = [e.get("new", "") for e in edits if isinstance(e, dict)]
-            old = "\n".join(str(o) for o in olds)
-            new = "\n".join(str(n) for n in news)
-            if len(old) + len(new) > 40000:
-                return None
-            try:
-                try:
-                    from ctx.coding_agent.tools.apply_patch import (  # ty: ignore[import-not-found]
-                        format_diff_display,
-                        generate_diff,
-                    )
-                except ImportError:
-                    return None
-
-                diff, _, _ = generate_diff(old, new)
-                text = Text.from_markup(format_diff_display(diff))
-                # The streaming path bypasses _render_result_output's padding
-                # step, so consume DIFF_BG_PAD_MARKER here or it leaks literally.
-                text = boxed.highlight_diff(text, self._source_path())
-                return self._pad_diff_backgrounds(text, max(20, self._box_w() - 4))
-            except Exception:
-                return None
+        """Live body while arguments stream. Product tool blocks override."""
         return None
+
 
     def set_result(
         self,
@@ -1490,13 +944,10 @@ class ToolBlock(Static):
     # -- Task tool live progress ------------------------------------------
 
     def set_task_progress(self, stats: dict) -> None:
-        """Forward a Task-tool sub-agent progress snapshot to the block.
+        """Consume a progress snapshot. Product tool blocks override."""
 
-        ``stats`` is a plain data dict built by the chat log (subagent
-        name, model, turns, tool_uses, tokens, active_tool, last_text,
-        ended/stop_label/error). Blocks that don't override this simply
-        ignore it.
-        """
+    def apply_task_progress(self, event: dict) -> None:
+        """Consume a raw progress event. Product tool blocks override."""
 
     def set_expanded(self, expanded: bool) -> None:
         if self._expanded == expanded:
@@ -1514,6 +965,10 @@ class ToolBlock(Static):
     def on_resize(self, event: events.Resize) -> None:
         del event
         self._refresh_box()
+
+    def _render_custom_output(self) -> Text | None:
+        """Render a tool-specific ``ui_data`` shape. Generic blocks return None."""
+        return None
 
     def _render_result_output(self) -> None:
         try:
@@ -1546,22 +1001,8 @@ class ToolBlock(Static):
             if is_diff_output:
                 rendered = boxed.highlight_diff(rendered, self._source_path())
             rendered = self._pad_diff_backgrounds(rendered, max(20, self._box_w() - 4))
-        elif self._name == "read" and (self.ui_data or {}).get("is_dir"):
-            rendered = self._render_dir_listing(self.ui_data or {})
-            is_diff_output = False
-        elif self._name == "read" and (self.ui_data or {}).get("preview"):
-            data = self.ui_data or {}
-            preview = str(data.get("preview") or "")
-            # A paged read (offset/limit) shows the full range the model read;
-            # a whole-file read stays capped so a huge file doesn't flood the
-            # scrollback (the model sees the full content either way).
-            max_lines = len(preview.splitlines()) if data.get("paged") else 12
-            rendered = boxed.highlighted_numbered_lines(
-                preview,
-                str(data.get("path") or self._source_path() or ""),
-                max_lines=max_lines,
-                start_line=int(data.get("start_line") or 1),
-            )
+        elif (custom := self._render_custom_output()) is not None:
+            rendered = custom
             is_diff_output = False
         elif self._images:
             image_count = len(self._images)
@@ -1754,187 +1195,6 @@ class LaunchWarningsBlock(Static):
         yield Label(text)
 
 
-class TaskToolBlock(ToolBlock):
-    """Dispatch receipt for one sub-agent.
-
-    The scrollback keeps the *receipt* — what was dispatched, and how it ended
-    — and nothing else::
-
-        ▸ Explore  Map public API surface
-          ⎿  Running in background (ID: 623586f8-8334-468)
-
-    Live counters, the spinner and per-agent activity live in the pinned
-    Agents panel (:mod:`ctx.tui.agents_panel`), which shows every sub-agent at
-    once instead of one block per dispatch. This block repaints only when a
-    progress event arrives, so it costs nothing while the panel animates.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._task_stats: dict | None = None
-        self._task_finished: dict | None = None
-        self._task_started: float | None = None
-        self._task_elapsed_ms: float | None = None
-        # A background dispatch finalizes its tool result immediately, long
-        # before the sub-agent ends. This tracks the sub-agent's own end so
-        # the receipt doesn't read as "finished" at 0 turns / 0 tool calls.
-        self._subagent_ended: bool = False
-
-    def on_mount(self) -> None:
-        if self._success is None and not self._awaiting_approval:
-            if self._task_started is None:
-                self._task_started = time.monotonic()
-            if self._task_stats is None:
-                self._task_stats = {
-                    "subagent": "subagent",
-                    "turns": 0,
-                    "tool_uses": 0,
-                    "tokens": 0,
-                }
-            self._render_result_output()
-
-    def _format_header(self, truncate: bool = True) -> Text:
-        colors = config.ui.colors
-        result = Text()
-
-        stats = self._task_finished or self._task_stats or {}
-        stop_label = stats.get("stop_label")
-        if self._success is None:
-            icon = task_ui.GLYPHS["tool_call"]
-            icon_style = colors.running
-            name_style = Style(color=colors.fg, bold=True)
-        elif self._success is False or stop_label == "error":
-            icon = task_ui.GLYPHS["failure"]
-            icon_style = colors.failed
-            name_style = Style(color=colors.failed, bold=True)
-        elif stop_label in ("interrupted", "cancelled"):
-            icon = task_ui.GLYPHS["stopped"]
-            icon_style = Style(color=colors.dim)
-            name_style = Style(color=colors.dim, bold=True)
-        else:
-            icon = task_ui.GLYPHS["success"]
-            icon_style = Style(color=colors.success)
-            name_style = Style(color=colors.fg, bold=True)
-
-        subagent_name = stats.get("subagent") or self._name or "subagent"
-        desc = self._call_msg or ""
-
-        result.append(f"{icon} ", style=icon_style)
-        result.append(subagent_name, style=name_style)
-        if desc:
-            result.append("  ")
-            result.append(desc, style=Style(color=colors.dim))
-
-        finished = self._task_finished or {}
-        if self._subagent_ended and finished:
-            metrics: list[str] = []
-            elapsed_ms = self._current_elapsed_ms()
-            if elapsed_ms is not None:
-                metrics.append(task_ui.format_ms(elapsed_ms))
-            tokens = finished.get("tokens")
-            if tokens:
-                metrics.append(task_ui.format_tokens(tokens))
-            if metrics:
-                result.append("  " + " · ".join(metrics), style=Style(color=colors.dim))
-
-        return result
-
-    def set_task_progress(self, stats: dict) -> None:
-        """Fold a progress snapshot from :meth:`ChatLog.apply_task_progress`."""
-        if self._task_started is None:
-            self._task_started = time.monotonic()
-        if stats.get("ended"):
-            self._subagent_ended = True
-            elapsed = stats.get("elapsed_ms")
-            self._task_elapsed_ms = (
-                elapsed if elapsed is not None else (time.monotonic() - self._task_started) * 1000
-            )
-            self._task_finished = dict(stats)
-        else:
-            self._task_stats = dict(stats)
-        self._render_result_output()
-        # Update header in case subagent name resolved
-        with contextlib.suppress(Exception):
-            self.query_one("#tool-header", Label).update(self._format_header())
-
-    def set_result(
-        self,
-        ui_summary: str | None,
-        ui_details: str | None,
-        success: bool,
-        markup: bool = True,
-        ui_details_full: str | None = None,
-        images: list | None = None,
-    ) -> None:
-        if (
-            self._subagent_ended
-            and self._task_started is not None
-            and self._task_elapsed_ms is None
-        ):
-            self._task_elapsed_ms = (time.monotonic() - self._task_started) * 1000
-        if self._subagent_ended and self._task_finished is None:
-            self._task_finished = dict(self._task_stats or {})
-            self._task_finished["ended"] = True
-            if not success and ui_summary:
-                self._task_finished["error"] = ui_summary
-        super().set_result(
-            ui_summary=None,
-            ui_details=ui_details,
-            success=success,
-            markup=markup,
-            ui_details_full=ui_details_full,
-            images=images,
-        )
-
-    def _current_elapsed_ms(self) -> float | None:
-        if self._task_elapsed_ms is not None:
-            return self._task_elapsed_ms
-        if self._task_started is not None:
-            return (time.monotonic() - self._task_started) * 1000
-        return None
-
-    def _show_body(self, rendered: Text, *, finished: bool) -> None:
-        output = self.query_one("#tool-output", Label)
-        if finished:
-            self.remove_class("-compact")
-            self.add_class("-with-details")
-        else:
-            self.add_class("-compact")
-            self.remove_class("-with-details")
-        output.remove_class("-hidden")
-        output.remove_class("-details")
-        output.update(rendered)
-
-    def _render_result_output(self) -> None:
-        try:
-            self.query_one("#tool-output", Label)
-        except Exception:
-            return
-
-        if self._task_finished is not None and not self._awaiting_approval:
-            result_text = self._ui_details or self._ui_details_full or ""
-            rendered = task_ui.render_finished(
-                self._task_finished,
-                self._success,
-                self._task_elapsed_ms,
-                result_text=result_text,
-                expanded=self._expanded,
-            )
-            self._show_body(rendered, finished=True)
-            return
-
-        # A background dispatch already returned its tool result (the
-        # "Running in background (ID: …)" receipt) while the sub-agent is
-        # still going. Show that receipt, not a frozen 0-turn summary.
-        if self._success is not None and not self._awaiting_approval:
-            super()._render_result_output()
-            return
-
-        if self._task_stats is not None and not self._awaiting_approval:
-            self._show_body(task_ui.render_receipt(self._task_stats), finished=False)
-            return
-
-        super()._render_result_output()
 
 
 # ---------------------------------------------------------------------------

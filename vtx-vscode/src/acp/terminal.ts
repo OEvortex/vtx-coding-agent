@@ -406,7 +406,7 @@ export class TerminalManager {
 
   // Signal one terminal's whole process tree. The commands run here are children
   // of the extension host, so anything left alive when the host exits would be
-  // orphaned (the agent reaper only looks for `vtx acp`), which is why every
+  // orphaned (the agent reaper only looks for `ctx acp`), which is why every
   // shutdown path has to reach them.
   private signal(term: Term | undefined, sig: "SIGTERM" | "SIGKILL"): void {
     if (!term || term.exitStatus) {

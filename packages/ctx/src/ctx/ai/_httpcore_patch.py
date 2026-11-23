@@ -53,11 +53,11 @@ def _patch_safe_async_iterate(utils_mod: Any) -> None:
     from inspect import isasyncgen
 
     @asynccontextmanager
-    async def patched_safe_async_iterate(iterable_or_iterator):  # type: ignore[no-untyped-def]
+    async def patched_safe_async_iterate(iterable_or_iterator):
         iterator = (
             iterable_or_iterator
             if hasattr(iterable_or_iterator, "__anext__")
-            else iterable_or_iterator.__aiter__()  # type: ignore[union-attr]
+            else iterable_or_iterator.__aiter__()
         )
         try:
             yield iterator
@@ -73,7 +73,7 @@ def _patch_safe_async_iterate(utils_mod: Any) -> None:
                 except BaseException:
                     pass
 
-    patched_safe_async_iterate._ctx_patched = True  # ty: ignore
+    patched_safe_async_iterate._ctx_patched = True
     utils_mod.safe_async_iterate = patched_safe_async_iterate
 
 
@@ -92,7 +92,7 @@ def _patch_http11(http11_mod: Any, pkg: str) -> None:
 
     if uses_safe:
         # httpcore2 variant that uses safe_async_iterate
-        async def patched_aiter(self) -> AsyncGenerator[bytes, None]:  # type: ignore[no-untyped-def]
+        async def patched_aiter(self) -> AsyncGenerator[bytes, None]:
             # Resolve at call time so we pick up the patched safe_async_iterate.
             try:
                 utils_mod = importlib.import_module(f"{pkg}._utils")
@@ -113,22 +113,22 @@ def _patch_http11(http11_mod: Any, pkg: str) -> None:
                 if _Trace is not None and safe_async_iterate is not None:
                     async with _Trace("receive_response_body", _logger, self._request, kwargs):
                         async with safe_async_iterate(
-                            self._connection._receive_response_body(**kwargs)  # type: ignore[union-attr]
+                            self._connection._receive_response_body(**kwargs)
                         ) as iterator:
                             async for chunk in iterator:
                                 yield chunk
                 elif safe_async_iterate is not None:
                     async with safe_async_iterate(
-                        self._connection._receive_response_body(**kwargs)  # type: ignore[union-attr]
+                        self._connection._receive_response_body(**kwargs)
                     ) as iterator:
                         async for chunk in iterator:
                             yield chunk
                 elif _Trace is not None:
                     async with _Trace("receive_response_body", _logger, self._request, kwargs):
-                        async for chunk in self._connection._receive_response_body(**kwargs):  # type: ignore[union-attr]
+                        async for chunk in self._connection._receive_response_body(**kwargs):
                             yield chunk
                 else:
-                    async for chunk in self._connection._receive_response_body(**kwargs):  # type: ignore[union-attr]
+                    async for chunk in self._connection._receive_response_body(**kwargs):
                         yield chunk
             except GeneratorExit:
                 with _asc(), contextlib.suppress(BaseException):
@@ -141,7 +141,7 @@ def _patch_http11(http11_mod: Any, pkg: str) -> None:
 
     else:
         # httpcore 1.0.9 variant – direct async for
-        async def patched_aiter(self) -> AsyncGenerator[bytes, None]:  # type: ignore[no-untyped-def]
+        async def patched_aiter(self) -> AsyncGenerator[bytes, None]:
             try:
                 asc_mod = importlib.import_module(f"{pkg}._synchronization")
                 _asc = asc_mod.AsyncShieldCancellation
@@ -154,10 +154,10 @@ def _patch_http11(http11_mod: Any, pkg: str) -> None:
             try:
                 if _Trace is not None:
                     async with _Trace("receive_response_body", _logger, self._request, kwargs):
-                        async for chunk in self._connection._receive_response_body(**kwargs):  # type: ignore[union-attr]
+                        async for chunk in self._connection._receive_response_body(**kwargs):
                             yield chunk
                 else:
-                    async for chunk in self._connection._receive_response_body(**kwargs):  # type: ignore[union-attr]
+                    async for chunk in self._connection._receive_response_body(**kwargs):
                         yield chunk
             except GeneratorExit:
                 with _asc(), contextlib.suppress(BaseException):
@@ -168,8 +168,8 @@ def _patch_http11(http11_mod: Any, pkg: str) -> None:
                     await self.aclose()
                 raise exc
 
-    patched_aiter._ctx_patched = True  # ty: ignore[invalid-assignment]
-    cls.__aiter__ = patched_aiter  # type: ignore[method-assign]
+    patched_aiter._ctx_patched = True
+    cls.__aiter__ = patched_aiter
     cls._ctx_orig_aiter = orig_aiter
 
 
@@ -187,18 +187,18 @@ def _patch_pool(pool_mod: Any, pkg: str) -> None:
 
     if uses_safe:
 
-        async def patched_pool_aiter(self) -> AsyncGenerator[bytes, None]:  # type: ignore[no-untyped-def]
+        async def patched_pool_aiter(self) -> AsyncGenerator[bytes, None]:
             try:
                 utils_mod = importlib.import_module(f"{pkg}._utils")
                 safe_async_iterate = getattr(utils_mod, "safe_async_iterate", None)
             except ImportError:
                 safe_async_iterate = None
             if safe_async_iterate is None:
-                async for chunk in orig(self):  # type: ignore[misc]
+                async for chunk in orig(self):
                     yield chunk
                 return
             try:
-                async with safe_async_iterate(self._stream) as iterator:  # type: ignore[attr-defined]
+                async with safe_async_iterate(self._stream) as iterator:
                     async for chunk in iterator:
                         yield chunk
             except GeneratorExit:
@@ -208,7 +208,7 @@ def _patch_pool(pool_mod: Any, pkg: str) -> None:
 
     else:
 
-        async def patched_pool_aiter(self) -> AsyncGenerator[bytes, None]:  # type: ignore[no-untyped-def]
+        async def patched_pool_aiter(self) -> AsyncGenerator[bytes, None]:
             try:
                 asc_mod = importlib.import_module(f"{pkg}._synchronization")
                 _asc = asc_mod.AsyncShieldCancellation
@@ -216,7 +216,7 @@ def _patch_pool(pool_mod: Any, pkg: str) -> None:
                 from contextlib import nullcontext as _asc
 
             try:
-                async for part in self._stream:  # type: ignore[attr-defined]
+                async for part in self._stream:
                     yield part
             except GeneratorExit:
                 with _asc(), contextlib.suppress(BaseException):
@@ -227,8 +227,8 @@ def _patch_pool(pool_mod: Any, pkg: str) -> None:
                     await self.aclose()
                 raise exc
 
-    patched_pool_aiter._ctx_patched = True  # ty: ignore[invalid-assignment]
-    cls.__aiter__ = patched_pool_aiter  # type: ignore[method-assign]
+    patched_pool_aiter._ctx_patched = True
+    cls.__aiter__ = patched_pool_aiter
     cls._ctx_orig_aiter = orig
 
 

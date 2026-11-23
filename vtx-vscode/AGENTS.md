@@ -19,7 +19,7 @@ It is a personal, open source project published on the VS Code Marketplace under
 - **`src/`** is the extension host (TypeScript, runs in Node inside VS Code).
   - `extension.ts` activates the extension, wires up commands, and shuts every
     agent down cleanly on the way out.
-  - `acp/` speaks the Agent Client Protocol to a `vtx acp` process: the
+  - `acp/` speaks the Agent Client Protocol to a `ctx acp` process: the
     connection, the client, terminal handling, the throwaway agent the
     settings panel asks questions of, and the shared types.
   - `chat/` holds the `ChatManager` (one controller per chat surface: sidebar,
@@ -27,14 +27,14 @@ It is a personal, open source project published on the VS Code Marketplace under
     transcript log each chat is replayed from.
   - `session/` stores sessions per workspace and lists them.
   - `diff/` tracks the working set of edits and exposes keep and undo.
-  - `settings/` is the Vtx customisations editor and the config read and write
-    services that back it. It edits Vtx's real files: `~/.vtx/config.yml`
-    through `vtx config list`/`set`, `~/.vtx/mcp.json` and
-    `<project>/.vtx/mcp.json`, `~/.vtx/hooks.yml` and
-    `<project>/.vtx/hooks.yml`, the skill directories (`.agents/skills`,
-    `~/.agents/skills`, `~/.vtx/skills`), and plugin rows from
-    `vtx --dump-config` toggled with `vtx plugin enable|disable`.
-  - `cli/` locates the `vtx` binary, lists models, reaps orphaned agents, and
+  - `settings/` is the Ctx customisations editor and the config read and write
+    services that back it. It edits Ctx's real files: `~/.ctx/config.yml`
+    through `ctx config list`/`set`, `~/.ctx/mcp.json` and
+    `<project>/.ctx/mcp.json`, `~/.ctx/hooks.yml` and
+    `<project>/.ctx/hooks.yml`, the skill directories (`.agents/skills`,
+    `~/.agents/skills`, `~/.ctx/skills`), and plugin rows from
+    `ctx --dump-config` toggled with `ctx plugin enable|disable`.
+  - `cli/` locates the `ctx` binary, lists models, reaps orphaned agents, and
     manages session locks.
   - `ui/` is the status bar.
 - **`webview/`** is the browser side that runs inside the chat panel: `main.js`,
@@ -118,7 +118,7 @@ arrive in every session, so handle them or the pickers and tab titles go stale.
 extension was built against before Vtx: revert and fork, subagent control,
 session share, document lifecycle, diagnostics, and the matching webview UI.
 Every path is gated on an `agentCapabilities._meta` key Vtx never sends, so none
-of it runs against `vtx acp`. It is dead code kept only so the diff stays
+of it runs against `ctx acp`. It is dead code kept only so the diff stays
 reviewable; remove it in one dedicated pass rather than letting it grow.
 
 ## Testing the host

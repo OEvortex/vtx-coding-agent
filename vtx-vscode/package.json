@@ -1,8 +1,8 @@
 {
   "name": "vtx-vscode",
   "displayName": "Vtx for VS Code",
-  "description": "A native chat panel for the Vtx CLI, powered by the Agent Client Protocol. Streaming replies, per workspace sessions, and trackable diffs.",
-  "version": "0.13.4",
+  "description": "A native chat panel for the Ctx CLI, powered by the Agent Client Protocol. Streaming replies, per workspace sessions, and trackable diffs.",
+  "version": "0.13.5",
   "publisher": "oevortex",
   "author": "Vortex",
   "license": "AGPL-3.0-or-later",
@@ -32,6 +32,7 @@
   ],
   "keywords": [
     "vtx",
+    "ctx",
     "vtx-cli",
     "acp",
     "agent",
@@ -90,7 +91,7 @@
       },
       {
         "command": "vtx.newSessionTerminal",
-        "title": "New Vtx CLI Session (Terminal)",
+        "title": "New Ctx CLI Session (Terminal)",
         "category": "Vtx",
         "icon": "$(terminal)"
       },
@@ -396,13 +397,13 @@
       "properties": {
         "vtx.cliPath": {
           "type": "string",
-          "default": "vtx",
-          "description": "Path to the Vtx CLI executable. Use an absolute path if it is not on your PATH."
+          "default": "ctx",
+          "description": "Path to the Ctx CLI executable. Use an absolute path if it is not on your PATH."
         },
         "vtx.defaultModel": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Model for chats started in this extension (e.g. `auto`, `sonnet`, `opus`, `gpt`). The model picker in the chat composer writes this setting, and it takes precedence over the Vtx CLI's own default. Leave it empty to follow the CLI's `agent.model` instead, which you can set in **Vtx: Open Settings**."
+          "markdownDescription": "Model for chats started in this extension (e.g. `auto`, `sonnet`, `opus`, `gpt`). The model picker in the chat composer writes this setting, and it takes precedence over the Ctx CLI's own default. Leave it empty to follow the CLI's `agent.model` instead, which you can set in **Vtx: Open Settings**."
         },
         "vtx.defaultThoughtLevel": {
           "type": "string",
@@ -417,7 +418,7 @@
             "max"
           ],
           "enumDescriptions": [
-            "Follow the model or Vtx CLI default",
+            "Follow the model or Ctx CLI default",
             "No extended thinking",
             "Minimal thinking effort",
             "Low thinking effort",
@@ -427,7 +428,7 @@
             "Maximum thinking effort"
           ],
           "default": "",
-          "markdownDescription": "Thinking effort for chats started in this extension. The thinking picker writes this setting when the Vtx CLI exposes a `thinking` session option."
+          "markdownDescription": "Thinking effort for chats started in this extension. The thinking picker writes this setting when the Ctx CLI exposes a `thinking` session option."
         },
         "vtx.defaultMode": {
           "type": "string",
@@ -443,7 +444,7 @@
         "vtx.sandbox": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Run the agent's commands in the Vtx CLI's process sandbox (research preview), so they can only write inside the workspace and the paths you have granted. Applies to chats started after you change it. Needs `vtx sandbox setup` to have been run once on this machine."
+          "markdownDescription": "Run the agent's commands in the Ctx CLI's process sandbox (research preview), so they can only write inside the workspace and the paths you have granted. Applies to chats started after you change it. Needs `vtx sandbox setup` to have been run once on this machine."
         },
         "vtx.editorContext.diagnostics": {
           "type": "boolean",
@@ -523,12 +524,12 @@
             "Disable editing sent messages"
           ],
           "default": "inline",
-          "description": "How to edit a previously sent request. Editing rewinds the conversation to that point and re-runs (requires the Vtx CLI revert capability)."
+          "description": "How to edit a previously sent request. Editing rewinds the conversation to that point and re-runs (requires the Ctx CLI revert capability)."
         },
         "vtx.checkpoints.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show a Restore Checkpoint action on each turn to rewind the workspace and conversation to that point (requires the Vtx CLI revert capability)."
+          "description": "Show a Restore Checkpoint action on each turn to rewind the workspace and conversation to that point (requires the Ctx CLI revert capability)."
         },
         "vtx.checkpoints.showFileChanges": {
           "type": "boolean",
@@ -605,7 +606,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Extra arguments passed to `vtx acp` when starting a session."
+          "description": "Extra arguments passed to `ctx acp` when starting a session."
         },
         "vtx.env": {
           "type": "object",
@@ -613,7 +614,7 @@
             "type": "string"
           },
           "default": {},
-          "description": "Extra environment variables for the Vtx CLI process (e.g. proxy settings)."
+          "description": "Extra environment variables for the Ctx CLI process (e.g. proxy settings)."
         }
       }
     }

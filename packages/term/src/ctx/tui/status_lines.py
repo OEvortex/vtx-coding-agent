@@ -173,10 +173,13 @@ def subagents_own_the_status_line() -> bool:
     ``esc to interrupt`` hint, which are facts, and drops the quip, which is
     not. This is the same reasoning that defers an idle recap during a
     fan-out: the user is not watching an idle screen.
-    """
-    from ctx.tui.subagents import REGISTRY
 
-    return REGISTRY.has_live()
+    The registry itself lives in the product package; this module only asks
+    through the probe it registers on import.
+    """
+    if _live_activity_probe is None:
+        return False
+    return bool(_live_activity_probe())
 
 
 def _pick_from_pool(pool: tuple[str, ...], exclude: str | None = None) -> str:

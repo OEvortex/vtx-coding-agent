@@ -70,7 +70,7 @@ let cacheGen = 0;
 const familyByValue = new Map<string, ModelFamily>();
 
 // Lists the account's models as families (with effort variants) via
-// `vtx models list --format json`. Needs no ACP session, and the uids match
+// `ctx models list --format json`. Needs no ACP session, and the uids match
 // what the ACP `model` config option accepts. Cached in-memory for a few minutes.
 export function listModelFamilies(cliPath: string, env?: NodeJS.ProcessEnv): Promise<ModelFamily[]> {
   if (cache && Date.now() - cache.at < 300000) {
@@ -145,7 +145,7 @@ function setCache(result: ModelsResult): void {
   }
 }
 
-// `vtx models list` reports raw ids ("anthropic/claude-sonnet-latest",
+// `ctx models list` reports raw ids ("anthropic/claude-sonnet-latest",
 // "openai:gpt-4o"). A picker built from those reads like a config file rather
 // than a model list, so turn them into the kind of label Copilot shows. The raw
 // id stays on `id`/`value` for the wire; only the display name is changed.

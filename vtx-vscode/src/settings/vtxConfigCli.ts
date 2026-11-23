@@ -1,8 +1,8 @@
 import { execFile } from "child_process";
 import { cliCommand } from "../cli/locate";
 
-// Thin wrappers around the Vtx CLI surfaces used by the settings panel.
-// `config list`/`set` own ~/.vtx/config.yml, `--dump-config` lists plugin rows,
+// Thin wrappers around the Ctx CLI surfaces used by the settings panel.
+// `config list`/`set` own ~/.ctx/config.yml, `--dump-config` lists plugin rows,
 // and `plugin enable|disable` rewrites the profile patch layer.
 
 export interface CliContext {
@@ -35,13 +35,13 @@ export interface NamedItem {
   raw?: unknown;
 }
 
-// Vtx has no `skills list` verb: skills are discovered from .agents/skills,
-// ~/.agents/skills and ~/.vtx/skills (src/vtx/agent/context/skills.py), which
+// Ctx has no `skills list` verb: skills are discovered from .agents/skills,
+// ~/.agents/skills and ~/.ctx/skills (src/ctx/agent/context/skills.py), which
 // the settings panel scans directly.
 
-// `vtx --dump-config` prints the composed plugin row list for the selected
+// `ctx --dump-config` prints the composed plugin row list for the selected
 // profile: `<name>\t[enabled|disabled]\t<module:PLUGIN>`. That is the surface
-// `vtx plugin enable|disable` edits, so it is what the panel lists.
+// `ctx plugin enable|disable` edits, so it is what the panel lists.
 export async function listPlugins(ctx: CliContext): Promise<NamedItem[]> {
   const r = await run(ctx, ["--dump-config"]);
   if (!r.ok || !r.out.trim()) return [];
@@ -53,8 +53,8 @@ export async function listPlugins(ctx: CliContext): Promise<NamedItem[]> {
   return items;
 }
 
-// `vtx config list` prints the persisted ~/.vtx/config.yml as JSON, and
-// `vtx config get <key>` / `set <key> <value>` read and write one dotted key.
+// `ctx config list` prints the persisted ~/.ctx/config.yml as JSON, and
+// `ctx config get <key>` / `set <key> <value>` read and write one dotted key.
 // This is the only correct way for the panel to touch user settings: the file
 // is YAML, which the JSONC editor cannot parse.
 export async function configList(ctx: CliContext): Promise<Record<string, unknown> | undefined> {

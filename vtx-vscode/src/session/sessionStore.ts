@@ -24,7 +24,7 @@ export class SessionStore {
   constructor(private readonly state: vscode.Memento) {}
 
   // Sessions whose turn was still in flight when the window reloaded or the
-  // extension shut down. A `vtx acp` agent cannot outlive its extension host
+  // extension shut down. A `ctx acp` agent cannot outlive its extension host
   // (it runs its commands and file writes through us), so the turn dies with it;
   // recording that lets the next window say so instead of silently losing it.
   interrupted(): string[] {
@@ -79,7 +79,7 @@ export class SessionStore {
   }
 
   // Names we set ourselves (a rename), held until the CLI's own listing reports
-  // the same name back. A `vtx list` already in flight when the rename landed
+  // the same name back. A `ctx list` already in flight when the rename landed
   // still carries the old name, and without this it would quietly undo it.
   pinnedTitles(): Record<string, string> {
     return this.state.get<Record<string, string>>(SessionStore.PINNED_KEY, {});
@@ -93,7 +93,7 @@ export class SessionStore {
     void this.state.update(SessionStore.PINNED_KEY, { ...this.pinnedTitles(), [id]: title });
   }
 
-  // Remember titles so names show instantly on reopen, before `vtx list`
+  // Remember titles so names show instantly on reopen, before `ctx list`
   // has returned (or for sessions no longer in a listed directory).
   cacheTitles(map: Record<string, string>): void {
     const current = this.titles();
@@ -174,7 +174,7 @@ export class SessionStore {
     return this.state.get<string[]>(SessionStore.IDS_KEY, []);
   }
 
-  // The exact directory each tracked session was created in. `vtx list` is
+  // The exact directory each tracked session was created in. `ctx list` is
   // exact-match on cwd, so we query these to reconcile which sessions still
   // exist, and the webview groups by them.
   cwds(): Record<string, string> {

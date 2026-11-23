@@ -446,7 +446,7 @@ class Agent:
                     task_id=record.task_id,
                     description=record.description,
                     subagent_type=record.subagent_type,
-                    status=record.status,  # type: ignore[arg-type]
+                    status=record.status,
                     summary=summary,
                     turns=record.turns,
                     total_tokens=record.total_tokens,

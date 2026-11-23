@@ -17,5 +17,5 @@ class RunItemBase[T]:
     accessors.
     """
 
-    agent: Any  # type: ignore[type-arg]
+    agent: Any
     raw_item: T

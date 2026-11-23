@@ -7,7 +7,7 @@
 // screenshots taken from it are safe to publish.
 
 const HOME = "/Users/dev";
-const USER_DIR = HOME + "/.vtx";
+const USER_DIR = HOME + "/.ctx";
 
 // Must mirror ROW_DEFAULTS in src/settings/settingsPanel.ts, since the host
 // always sends an effective value for every row.
@@ -115,7 +115,7 @@ function buildData(opts) {
         { name: "AGENTS", path: USER_DIR + "/AGENTS.md", provider: "agents_standard", providerLabel: "AGENTS.md", trigger: "always_on", scope: "global" },
         { name: "AGENTS", path: folders[0].path + "/AGENTS.md", provider: "agents_standard", providerLabel: "AGENTS.md", trigger: "always_on", scope: "workspace" },
         { name: "global_rules", path: HOME + "/.agents/rules/global.md", provider: "agents_standard", providerLabel: ".agents", trigger: "always_on", scope: "global" },
-        { name: "AGENTS", path: HOME + "/.vtx/skills/review/AGENTS.md", provider: "agents_standard", providerLabel: "AGENTS.md", trigger: "always_on", scope: "global" }
+        { name: "AGENTS", path: HOME + "/.ctx/skills/review/AGENTS.md", provider: "agents_standard", providerLabel: "AGENTS.md", trigger: "always_on", scope: "global" }
       ]
     },
     skills: {
@@ -136,7 +136,7 @@ function buildData(opts) {
               { name: "time", scope: "user", transport: "stdio", file: USER_DIR + "/mcp.json", detail: "stdio · uvx", disabled: false, loggedIn: false, oauthCapable: false, envKeys: [], headerKeys: [], source: "vtx" },
               { name: "issue-tracker", scope: "user", transport: "http", file: USER_DIR + "/mcp.json", detail: "https://tracker.example.com/mcp", disabled: true, loggedIn: false, oauthCapable: true, envKeys: ["TRACKER_TOKEN"], headerKeys: [], source: "vtx" }
             ]
-          : [{ name: "postgres", scope: "project", transport: "stdio", file: f.path + "/.vtx/mcp.json", detail: "stdio · npx", disabled: false, loggedIn: false, oauthCapable: false, envKeys: ["DATABASE_URL"], headerKeys: [], source: "vtx" }])
+          : [{ name: "postgres", scope: "project", transport: "stdio", file: f.path + "/.ctx/mcp.json", detail: "stdio · npx", disabled: false, loggedIn: false, oauthCapable: false, envKeys: ["DATABASE_URL"], headerKeys: [], source: "vtx" }])
       }))
     },
     hooks: {
@@ -144,8 +144,8 @@ function buildData(opts) {
         entries: o.empty ? [] : (scope === "user"
           ? [{ event: "PreToolUse", group: "pre_tool_use", index: 0, matcher: "exec", type: "command", command: "~/bin/audit-exec.sh", timeout: 5, source: USER_DIR + "/hooks.yml" }]
           : [
-              { event: "PostToolUse", group: "post_tool_use", index: 0, matcher: "edit", type: "command", command: "npm run lint -- --fix", source: f.path + "/.vtx/hooks.yml" },
-              { event: "SessionStart", group: "session_start", index: 0, matcher: "", type: "prompt", prompt: "Check the open pull requests before starting.", source: f.path + "/.vtx/hooks.yml" }
+              { event: "PostToolUse", group: "post_tool_use", index: 0, matcher: "edit", type: "command", command: "npm run lint -- --fix", source: f.path + "/.ctx/hooks.yml" },
+              { event: "SessionStart", group: "session_start", index: 0, matcher: "", type: "prompt", prompt: "Check the open pull requests before starting.", source: f.path + "/.ctx/hooks.yml" }
             ])
       })),
       loaded: o.empty ? [] : [

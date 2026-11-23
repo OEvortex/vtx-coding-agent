@@ -26,11 +26,11 @@ import { checkHealth, loginShellEnv } from "../cli/locate";
 import { cachedProviders, listModelFamilies } from "../cli/models";
 
 // This extension's id, used to filter VS Code's Settings editor when linking out
-// to the settings that control the extension rather than the Vtx CLI.
+// to the settings that control the extension rather than the Ctx CLI.
 const EXTENSION_ID = "OEvortex.vtx-vscode";
 
 // The Vtx config keys the settings surface renders, with the default Vtx
-// applies when the key is absent from ~/.vtx/config.yml (src/vtx/core/
+// applies when the key is absent from ~/.ctx/config.yml (src/ctx/core/
 // defaults/config.yml). This one table drives the controls, the "set here"
 // markers, and Reset to defaults, so those can never disagree about what a
 // default is. There is no project config.yml in Vtx, so these are global only.
@@ -104,7 +104,7 @@ const RELOADS_AGENT = new Set([
 // The Vtx customizations / settings surface: a webview editor panel with a
 // section sidebar (General, Instructions, Skills, Plugins, MCP, Hooks,
 // Permissions, Advanced) and a scope picker (Global, plus each workspace folder),
-// exposing the full Vtx CLI config surface. Settings that control this
+// exposing the full Ctx CLI config surface. Settings that control this
 // extension live in VS Code settings and are only linked to from here.
 export class SettingsPanel {
   private static current?: SettingsPanel;
@@ -113,7 +113,7 @@ export class SettingsPanel {
   private watchers: fs.FSWatcher[] = [];
   private watchedDirs = "";
   private watchTimer?: NodeJS.Timeout;
-  private cli: CliContext = { cliPath: "vtx" };
+  private cli: CliContext = { cliPath: "ctx" };
   private cliResolved = false;
   // A resolve in flight, so two refreshes at once do not both spawn a health check and a
   // login shell, and a counter so one that read the old setting cannot finish last and
@@ -249,7 +249,7 @@ export class SettingsPanel {
     if (!this.cliPending) {
       const generation = this.cliGeneration;
       this.cliPending = (async () => {
-        const setting = vscode.workspace.getConfiguration("vtx").get<string>("cliPath", "vtx") || "vtx";
+        const setting = vscode.workspace.getConfiguration("vtx").get<string>("cliPath", "ctx") || "ctx";
         const [health, env] = await Promise.all([checkHealth(setting), loginShellEnv()]);
         if (generation !== this.cliGeneration) {
           // The setting changed while this was running, so it answers for a path the user
@@ -257,7 +257,7 @@ export class SettingsPanel {
           return;
         }
         const extra = vscode.workspace.getConfiguration("vtx").get<Record<string, string>>("env", {}) || {};
-        this.cli = { cliPath: health.path || "vtx", env: { ...env, ...extra }, cwd: this.root() };
+        this.cli = { cliPath: health.path || "ctx", env: { ...env, ...extra }, cwd: this.root() };
         this.cliResolved = true;
       })();
       const mine = this.cliPending;
@@ -283,7 +283,7 @@ export class SettingsPanel {
   // Watch the directories holding the config files this panel edits, so an edit
   // made in a text editor or terminal shows up without pressing Refresh. Called
   // on every refresh, and re-attaches only when the set of directories that
-  // exist has changed (a .vtx folder may be created while the panel is open).
+  // exist has changed (a .ctx folder may be created while the panel is open).
   private startWatching(): void {
     // The OAuth token directory is watched too: a login happens in a terminal and
     // reports back through nothing, so without this a server the user had just
@@ -292,7 +292,7 @@ export class SettingsPanel {
       userConfigDir(),
       path.dirname(userSkillsDir()),
       path.dirname(vtxSkillsDir()),
-      ...this.folders().flatMap((f) => [path.join(f.path, ".vtx"), path.dirname(projectSkillsDir(f.path))])
+      ...this.folders().flatMap((f) => [path.join(f.path, ".ctx"), path.dirname(projectSkillsDir(f.path))])
     ]
       .filter((d) => {
         try { return fs.existsSync(d); } catch { return false; }
@@ -445,7 +445,7 @@ export class SettingsPanel {
   }
 
   // The value a key would have if the user config did not set it: Vtx's
-  // documented default from src/vtx/core/defaults/config.yml.
+  // documented default from src/ctx/core/defaults/config.yml.
   private fallbackValue(_scope: ConfigScope, _root: string | undefined, key: string): unknown {
     return ROW_DEFAULTS[key];
   }
@@ -460,15 +460,15 @@ export class SettingsPanel {
       next = undefined;
     }
     if (scope === "user") {
-      // `vtx config set` treats JSON null as a delete, which is how a reset
+      // `ctx config set` treats JSON null as a delete, which is how a reset
       // reaches the YAML file without the panel ever writing it directly.
       const r = await configSet(this.cli, key, next === undefined ? null : next);
       if (!r.ok) {
         void vscode.window.showErrorMessage(`Could not set ${key}: ${r.err || "unknown error"}`);
       }
     } else {
-      // Vtx has no project config.yml; project scope is only for files such as
-      // .vtx/mcp.json and .vtx/hooks.yml, which are edited by their own verbs.
+      // Ctx has no project config.yml; project scope is only for files such as
+      // .ctx/mcp.json and .ctx/hooks.yml, which are edited by their own verbs.
       void vscode.window.showErrorMessage(`${key} is global only in Vtx.`);
     }
     await this.sendData();
@@ -482,7 +482,7 @@ export class SettingsPanel {
   }
 
   // Clear the extension's model override so chats started here fall back to the
-  // Vtx CLI's own `agent.model`. Both targets are cleared, since the chat
+  // Ctx CLI's own `agent.model`. Both targets are cleared, since the chat
   // panel's model picker writes the Workspace one.
   private async clearExtensionModel(): Promise<void> {
     const cfg = vscode.workspace.getConfiguration("vtx");
@@ -727,7 +727,7 @@ export class SettingsPanel {
   // and left the cache agreeing with it.
   private dataGeneration = 0;
   private painted = false;
-  // The persisted ~/.vtx/config.yml as `vtx config list` reports it. Vtx has
+  // The persisted ~/.ctx/config.yml as `ctx config list` reports it. Ctx has
   // no project config.yml, so this is the only source for value rows.
   private userConfig: Record<string, unknown> = {};
 
@@ -780,7 +780,7 @@ export class SettingsPanel {
     const families = fromCli?.families || [];
     const loaded = fromCli?.loaded;
     const groups = this.scopeGroups();
-    // Vtx has no project config.yml, so value rows are global only. Project
+    // Ctx has no project config.yml, so value rows are global only. Project
     // scope remains for the file-backed sections (instructions, skills, MCP,
     // hooks), which have real per-folder files.
     const userSkills = this.scanSkillDir(userSkillsDir()).concat(this.scanSkillDir(vtxSkillsDir()));
@@ -852,7 +852,7 @@ export class SettingsPanel {
     return groups;
   }
 
-  // The effective config is the persisted ~/.vtx/config.yml from `vtx config
+  // The effective config is the persisted ~/.ctx/config.yml from `ctx config
   // list`, with Vtx's defaults filled in for display. There is no project
   // config.yml to merge.
   private effectiveData(): Record<string, unknown> {
@@ -890,7 +890,7 @@ export class SettingsPanel {
   }
 
   // Project skills for a folder, scanned from its .agents/skills directory
-  // (src/vtx/agent/context/skills.py discovers <cwd-or-ancestor>/.agents/skills).
+  // (src/ctx/agent/context/skills.py discovers <cwd-or-ancestor>/.agents/skills).
   private scanProjectSkills(folder: string): unknown[] {
     return this.scanSkillDir(projectSkillsDir(folder));
   }
@@ -918,7 +918,7 @@ export class SettingsPanel {
     }
   }
 
-  // Vtx keeps MCP OAuth state in ~/.vtx/mcp-auth.json as { servers: { url: state } }.
+  // Ctx keeps MCP OAuth state in ~/.ctx/mcp-auth.json as { servers: { url: state } }.
   private mcpLoggedIn(): { names: Set<string>; urls: Set<string> } {
     const names = new Set<string>();
     const urls = new Set<string>();
@@ -940,8 +940,8 @@ export class SettingsPanel {
     return { names, urls };
   }
 
-  // MCP servers for one scope: ~/.vtx/mcp.json for Global, or a folder's
-  // .vtx/mcp.json for a project folder.
+  // MCP servers for one scope: ~/.ctx/mcp.json for Global, or a folder's
+  // .ctx/mcp.json for a project folder.
   private mcpServersForScope(scope: ConfigScope, root?: string): unknown[] {
     const out: unknown[] = [];
     const seen = new Set<string>();
@@ -971,8 +971,8 @@ export class SettingsPanel {
     return out;
   }
 
-  // Hooks for one scope: ~/.vtx/hooks.yml for Global, or a folder's
-  // .vtx/hooks.yml for a project folder.
+  // Hooks for one scope: ~/.ctx/hooks.yml for Global, or a folder's
+  // .ctx/hooks.yml for a project folder.
   private hooksForScope(scope: ConfigScope, root?: string): unknown[] {
     const file = this.hooksFileFor(scope, root);
     const data = this.readHooksYaml(file);

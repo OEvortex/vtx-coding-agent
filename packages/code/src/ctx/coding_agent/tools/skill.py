@@ -81,6 +81,15 @@ def _sibling_files(skill_dir: Path, *, exclude: str) -> list[str]:
 class SkillTool(BaseTool):
     name = "skill"
     tool_icon = "⚙"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import SkillToolBlock
+
+            return SkillToolBlock
+        except ImportError:
+            return None
+
     params = SkillParams
     mutating = True  # Can modify skills, though load/list/view are read-only
     prompt_guidelines = ()

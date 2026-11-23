@@ -12,7 +12,7 @@ import { checkHealth, loginShellEnv } from "../cli/locate";
 // of editor/window chat panels (one ChatController each). Shared singletons
 // (SessionStore, ChangeTracker, StatusBar) live here and are passed into each
 // controller. The runtime pool is per controller, so each surface runs its own
-// `vtx acp` sessions independently.
+// `ctx acp` sessions independently.
 export class ChatManager implements vscode.WebviewViewProvider, vscode.WebviewPanelSerializer, SurfaceHost {
   public static readonly viewType = "vtx.chatView";
   public static readonly editorViewType = "vtx.chatEditor";
@@ -97,7 +97,7 @@ export class ChatManager implements vscode.WebviewViewProvider, vscode.WebviewPa
   // terminal. What it does do is keep them all in `sessions.db`, so watching that
   // file is the change feed. Writes land constantly while an agent works, so this
   // is throttled, and it only re-lists while a list is actually on screen: every
-  // listing runs `vtx list`, and nobody is watching an unopened list.
+  // listing runs `ctx list`, and nobody is watching an unopened list.
   private storeWatcher?: fs.FSWatcher;
   private relistTimer?: NodeJS.Timeout;
   private static readonly RELIST_THROTTLE = 3000;
@@ -469,7 +469,7 @@ export class ChatManager implements vscode.WebviewViewProvider, vscode.WebviewPa
     }
   }
 
-  // Restore editor/window chats after a reload. A `vtx acp` agent cannot outlive
+  // Restore editor/window chats after a reload. A `ctx acp` agent cannot outlive
   // the extension host, so the chat is reopened from the CLI rather than resumed:
   // the tab remembers which chat it held (the page records it), so it comes back
   // to the same one instead of an empty tab.
@@ -482,15 +482,15 @@ export class ChatManager implements vscode.WebviewViewProvider, vscode.WebviewPa
     }
   }
 
-  // --- New Vtx CLI session in a terminal ----------------------------------
+  // --- New Ctx CLI session in a terminal ----------------------------------
 
   async newSessionTerminal(): Promise<void> {
-    const setting = vscode.workspace.getConfiguration("vtx").get<string>("cliPath", "vtx") || "vtx";
+    const setting = vscode.workspace.getConfiguration("vtx").get<string>("cliPath", "ctx") || "ctx";
     const [health, env] = await Promise.all([checkHealth(setting), loginShellEnv()]);
-    const bin = health.path || "vtx";
+    const bin = health.path || "ctx";
     const extra = vscode.workspace.getConfiguration("vtx").get<Record<string, string>>("env", {}) || {};
     const term = vscode.window.createTerminal({
-      name: "Vtx CLI",
+      name: "Ctx CLI",
       cwd: this.terminalCwd(),
       env: { ...env, ...extra }
     });

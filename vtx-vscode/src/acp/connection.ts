@@ -1,7 +1,7 @@
 import { ChildProcessWithoutNullStreams } from "child_process";
 
 // A minimal JSON-RPC 2.0 connection over a child process' stdio, using
-// newline-delimited JSON framing (as spoken by `vtx acp`).
+// newline-delimited JSON framing (as spoken by `ctx acp`).
 
 type RpcId = number;
 const MAX_FRAME_CHARS = 8 * 1024 * 1024;

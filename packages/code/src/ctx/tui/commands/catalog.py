@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ctx.agent.context.skills import Skill
 from ctx.core.paths import get_agents_dir
-from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
+from ctx.tui.chat import ChatLog
 from ctx.tui.commands.base import CommandSupport
 
 #: Category title when a skill declares none.

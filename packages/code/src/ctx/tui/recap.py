@@ -20,8 +20,8 @@ from ctx.core.recap import (
     has_meaningful_activity,
 )
 from ctx.protocol.types import TextContent, UserMessage
-from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
-from ctx.tui.status_lines import pick_recap_status_line  # ty: ignore[import-not-found]
+from ctx.tui.chat import ChatLog
+from ctx.tui.status_lines import pick_recap_status_line
 from textual.timer import Timer
 
 if TYPE_CHECKING:
@@ -62,7 +62,7 @@ class RecapMixin:
         was visible to the user and invisible to the model. That reads as
         "the notification never arrived" when the notification worked fine.
         """
-        from ctx.tui.subagents import REGISTRY  # ty: ignore[import-not-found]
+        from ctx.tui.subagents import REGISTRY
 
         return REGISTRY.has_live()
 

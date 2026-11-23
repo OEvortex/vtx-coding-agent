@@ -130,7 +130,7 @@ export class ChangeTracker
   private scm?: vscode.SourceControl;
   private group?: vscode.SourceControlResourceGroup;
 
-  // Where the working set is kept between windows. A `vtx acp` agent cannot
+  // Where the working set is kept between windows. A `ctx acp` agent cannot
   // outlive the extension host, but a change waiting to be reviewed has nothing to
   // do with the agent: forgetting it on a reload lost the diffs and left Keep and
   // Undo with nothing to act on, so the next edit looked like a brand new set.

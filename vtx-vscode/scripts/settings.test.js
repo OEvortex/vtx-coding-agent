@@ -133,7 +133,7 @@ test("hooks remove by hooks.yml group and index", () => {
   h.click("Remove hook");
   assert.deepStrictEqual(h.last("settings:removeHook"), {
     type: "settings:removeHook",
-    source: "/Users/dev/.vtx/hooks.yml",
+    source: "/Users/dev/.ctx/hooks.yml",
     group: "pre_tool_use",
     index: 0,
     event: "PreToolUse",

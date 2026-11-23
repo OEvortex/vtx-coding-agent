@@ -1,5 +1,5 @@
 // Tests for src/settings/configService.ts, the only place the extension writes
-// a Vtx file itself. User settings in ~/.vtx/config.yml are YAML and go through
+// a Vtx file itself. User settings in ~/.ctx/config.yml are YAML and go through
 // `vtx config` (vtxConfigCli), so what is left here is Vtx's JSON surface:
 // mcp.json server edits and the atomic file writer they share.
 //
@@ -31,12 +31,12 @@ const {
 
 const serversIn = (file) => readConfig(file).mcpServers || {};
 
-test("MCP paths are the ones Vtx reads", () => {
+test("MCP paths are the ones Ctx reads", () => {
   assert.strictEqual(path.basename(userMcpConfigPath()), "mcp.json");
-  assert.ok(userMcpConfigPath().endsWith(path.join(".vtx", "mcp.json")), userMcpConfigPath());
-  assert.strictEqual(projectMcpConfigPath("/repo"), path.join("/repo", ".vtx", "mcp.json"));
+  assert.ok(userMcpConfigPath().endsWith(path.join(".ctx", "mcp.json")), userMcpConfigPath());
+  assert.strictEqual(projectMcpConfigPath("/repo"), path.join("/repo", ".ctx", "mcp.json"));
   assert.strictEqual(userHooksConfigPath(), path.join(path.dirname(userMcpConfigPath()), "hooks.yml"));
-  assert.strictEqual(projectHooksConfigPath("/repo"), path.join("/repo", ".vtx", "hooks.yml"));
+  assert.strictEqual(projectHooksConfigPath("/repo"), path.join("/repo", ".ctx", "hooks.yml"));
 });
 
 test("a server can be added, turned off and removed in mcp.json", () => {
@@ -143,7 +143,7 @@ test("writing a config keeps the file it was, link and permissions and all", { s
   // still there, no longer the file being read. A config can also hold MCP
   // secrets in its `env`, so 0600 is a deliberate choice a write must not undo.
   const store = path.join(TMP, "dotfiles");
-  const home = path.join(TMP, "home", ".vtx");
+  const home = path.join(TMP, "home", ".ctx");
   fs.mkdirSync(store, { recursive: true });
   fs.mkdirSync(home, { recursive: true });
   const real = path.join(store, "mcp.json");
@@ -165,7 +165,7 @@ test("a link whose target is not there yet is still followed, not replaced", { s
   // filesystem to resolve the whole path fails for that, which read as "nothing there"
   // and replaced the link with a regular file: the same silent detachment as before.
   const store = path.join(TMP, "dotfiles-pending");
-  const home = path.join(TMP, "home-pending", ".vtx");
+  const home = path.join(TMP, "home-pending", ".ctx");
   fs.mkdirSync(store, { recursive: true });
   fs.mkdirSync(home, { recursive: true });
   const real = path.join(store, "mcp.json");

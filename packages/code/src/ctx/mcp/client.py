@@ -618,13 +618,13 @@ class McpClient:
         items = await self._list_all(
             "tools/list", "tools", ToolListItem, options or McpRequestOptions()
         )
-        return items  # ty: ignore[invalid-explicit-return]
+        return items
 
     async def list_resources(self, options: McpRequestOptions | None = None) -> list[Resource]:
         items = await self._list_all(
             "resources/list", "resources", ResourceListItem, options or McpRequestOptions()
         )
-        return [normalize_resource(item) for item in items]  # ty: ignore[invalid-explicit-return]
+        return [normalize_resource(item) for item in items]
 
     async def list_resources_page(
         self, cursor: str | None = None, options: McpRequestOptions | None = None
@@ -646,7 +646,7 @@ class McpClient:
             ResourceTemplateListItem,
             options or McpRequestOptions(),
         )
-        return [normalize_resource_template(item) for item in items]  # ty: ignore[invalid-explicit-return]
+        return [normalize_resource_template(item) for item in items]
 
     async def list_resource_templates_page(
         self, cursor: str | None = None, options: McpRequestOptions | None = None

@@ -53,7 +53,7 @@ import {
 } from "../cli/models";
 import { lockOwner, removeLock } from "../cli/sessionLocks";
 
-// One live session: its own `vtx acp` process and terminal manager, plus the
+// One live session: its own `ctx acp` process and terminal manager, plus the
 // per-session state that used to be flat on the provider. Several of these can
 // be alive at once (one acp each), which is what lets a session keep running
 // in the background while you look at another.
@@ -149,7 +149,7 @@ export interface Staged {
 }
 
 // A live session handed from one chat surface to another (the side panel to an
-// editor tab, or back). The `vtx acp` process, its terminals and any request it
+// editor tab, or back). The `ctx acp` process, its terminals and any request it
 // is still waiting on all travel together, so the agent never restarts, keeps the
 // CLI's session lock, and an in flight turn is not interrupted.
 export interface RuntimeTransfer {
@@ -322,7 +322,7 @@ function thoughtWireId(options?: ConfigOption[]): string {
   return thoughtOption(options)?.id || "thought_level";
 }
 
-// `vtx models list` exposes per-effort uids the session's `model` option does
+// `ctx models list` exposes per-effort uids the session's `model` option does
 // not accept: a session takes one uid per family, with the effort set through
 // `thought_level`, and only the "high" lead-effort Fusion pairs. A picked uid
 // therefore has to be translated to the uid this session advertises, with the
@@ -394,7 +394,7 @@ export class ChatController implements AcpHost {
   private readonly starting = new Set<string>();
   // In-flight load/wake per session id. `onDidReceiveMessage` is fire-and-forget,
   // so two quick opens of the same session would otherwise both spawn a
-  // `vtx acp` (the second orphaning the first and holding its lock). Sharing
+  // `ctx acp` (the second orphaning the first and holding its lock). Sharing
   // the promise keeps it to one process.
   private readonly loading = new Map<string, Promise<void>>();
   // A brand-new session being created (id not known until session/new returns).
@@ -403,7 +403,7 @@ export class ChatController implements AcpHost {
 
   private health?: CliHealth;
   private healthPending?: Promise<void>;
-  private resolvedCli = "vtx";
+  private resolvedCli = "ctx";
   private env?: NodeJS.ProcessEnv;
   private currentMode?: string;
   private currentModel?: string;
@@ -768,7 +768,7 @@ export class ChatController implements AcpHost {
   }
 
   // Kill every live ACP process (and its terminals) so a window reload or
-  // extension deactivate does not leave stranded `vtx acp` agents (and their
+  // extension deactivate does not leave stranded `ctx acp` agents (and their
   // MCP servers). This is item 6: stop all sessions on exit.
   //
   // Synchronous, so the escalation to SIGKILL is left on a timer. Prefer
@@ -796,7 +796,7 @@ export class ChatController implements AcpHost {
   // Stop everything for good on the way out (window reload, extension
   // deactivate), and resolve only once every agent is really gone.
   //
-  // A `vtx acp` agent cannot be handed over to the next extension host: it
+  // A `ctx acp` agent cannot be handed over to the next extension host: it
   // runs its shell commands, file writes and permission prompts through us, over
   // our stdio, so leaving it alive would strand an agent that can do nothing
   // while still holding the CLI's session lock. Instead each one is stopped
@@ -1128,14 +1128,14 @@ export class ChatController implements AcpHost {
   // host that spawned it, still holding a lock, and on Windows nothing reaps it.
   private readonly spawnedRuntimes = new Set<Runtime>();
 
-  // Spawn a fresh `vtx acp` process and wire its events. The runtime is not
+  // Spawn a fresh `ctx acp` process and wire its events. The runtime is not
   // yet in the pool: its session id is unknown until session/new or /load.
   private spawnRuntime(cwd: string): Runtime {
     if (this.closed) {
       throw new Error("Chat surface is closed");
     }
     const client = new AcpClient({
-      cliPath: this.resolvedCli || "vtx",
+      cliPath: this.resolvedCli || "ctx",
       cwd,
       env: this.clientEnv(),
       extraArgs: this.extraArgs(),
@@ -1278,7 +1278,7 @@ export class ChatController implements AcpHost {
       os.homedir()
     ];
     for (const root of roots) {
-      for (const dir of [".vtx", ".agents", ""]) {
+      for (const dir of [".ctx", ".agents", ""]) {
         const file = path.join(root, dir, "skills", name, "SKILL.md");
         if (fs.existsSync(file)) {
           await vscode.window.showTextDocument(vscode.Uri.file(file), { preview: true });
@@ -1323,7 +1323,7 @@ export class ChatController implements AcpHost {
     });
   }
 
-  // A runtime's `vtx acp` exited (crash, kill, or idle exit). Drop it from
+  // A runtime's `ctx acp` exited (crash, kill, or idle exit). Drop it from
   // the pool and, if it was the visible one, reflect the disconnected state.
   private onRuntimeExit(rt: Runtime): void {
     // A disposed agent is SIGKILLed on a timer, so its exit can arrive up to a
@@ -1920,9 +1920,9 @@ export class ChatController implements AcpHost {
 
   private async runHealthCheck(): Promise<void> {
     const startedAt = Date.now();
-    const setting = this.cfg().get<string>("cliPath", "vtx") || "vtx";
+    const setting = this.cfg().get<string>("cliPath", "ctx") || "ctx";
     this.health = await checkHealth(setting);
-    this.resolvedCli = this.health.path || "vtx";
+    this.resolvedCli = this.health.path || "ctx";
     this.env = await loginShellEnv();
     this.log(
       `[health] path=${this.health.path} found=${this.health.found} loggedIn=${this.health.loggedIn} version=${this.health.version || ""} ${this.health.error || ""}`
@@ -1960,7 +1960,7 @@ export class ChatController implements AcpHost {
   }
 
   private async authenticate(): Promise<void> {
-    const bin = this.resolvedCli || "vtx";
+    const bin = this.resolvedCli || "ctx";
     const term = vscode.window.createTerminal({ name: "Vtx Login", env: this.env });
     term.show(true);
     term.sendText(`${quote(bin)} auth login`);
@@ -1991,7 +1991,7 @@ export class ChatController implements AcpHost {
   // stale copy of that shell's own variables back over it.
   private configuredEnv(): Record<string, string> {
     const extra = this.cfg().get<Record<string, string>>("env", {}) || {};
-    // `vtx acp` has no --sandbox flag: the env var is the only way in, which is
+    // `ctx acp` has no --sandbox flag: the env var is the only way in, which is
     // why the sandbox rows in the settings panel did nothing on their own. Set
     // before `vtx.env` so an explicit VTX_SANDBOX there still wins.
     const sandbox: Record<string, string> = this.cfg().get<boolean>("sandbox", false) ? { VTX_SANDBOX: "1" } : {};
@@ -2016,7 +2016,7 @@ export class ChatController implements AcpHost {
     return true;
   }
 
-  // Create a brand-new session in its own `vtx acp` and make it active.
+  // Create a brand-new session in its own `ctx acp` and make it active.
   private async createSession(): Promise<Runtime> {
     if (this.startingNew) {
       return this.startingNew;
@@ -2091,7 +2091,7 @@ export class ChatController implements AcpHost {
     if (!rt.client.supportsLoadSession()) {
       // Nothing to fall back to: without session/load an existing chat cannot be
       // reopened, and saying so beats a raw "method not found" from the agent.
-      throw new Error("This Vtx CLI cannot reopen an existing chat. Start a new one instead.");
+      throw new Error("This Ctx CLI cannot reopen an existing chat. Start a new one instead.");
     }
     const attempt = () =>
       rt.client.loadSession(id, cwd, this.additionalDirs(cwd)) as Promise<NewSessionResult | undefined>;
@@ -2682,11 +2682,11 @@ export class ChatController implements AcpHost {
 
   // `force` bypasses the short TTL cache (used for explicit refresh/rename/delete);
   // implicit refreshes after a load/prompt reuse the cache to avoid respawning
-  // `vtx list` repeatedly.
+  // `ctx list` repeatedly.
   // `staleOk` serves the cache at any age (used when returning to the list, so it
   // paints instantly) and is paired with a background revalidate.
   // List through a live agent when there is one, which costs no process at all,
-  // rather than spawning `vtx list` once per directory. Returns undefined when
+  // rather than spawning `ctx list` once per directory. Returns undefined when
   // nothing is live, leaving the CLI path to answer a cold panel (measured at
   // roughly the same cost as spawning an agent purely to ask, so there is nothing
   // to gain by starting one).
@@ -2713,7 +2713,7 @@ export class ChatController implements AcpHost {
         // refresh and let the next one try again.
         this.log(`[list-over-acp-failed] ${err instanceof Error ? err.message : String(err)}`);
         return listSessions({
-          cliPath: this.resolvedCli || "vtx",
+          cliPath: this.resolvedCli || "ctx",
           env: this.clientEnv(),
           timeoutMs: SESSION_LIST_CLI_TIMEOUT_MS,
           folders: this.folders(),
@@ -2781,13 +2781,13 @@ export class ChatController implements AcpHost {
       sessions = this.sessionsCache.sessions;
     } else {
       this.post({ type: "sessionsLoading" });
-      // Never let a slow/failed `vtx list` leave the list stuck on its
+      // Never let a slow/failed `ctx list` leave the list stuck on its
       // spinner: cap the wait and fall back to the cache (or empty).
       try {
         const protocol = this.listOverProtocol();
         source = protocol ? "acp" : "cli";
         const listing = protocol || listSessions({
-          cliPath: this.resolvedCli || "vtx",
+          cliPath: this.resolvedCli || "ctx",
           env: this.clientEnv(),
           timeoutMs: SESSION_LIST_CLI_TIMEOUT_MS,
           folders,
@@ -2797,7 +2797,7 @@ export class ChatController implements AcpHost {
         const { sessions: live, prunedIds } = await listing;
         // Drop tracked ids Vtx no longer knows about so stale rows self-heal,
         // but NEVER prune a session we still hold a live runtime for (or are
-        // starting): a freshly created session is not in `vtx list` until its
+        // starting): a freshly created session is not in `ctx list` until its
         // first turn persists, and pruning it here would make it vanish.
         for (const id of prunedIds) {
           const held = this.runtimes.has(id) || this.starting.has(id) || !!this.surfaces?.owner(id);
@@ -2816,7 +2816,7 @@ export class ChatController implements AcpHost {
     }
     const trackedNow = new Set(this.store.ids());
     sessions = sessions.filter((session) => !trackedAtStart.has(session.id) || trackedNow.has(session.id));
-    // List every live session even when `vtx list` has not caught up yet (a
+    // List every live session even when `ctx list` has not caught up yet (a
     // brand-new session appears there only after its first turn persists), so a
     // chat started from the list shows up immediately. Sessions running on
     // another surface count: a chat started in an editor tab belongs in this list
@@ -2846,7 +2846,7 @@ export class ChatController implements AcpHost {
     // Persist titles, and fill any tracked session whose title we only know
     // from the cache (e.g. its directory is not currently listed). A name we set
     // ourselves wins until the listing catches up with it, so a rename is not
-    // undone a moment later by a `vtx list` taken before it landed.
+    // undone a moment later by a `ctx list` taken before it landed.
     const cached = this.store.titles();
     const pinned = this.store.pinnedTitles();
     const freshTitles: Record<string, string> = {};
@@ -2893,7 +2893,7 @@ export class ChatController implements AcpHost {
   // Whether a session list is on screen here (the full list, the docked panel, or
   // the switcher) and this surface is actually showing. Only then is it worth
   // re-listing on every change to the CLI's store: a list nobody can see is re-read
-  // when it comes back, and every listing runs `vtx list`.
+  // when it comes back, and every listing runs `ctx list`.
   private listVisible = false;
   private surfaceVisible = true;
 
@@ -2996,7 +2996,7 @@ export class ChatController implements AcpHost {
 
   // A name the agent chose itself, rather than one the user typed. Painted like a
   // rename, but nothing is sent back to the agent, since this came from it. The
-  // pin `setTitle` leaves behind is wanted here too: it stops a `vtx list`
+  // pin `setTitle` leaves behind is wanted here too: it stops a `ctx list`
   // already in flight from putting the older name back.
   private applyAgentTitle(rt: Runtime, title: string): void {
     if (this.store.titles()[rt.id] === title) {
@@ -3137,7 +3137,7 @@ export class ChatController implements AcpHost {
     this.postModelOptions(this.currentModel || "", activeOptions);
   }
 
-  // The families the model picker offers: everything `vtx models list` returned,
+  // The families the model picker offers: everything `ctx models list` returned,
   // narrowed to one provider while `ui.model_provider_filter` is set (the same
   // scope the TUI's /provider gives /model).
   private visibleModelFamilies(families: ModelFamily[]): ModelFamily[] {
@@ -3146,7 +3146,7 @@ export class ChatController implements AcpHost {
   }
 
   // Posts the mode + model-family options. Model families come from
-  // `vtx models list` (cached); if not fetched yet, fetch and re-post.
+  // `ctx models list` (cached); if not fetched yet, fetch and re-post.
   private postModelOptions(currentModel: string, options = this.active()?.configOptions): void {
     const families = this.visibleModelFamilies(cachedFamilies());
     const thought = thoughtOption(options);
@@ -3167,7 +3167,7 @@ export class ChatController implements AcpHost {
     }
     this.post(payload);
     if (!families.length) {
-      void listModelFamilies(this.resolvedCli || "vtx", this.env).then((f) => {
+      void listModelFamilies(this.resolvedCli || "ctx", this.env).then((f) => {
         if (f.length) {
           // Listing takes seconds, so re-read the mode: the visible session may
           // have changed by now and this post must not put the old one back.
@@ -3204,13 +3204,13 @@ export class ChatController implements AcpHost {
   private modes = FALLBACK_MODES;
 
   // Populate the dropdowns before any session exists so they are never empty.
-  // Models come from `vtx models list` (no session needed, and the uids match
+  // Models come from `ctx models list` (no session needed, and the uids match
   // what the ACP model option accepts).
   private async publishInitialOptions(): Promise<void> {
     await this.ensureCli();
     let families: ModelFamily[] = [];
     try {
-      families = await listModelFamilies(this.resolvedCli || "vtx", this.env);
+      families = await listModelFamilies(this.resolvedCli || "ctx", this.env);
     } catch (err) {
       this.log(`[models-failed] ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -3389,7 +3389,7 @@ export class ChatController implements AcpHost {
       const previousModel = this.currentModel;
       const previousThought = this.currentThoughtLevel;
       // The session's own option is the authority on the `model` values it
-      // takes, which is narrower than the `vtx models list` catalog the
+      // takes, which is narrower than the `ctx models list` catalog the
       // picker was built from. Translate before asking.
       const resolved = acceptedModelUid(rt?.configOptions, model);
       const level = thoughtLevel ?? resolved.effort;
@@ -4223,7 +4223,7 @@ export class ChatController implements AcpHost {
   private async pickProviderFilter(): Promise<string | null> {
     await this.ensureCli();
     if (!cachedFamilies().length && !cachedProviders().length) {
-      await listModelFamilies(this.resolvedCli || "vtx", this.env);
+      await listModelFamilies(this.resolvedCli || "ctx", this.env);
     }
     let providers = cachedProviders();
     if (!providers.length) {
@@ -4254,7 +4254,7 @@ export class ChatController implements AcpHost {
   // ui.model_provider_filter has to drop it before the picker is repainted.
   private async refreshModelFamilies(): Promise<void> {
     invalidateModelFamilies();
-    const families = await listModelFamilies(this.resolvedCli || "vtx", this.env);
+    const families = await listModelFamilies(this.resolvedCli || "ctx", this.env);
     if (!families.length) {
       return;
     }
@@ -4267,7 +4267,7 @@ export class ChatController implements AcpHost {
   private async setProviderFilter(slug: string): Promise<void> {
     await this.ensureCli();
     if (slug === cachedProviderFilter()) return;
-    const ctx = { cliPath: this.resolvedCli || "vtx", env: this.env };
+    const ctx = { cliPath: this.resolvedCli || "ctx", env: this.env };
     const result = await configSet(ctx, "ui.model_provider_filter", slug);
     if (!result.ok) {
       void vscode.window.showErrorMessage(`Could not change provider: ${result.err || "unknown error"}`);
@@ -4314,7 +4314,7 @@ export class ChatController implements AcpHost {
       }
       this.endTurn(rt);
       // A /provider turn rewrites ui.model_provider_filter, which the cached
-      // `vtx models list` answer knows nothing about: refetch before the next
+      // `ctx models list` answer knows nothing about: refetch before the next
       // options post, queued turn or not.
       const last = blocks[blocks.length - 1];
       if (last?.type === "text" && /^\/provider\b/.test(last.text.trim())) {
@@ -4939,7 +4939,7 @@ export class ChatController implements AcpHost {
 
   // Returning to the list should be instant: paint the cached listing at any age,
   // then revalidate in the background so it is still correct. Only a cold cache
-  // waits on `vtx list`.
+  // waits on `ctx list`.
   private async refreshSessionsFast(): Promise<void> {
     const warm = !!this.sessionsCache;
     await this.refreshSessions(false, true);
@@ -5144,7 +5144,7 @@ export class ChatController implements AcpHost {
         return;
       // The agent names a session after its first request, and renames it as the
       // conversation moves on. This is the push feed for that, so the header, the
-      // lists and the editor tab follow it without waiting for a `vtx list`.
+      // lists and the editor tab follow it without waiting for a `ctx list`.
       case "session_info_update":
         if (rt && typeof u.title === "string" && u.title.trim()) {
           this.applyAgentTitle(rt, u.title.trim());

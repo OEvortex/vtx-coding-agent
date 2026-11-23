@@ -483,7 +483,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             reasoning_content=reasoning,
         )
 
-    async def _generate_stream(  # type: ignore[override]
+    async def _generate_stream(
         self, messages: list[Message], config: GenerationConfig, tools: list[dict] | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
         payload = self._build_payload(messages, config, tools)

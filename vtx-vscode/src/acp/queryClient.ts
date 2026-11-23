@@ -1,7 +1,7 @@
 import { AcpClient } from "./client";
 import { RequestDiagnosticsResult, TerminalExitStatus, TerminalRef } from "./types";
 
-// Ask a `vtx acp` a question, outside any chat.
+// Ask a `ctx acp` a question, outside any chat.
 //
 // Some of what the CLI knows is only available over the protocol and only with a
 // session open: which rules and hooks are actually loaded, for instance, which the
@@ -14,7 +14,7 @@ import { RequestDiagnosticsResult, TerminalExitStatus, TerminalRef } from "./typ
 // list to answer a settings panel would be its own bug.
 //
 
-// Every agent opened for a question and not yet closed. A `vtx acp` cannot outlive
+// Every agent opened for a question and not yet closed. A `ctx acp` cannot outlive
 // the extension host any more than a chat's can, and this one is nobody's chat, so it
 // is in no surface's pool and no shutdown pass walked it: closing the window during
 // the seconds a question takes left it running with its MCP servers and the CLI's

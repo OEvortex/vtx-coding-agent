@@ -24,7 +24,7 @@ let pendingEnv: Promise<NodeJS.ProcessEnv> | undefined;
 const pendingHealth = new Map<string, Promise<CliHealth>>();
 
 // GUI apps on macOS/Linux do not inherit the shell PATH, so resolve it from a
-// login shell once and reuse it. The Vtx CLI also spawns MCP servers
+// login shell once and reuse it. The Ctx CLI also spawns MCP servers
 // (npx, docker, uvx) that need this PATH.
 export function loginShellEnv(): Promise<NodeJS.ProcessEnv> {
   if (cachedEnv) {
@@ -81,15 +81,15 @@ function commonLocations(): string[] {
   if (process.platform === "win32") {
     const local = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
     return [
-      path.join(local, "Programs", "vtx", "vtx.exe"),
-      path.join(home, ".local", "bin", "vtx.exe")
+      path.join(local, "Programs", "ctx", "ctx.exe"),
+      path.join(home, ".local", "bin", "ctx.exe")
     ];
   }
   return [
-    path.join(home, ".local", "bin", "vtx"),
-    "/usr/local/bin/vtx",
-    "/opt/homebrew/bin/vtx",
-    "/usr/bin/vtx"
+    path.join(home, ".local", "bin", "ctx"),
+    "/usr/local/bin/ctx",
+    "/opt/homebrew/bin/ctx",
+    "/usr/bin/ctx"
   ];
 }
 
@@ -120,26 +120,26 @@ function which(binary: string, env: NodeJS.ProcessEnv): Promise<string | undefin
   return Promise.resolve(undefined);
 }
 
-// Resolves the vtx binary using: explicit setting, login-shell PATH lookup,
+// Resolves the ctx binary using: explicit setting, login-shell PATH lookup,
 // then common install locations. Returns an absolute path when possible.
 export async function resolveCliPath(setting: string): Promise<string | undefined> {
   const env = await loginShellEnv();
   const configured = expandHome((setting || "").trim());
-  if (configured && configured !== "vtx") {
+  if (configured && configured !== "ctx") {
     if (path.isAbsolute(configured)) {
       if (fs.existsSync(configured)) {
         return configured;
       }
     } else {
-      // A bare/relative custom name (e.g. "vtx-beta"): resolve it on PATH by
-      // its basename rather than silently falling back to "vtx".
+      // A bare/relative custom name (e.g. "ctx-beta"): resolve it on PATH by
+      // its basename rather than silently falling back to "ctx".
       const viaCustom = await which(path.basename(configured), env);
       if (viaCustom && fs.existsSync(viaCustom)) {
         return viaCustom;
       }
     }
   }
-  const viaWhich = await which("vtx", env);
+  const viaWhich = await which("ctx", env);
   if (viaWhich && fs.existsSync(viaWhich)) {
     return viaWhich;
   }
@@ -148,7 +148,7 @@ export async function resolveCliPath(setting: string): Promise<string | undefine
       return candidate;
     }
   }
-  return configured && configured !== "vtx" ? configured : undefined;
+  return configured && configured !== "ctx" ? configured : undefined;
 }
 
 // npm installs a CLI on Windows as a `.cmd` shim, and since Node 18.20 a shim
@@ -166,7 +166,7 @@ export function cliCommand(bin: string, args: string[]): { file: string; args: s
   // something else.
   const unsafe = [bin, ...args].find((s) => /[%!]/.test(s));
   if (unsafe) {
-    throw new Error(`Cannot pass "${unsafe}" to the Vtx CLI on Windows: % and ! have no escape through a .cmd shim.`);
+    throw new Error(`Cannot pass "${unsafe}" to the Ctx CLI on Windows: % and ! have no escape through a .cmd shim.`);
   }
   const quote = (s: string) => (/[\s"^&|<>()]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   return { file: quote(bin), args: args.map(quote), shell: true };
@@ -182,7 +182,7 @@ function run(bin: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ ok:
 }
 
 export function checkHealth(setting: string): Promise<CliHealth> {
-  const key = setting || "vtx";
+  const key = setting || "ctx";
   const existing = pendingHealth.get(key);
   if (existing) {
     return existing;
@@ -201,7 +201,7 @@ async function checkHealthNow(setting: string): Promise<CliHealth> {
   const env = await loginShellEnv();
   const resolved = await resolveCliPath(setting);
   if (!resolved) {
-    return { path: setting || "vtx", found: false, error: "Vtx CLI not found" };
+    return { path: setting || "ctx", found: false, error: "Ctx CLI not found" };
   }
   // Version and auth status are independent; run them together to save a
   // whole CLI round-trip on startup.
@@ -210,9 +210,9 @@ async function checkHealthNow(setting: string): Promise<CliHealth> {
     run(resolved, ["auth", "status"], env)
   ]);
   if (!version.ok) {
-    return { path: resolved, found: false, error: version.out || "Failed to run vtx --version" };
+    return { path: resolved, found: false, error: version.out || "Failed to run ctx --version" };
   }
-  // `vtx auth status` prints "Logged in (via Vtx)." when authed and
+  // `ctx auth status` prints "Logged in (via Ctx)." when authed and
   // "Not logged in." when not, so a bare /logged in/ match would treat a
   // signed-out user as signed in. Require a positive match and reject the
   // negative phrasings explicitly.
@@ -223,10 +223,10 @@ async function checkHealthNow(setting: string): Promise<CliHealth> {
 
 function cleanVersion(out: string): string {
   const line = (out || "").split(/\r?\n/)[0].trim();
-  return line.replace(/^vtx\s+/i, "");
+  return line.replace(/^ctx\s+/i, "");
 }
 
-// Parses the human-readable `vtx auth status` output.
+// Parses the human-readable `ctx auth status` output.
 function parseAccount(out: string): CliAccount {
   const pick = (label: string) => {
     const m = new RegExp(`^\\s*${label}:\\s*(.+)$`, "mi").exec(out);

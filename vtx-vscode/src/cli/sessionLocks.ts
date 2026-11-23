@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { vtxDataDir } from "../settings/configService";
 
-// The Vtx CLI guards each session with an advisory lock file at
+// The Ctx CLI guards each session with an advisory lock file at
 // `<data dir>/vtx/cli/session_locks/<id>.lock`, whose contents are the PID of
 // the process that owns it. Resuming a session held by a live process fails
 // with "... cannot be resumed because it is currently running.". The CLI never

@@ -9,7 +9,7 @@ from ctx.coding_agent.tools._tool_utils import shorten_path
 from ctx.core.config import config
 from ctx.plugins import mount_tool, plugin
 from ctx.protocol.types import FileChanges
-from ctx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex  # ty: ignore[import-not-found]
+from ctx.tui.diff_display import DIFF_BG_PAD_MARKER, blend_hex
 from pydantic import BaseModel, Field
 from rich.markup import escape
 
@@ -234,6 +234,15 @@ _DELETED = object()  # state sentinel: path removed by an earlier op
 class ApplyPatchTool(BaseTool):
     name = "apply_patch"
     tool_icon = "←"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import ApplyPatchToolBlock
+
+            return ApplyPatchToolBlock
+        except ImportError:
+            return None
+
     params = ApplyPatchParams
     prompt_guidelines = ("apply_patch for ALL file edits: update/create/delete/move",)
     description = (
@@ -280,7 +289,7 @@ class ApplyPatchTool(BaseTool):
             """File content as the patch currently sees it; None if deleted/missing."""
             if path in state:
                 v = state[path]
-                return None if v is _DELETED else v  # type: ignore
+                return None if v is _DELETED else v
             if not path.exists():
                 return None
             try:

@@ -143,7 +143,7 @@ def _script_callable(tool: BaseTool) -> bool:
     the next consumer has to remember.
     """
     try:
-        from ctx.mcp.exposure import SCRIPT_CALLABLE  # ty: ignore[import-not-found]
+        from ctx.mcp.exposure import SCRIPT_CALLABLE
     except ImportError:
         # ctx.mcp ships in ctx-code; without it there are no exposure-tagged
         # tools, so nothing is script-callable.
@@ -269,7 +269,7 @@ class ConversationRuntime:
         # The todo tool ships in the coding-agent product (ctx-code); a bare
         # ``ctx`` install simply has no todo list to refresh.
         try:
-            from ctx.coding_agent.tools.todo import (  # ty: ignore[import-not-found]
+            from ctx.coding_agent.tools.todo import (
                 register_todo_refresh,
             )
         except ImportError:
@@ -511,7 +511,7 @@ class ConversationRuntime:
         # Agent._system_prompt is intentionally a private attribute we
         # rebuild on activation; the type checker doesn't know that.
         if self.agent is not None:
-            self.agent._system_prompt = new_prompt  # type: ignore[attr-defined]
+            self.agent._system_prompt = new_prompt
 
     def set_progress_callback(self, cb: Callable[[str, dict], None] | None) -> None:
         self._progress_callback = cb
@@ -541,7 +541,7 @@ class ConversationRuntime:
                 thinking_level=self.thinking_level,
                 agent_registry=self.agent_registry,
                 cwd=self.cwd,
-                system_prompt=self.agent._system_prompt,  # type: ignore[attr-defined]
+                system_prompt=self.agent._system_prompt,
                 progress_callback=self._progress_callback
                 or (existing.progress_callback if existing else None),
                 background_manager=self._background_manager,
@@ -609,7 +609,7 @@ class ConversationRuntime:
         self._unwire_codemode()
 
         try:
-            from ctx.coding_agent.tools.todo import (  # ty: ignore[import-not-found]
+            from ctx.coding_agent.tools.todo import (
                 unregister_todo_refresh,
             )
         except ImportError:
@@ -707,7 +707,7 @@ class ConversationRuntime:
             # import would close the dependency loop. The package ships in
             # ctx-code; a bare ctx install simply has no MCP integration.
             try:
-                from ctx.mcp.manager import McpManager  # ty: ignore[import-not-found]
+                from ctx.mcp.manager import McpManager
             except ImportError:
                 return None
 
@@ -810,7 +810,7 @@ class ConversationRuntime:
         by name.
         """
         try:
-            from ctx.mcp.exposure import declared_to_model  # ty: ignore[import-not-found]
+            from ctx.mcp.exposure import declared_to_model
         except ImportError:
             # No ctx.mcp: nothing carries an exposure tag, so every tool is
             # model-declared.
@@ -839,7 +839,7 @@ class ConversationRuntime:
         fixed to close.
         """
         try:
-            from ctx.mcp.exposure import SCRIPT_DISCOVERABLE  # ty: ignore[import-not-found]
+            from ctx.mcp.exposure import SCRIPT_DISCOVERABLE
         except ImportError:
             SCRIPT_DISCOVERABLE: frozenset[str] = frozenset()  # noqa: N806
 

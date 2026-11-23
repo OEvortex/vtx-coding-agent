@@ -338,7 +338,7 @@ test("a diagnostics pull is answered in the shape the agent demands", async () =
 });
 
 test("session listing accepts a caller supplied timeout", async () => {
-  const client = new AcpClient({ cliPath: "vtx", cwd: TMP });
+  const client = new AcpClient({ cliPath: "ctx", cwd: TMP });
   let timeout;
   client.rpc = async (_method, _params, value) => {
     timeout = value;

@@ -69,6 +69,15 @@ class ToolSearchTool(BaseTool):
     mutating = False
     needs_approval = False
     tool_icon = "⌕"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import ToolSearchToolBlock
+
+            return ToolSearchToolBlock
+        except ImportError:
+            return None
+
     prompt_guidelines = (
         "`tool_search` loads tools that are not offered yet. Use it before "
         "reporting a capability as unavailable.",

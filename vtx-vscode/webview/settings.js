@@ -1,4 +1,4 @@
-// Vtx settings surface. Renders the Vtx CLI config surface (general,
+// Vtx settings surface. Renders the Ctx CLI config surface (general,
 // instructions, skills, plugins, MCP, hooks, permissions, advanced) from data supplied by
 // the extension host, and posts edits back.
 //
@@ -6,7 +6,7 @@
 //   1. Scope (Global / a workspace folder) is picked once in the toolbar, not
 //      repeated down the page. One page shows one scope. Rows carry "set here"
 //      and "overridden" markers so choosing one scope hides no information.
-//   2. This surface only ever edits Vtx CLI config. Settings that control the
+//   2. This surface only ever edits Ctx CLI config. Settings that control the
 //      extension itself live in VS Code settings, and are linked to from here.
 //
 // All untrusted values are written via textContent, never innerHTML.
@@ -752,7 +752,7 @@
       const wrap = h("div");
       wrap.append(
         group("Plugin rows", rows.length ? rows : [empty("No plugin rows composed.")]),
-        h("div", { class: "settings-note", text: "Rows come from vtx --dump-config for the selected profile. Enable and disable rewrite the disabled flag in that profile's cordis.yml." })
+        h("div", { class: "settings-note", text: "Rows come from ctx --dump-config for the selected profile. Enable and disable rewrite the disabled flag in that profile's cordis.yml." })
       );
       return wrap;
     },
@@ -871,7 +871,7 @@
           keyText("agent.default_context_window", "Default context window", "200000", "Fallback context window for models that do not report one."),
           keyToggle("recap.enabled", "Idle session recap"),
           keyText("recap.idle_seconds", "Recap idle seconds", "60", "Idle time before a recap is drafted."),
-          keyList("extensions", "Extensions", "~/.vtx/extensions/audit.py", "Extra Python extensions or packages to load at startup.")
+          keyList("extensions", "Extensions", "~/.ctx/extensions/audit.py", "Extra Python extensions or packages to load at startup.")
         ], { reset: true })
       );
       return wrap;
@@ -879,7 +879,7 @@
   };
 
   // --- The extension's own settings ----------------------------------------
-  // Anything that controls this extension rather than the Vtx CLI belongs in
+  // Anything that controls this extension rather than the Ctx CLI belongs in
   // VS Code settings, so this surface only links to it. The one exception is a
   // conflict: when the VS Code setting `vtx.defaultModel` is set, it silently
   // overrides the CLI model above for chats started here, which is invisible
@@ -904,7 +904,7 @@
       label, [iconBtn("gear", "Open in VS Code settings", () => post("settings:openExtensionSettings", { query: q }))], hint
     );
     return group("VS Code extension settings", [
-      link("All extension settings", "Everything that controls this extension rather than the Vtx CLI.", ""),
+      link("All extension settings", "Everything that controls this extension rather than the Ctx CLI.", ""),
       link("Session defaults", "The mode and model new chats start with.", "default"),
       link("Thinking display", "Whether and how the reasoning stream is shown.", "thinking"),
       link("Checkpoints and editing", "Restore points, edit requests, and file change summaries.", "checkpoints")

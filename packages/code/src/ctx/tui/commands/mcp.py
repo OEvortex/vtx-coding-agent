@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import webbrowser
 
-from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
+from ctx.tui.chat import ChatLog  
 from ctx.tui.commands.base import CommandSupport
 
 

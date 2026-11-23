@@ -31,6 +31,15 @@ class GrepParams(BaseModel):
 class GrepTool(BaseTool[GrepParams]):
     name = "grep"
     tool_icon = "🔎"
+    @property
+    def ui_block(self) -> type | None:
+        try:
+            from ctx.tui.tool_blocks import GrepToolBlock
+
+            return GrepToolBlock
+        except ImportError:
+            return None
+
     params = GrepParams
     mutating = False
     parallel_safe = True

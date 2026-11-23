@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from ctx.tui.chat import ChatLog  # ty: ignore[import-not-found]
+from ctx.tui.chat import ChatLog 
 
 from .agents import AgentCommands
 from .auth import AuthCommands
