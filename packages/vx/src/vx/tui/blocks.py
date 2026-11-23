@@ -431,6 +431,52 @@ class BashToolStatus(Block):
 
 
 @dataclass
+class DiffOutput(Block):
+    """fx-style diff preview: ``  │ N + text`` with colored markers."""
+
+    lines: list[tuple[str, str, str]] = field(default_factory=list)
+    """List of (op, line_number, text) where op is '+', '-', or ' '."""
+    kind: str = "tool_output"
+
+    def rows(self, width: int) -> list[str]:
+        if not self.lines:
+            return [""]
+        t = _theme.current()
+        # Calculate gutter width from max line number
+        max_ln = 0
+        for _op, ln, _text in self.lines:
+            if ln:
+                max_ln = max(max_ln, len(ln))
+        gw = max(max_ln, 1)
+        out: list[str] = []
+        for op, ln, text in self.lines:
+            # Build the gutter: "  │ " + line number padded + " "
+            gutter = f"  │ {ln.rjust(gw)} " if ln else f"  │ {' ' * gw} "
+            # Choose style based on op
+            if op == "+":
+                marker = f"{t.diff_added_style}+{ansi.RESET}"
+                line_style = t.diff_added_style
+            elif op == "-":
+                marker = f"{t.diff_removed_style}-{ansi.RESET}"
+                line_style = t.diff_removed_style
+            else:
+                marker = " "
+                line_style = t.diff_ctx_style
+            # Format: gutter + marker + " " + text
+            line = (
+                f"{t.dim_style}{gutter}{ansi.RESET}{marker} "
+                f"{line_style}{_escape_text(text)}{ansi.RESET}"
+            )
+            out.append(ansi.clip_ellipsis(line, width))
+        return out
+
+
+def _escape_text(text: str) -> str:
+    """Strip trailing whitespace and control chars from diff text."""
+    return text.rstrip()
+
+
+@dataclass
 class ApplyPatchToolStatus(Block):
     """apply_patch tool: ``● Edited path +3 -1`` — fx's compact one-row status."""
 
@@ -441,6 +487,8 @@ class ApplyPatchToolStatus(Block):
     ops_count: int = 0
     status: str = "running"
     kind: str = "tool"
+    diff_lines: list[tuple[str, str, str]] = field(default_factory=list)
+    """Diff preview lines for DiffOutput: (op, line_number, text)."""
 
     def _verb(self) -> str:
         return _TOOL_VERBS.get(self.name, self.name)

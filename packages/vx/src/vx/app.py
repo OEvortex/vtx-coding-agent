@@ -1141,6 +1141,23 @@ class VxApp(CommandsMixin):
                 if ev.file_changes and hasattr(block, "added"):
                     block.added = sum(f.added for f in ev.file_changes)
                     block.removed = sum(f.removed for f in ev.file_changes)
+            # For apply_patch, show fx-style diff preview
+            if (
+                block is not None
+                and block.name == "apply_patch"
+                and ok
+                and ev.result
+                and ev.result.ui_data
+            ):
+                diff_lines_raw = ev.result.ui_data.get("diff_lines")
+                if diff_lines_raw:
+                    diff_lines = [
+                        (row[0], row[1], row[2])
+                        for row in diff_lines_raw
+                        if isinstance(row, (list, tuple)) and len(row) == 3
+                    ]
+                    if diff_lines:
+                        self.viewport.add(blocks.DiffOutput(lines=diff_lines))
             output = self._tool_outputs.get(ev.tool_call_id)
             if output is not None and not output.lines:
                 with suppress(Exception):

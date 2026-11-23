@@ -23,6 +23,61 @@ def generate_diff(old: str, new: str) -> tuple[str, int, int]:
     return "".join(diff), added, removed
 
 
+def generate_diff_preview(old: str, new: str, max_lines: int = 12) -> list[tuple[str, str, str]]:
+    """Generate fx-style diff preview lines: (op, line_number, text).
+
+    Returns a list of tuples where op is '+', '-', or ' ' (context),
+    line_number is the string representation of the new file line number,
+    and text is the line content.
+    """
+    old_lines = old.splitlines()
+    new_lines = new.splitlines()
+
+    # Use SequenceMatcher to find matching blocks
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+
+    result: list[tuple[str, str, str]] = []
+    old_line_num = 0  # 1-based line number in old file
+    new_line_num = 0  # 1-based line number in new file
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for _k, (oi, ni) in enumerate(
+                zip(range(i1, i2), range(j1, j2), strict=True)
+            ):
+                old_line_num = oi + 1
+                new_line_num = ni + 1
+                if len(result) < max_lines:
+                    result.append((" ", str(new_line_num), new_lines[ni]))
+        elif tag == "replace":
+            # Remove old lines
+            for oi in range(i1, i2):
+                old_line_num = oi + 1
+                if len(result) < max_lines:
+                    result.append(("-", str(old_line_num), old_lines[oi]))
+            # Add new lines
+            for ni in range(j1, j2):
+                new_line_num = ni + 1
+                if len(result) < max_lines:
+                    result.append(("+", str(new_line_num), new_lines[ni]))
+        elif tag == "delete":
+            for oi in range(i1, i2):
+                old_line_num = oi + 1
+                if len(result) < max_lines:
+                    result.append(("-", str(old_line_num), old_lines[oi]))
+        elif tag == "insert":
+            for ni in range(j1, j2):
+                new_line_num = ni + 1
+                if len(result) < max_lines:
+                    result.append(("+", str(new_line_num), new_lines[ni]))
+
+    # If we truncated, add an elision marker
+    if len(result) >= max_lines:
+        result.append((" ", "", "..."))
+
+    return result
+
+
 def format_diff_display(diff: str) -> str:
     """Format a diff for display in the TUI."""
     lines = []
@@ -80,7 +135,9 @@ class ApplyPatchTool(BaseTool):
         paths = [op.target_path for op in params.ops]
         return ", ".join(shorten_path(p) for p in paths)
 
-    async def _apply_op(self, op: PatchOp) -> tuple[str, FileChanges | None]:
+    async def _apply_op(
+        self, op: PatchOp
+    ) -> tuple[str, FileChanges | None, list[tuple[str, str, str]]]:
         path = Path(op.target_path)
 
         # Create new file
@@ -88,46 +145,59 @@ class ApplyPatchTool(BaseTool):
             path.parent.mkdir(parents=True, exist_ok=True)
             async with aiofiles.open(path, "w") as f:
                 await f.write(op.new_file_content)
-            return f"Created {path}", FileChanges(
-                file_path=str(path), added=len(op.new_file_content.splitlines()), removed=0
+            diff_lines = generate_diff_preview("", op.new_file_content)
+            return (
+                f"Created {path}",
+                FileChanges(
+                    file_path=str(path), added=len(op.new_file_content.splitlines()), removed=0
+                ),
+                diff_lines,
             )
 
         # Insert at line
         if op.insert_line is not None and op.new_str is not None:
             if not path.exists():
-                return f"File not found: {path}", None
-            content = path.read_text()
-            lines = content.splitlines(True)
+                return f"File not found: {path}", None, []
+            old_content = path.read_text()
+            lines = old_content.splitlines(True)
             insert_idx = min(op.insert_line, len(lines))
             lines.insert(
                 insert_idx, op.new_str if op.new_str.endswith("\n") else op.new_str + "\n"
             )
-            path.write_text("".join(lines))
+            new_content = "".join(lines)
+            path.write_text(new_content)
             added = len(op.new_str.splitlines())
-            return f"Inserted at line {op.insert_line} in {path}", FileChanges(
-                file_path=str(path), added=added, removed=0
+            diff_lines = generate_diff_preview(old_content, new_content)
+            return (
+                f"Inserted at line {op.insert_line} in {path}",
+                FileChanges(file_path=str(path), added=added, removed=0),
+                diff_lines,
             )
 
         # Search and replace
         if op.old_str is not None:
             if not path.exists():
-                return f"File not found: {path}", None
-            content = path.read_text()
-            if op.old_str not in content:
+                return f"File not found: {path}", None, []
+            old_content = path.read_text()
+            if op.old_str not in old_content:
                 # Try to find close match for better error message
                 return (
-                    f"Search text not found in {path}. First 100 chars: {content[:100]!r}",
+                    f"Search text not found in {path}. First 100 chars: {old_content[:100]!r}",
                     None,
+                    [],
                 )
-            new_content = content.replace(op.old_str, op.new_str or "", 1)
+            new_content = old_content.replace(op.old_str or "", op.new_str or "", 1)
             path.write_text(new_content)
-            old_lines = op.old_str.count("\n") + 1 if op.old_str else 0
-            new_lines = (op.new_str or "").count("\n") + 1 if op.new_str else 0
-            return f"Edited {path}", FileChanges(
-                file_path=str(path), added=new_lines, removed=old_lines
+            old_line_count = op.old_str.count("\n") + 1 if op.old_str else 0
+            new_line_count = (op.new_str or "").count("\n") + 1 if op.new_str else 0
+            diff_lines = generate_diff_preview(old_content, new_content)
+            return (
+                f"Edited {path}",
+                FileChanges(file_path=str(path), added=new_line_count, removed=old_line_count),
+                diff_lines,
             )
 
-        return f"No operation specified for {path}", None
+        return f"No operation specified for {path}", None, []
 
     async def execute(self, params: ApplyPatchParams) -> ToolResult:
         if not params.ops:
@@ -136,12 +206,15 @@ class ApplyPatchTool(BaseTool):
         results: list[str] = []
         file_changes: list[FileChanges] = []
         errors: list[str] = []
+        all_diff_lines: list[tuple[str, str, str]] = []
 
         for op in params.ops:
             try:
-                result, changes = await self._apply_op(op)
+                result, changes, diff_lines = await self._apply_op(op)
                 if changes:
                     file_changes.append(changes)
+                if diff_lines:
+                    all_diff_lines.extend(diff_lines)
                 if result.startswith("File not found") or result.startswith(
                     "Search text not found"
                 ):
@@ -164,9 +237,13 @@ class ApplyPatchTool(BaseTool):
         if errors:
             summary_parts.append(f"[yellow]{len(errors)} warning(s)[/yellow]")
 
+        # Convert diff lines to JSON-serializable format for ui_data
+        diff_data = [[op, ln, text] for op, ln, text in all_diff_lines]
+
         return ToolResult(
             success=True,
             result="\n".join(results),
             ui_summary=", ".join(summary_parts),
             file_changes=file_changes if file_changes else None,
+            ui_data={"diff_lines": diff_data} if diff_data else None,
         )

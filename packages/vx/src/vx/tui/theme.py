@@ -41,6 +41,7 @@ class Theme:
     red_style: str
     diff_added_style: str
     diff_removed_style: str
+    diff_ctx_style: str
     diff_added_marker_style: str
     diff_removed_marker_style: str
     approval_button_active_style: str
@@ -74,6 +75,7 @@ FX_DARK = Theme(
     red_style="\x1b[38;5;252m",
     diff_added_style="\x1b[38;5;252m",
     diff_removed_style="\x1b[38;5;252m",
+    diff_ctx_style="\x1b[38;5;245m",
     diff_added_marker_style="",
     diff_removed_marker_style="",
     approval_button_active_style="\x1b[48;5;255m\x1b[38;5;235m\x1b[1m",
@@ -115,6 +117,7 @@ FX_LIGHT = Theme(
     red_style="\x1b[38;5;238m",
     diff_added_style="\x1b[38;5;238m",
     diff_removed_style="\x1b[38;5;238m",
+    diff_ctx_style="\x1b[38;5;243m",
     diff_added_marker_style="",
     diff_removed_marker_style="",
     approval_button_active_style="\x1b[48;5;236m\x1b[38;5;255m\x1b[1m",
@@ -226,6 +229,7 @@ def from_ctx_theme(theme_id: str) -> Theme | None:
         red_style=_fg(error),
         diff_added_style=_fg(role("diff_added", success)),
         diff_removed_style=_fg(role("diff_removed", error)),
+        diff_ctx_style=_fg(muted),
         diff_added_marker_style="",
         diff_removed_marker_style="",
         approval_button_active_style=_bg(fg) + _fg(role("bg", "#000000")) + "\x1b[1m",
