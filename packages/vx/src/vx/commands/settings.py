@@ -1,5 +1,6 @@
-"""``/settings``, ``/themes``, ``/permissions``, ``/thinking``, ``/notifications``,
-``/ponytail`` — the settings surface, ported from ctx-code's settings mixin."""
+"""``/settings``, ``/themes``, ``/permissions``, ``/mode``, ``/thinking``,
+``/notifications``, ``/ponytail`` — the settings surface, ported from ctx-code's
+settings mixin, plus the vx-native /mode command inspired by fx."""
 
 from __future__ import annotations
 
@@ -9,7 +10,6 @@ from ctx.core.config import (
     NOTIFICATION_MODES,
     PERMISSION_MODES,
     THINKING_LINES_OPTIONS,
-    PermissionMode,
     ThinkingLinesOption,
     config,
     set_colored_tool_badge,
@@ -21,9 +21,11 @@ from ctx.core.config import (
     set_theme,
     set_thinking_lines,
 )
+from ctx.core.config import PermissionMode as CtxPermissionMode
 
 from vx.commands.base import CommandSupport
-from vx.tui import footer
+from vx.permissions import BUILTIN_MODES, mode_spec
+from vx.tui import blocks, footer
 from vx.tui import theme as theme_module
 
 #: What each effort level buys, so the picker is a menu and not a wall of names.
@@ -74,8 +76,65 @@ class SettingsCommands(CommandSupport):
         )
 
     def _select_permission_mode(self, mode: str) -> None:
-        set_permissions_mode(cast("PermissionMode", mode))
+        set_permissions_mode(cast("CtxPermissionMode", mode))
         self._ok(f"permission mode changed to {mode}", topic="permissions")
+
+    # -- /mode -----------------------------------------------------------
+
+    def _handle_mode_command(self, args: str) -> None:
+        """Switch vx's permission mode: ask, auto, or yolo (full access)."""
+        perm_runtime = self._get_permission_runtime()
+        if perm_runtime is None:
+            self._fail("permission runtime not available", topic="mode")
+            return
+
+        requested = args.strip().lower()
+        if requested:
+            if mode_spec(requested) is None:
+                valid = ", ".join(m.id for m in BUILTIN_MODES)
+                self._fail(f"invalid mode: {requested}. use one of: {valid}")
+                return
+            old_mode = perm_runtime.mode
+            perm_runtime.set_mode(requested)
+            spec = mode_spec(requested)
+            name = spec.name if spec else requested
+            desc = spec.description if spec else ""
+            self.viewport.add(
+                blocks.ModeChanged(
+                    from_mode=old_mode, to_mode=requested, to_name=name, description=desc
+                )
+            )
+            # Also sync the ctx config so the hint row picks it up
+            _sync_mode_to_config(requested)
+            return
+
+        # Show picker
+        current = perm_runtime.mode
+        items = [
+            footer.MenuItem(label=spec.name, detail=spec.description, value=spec.id)
+            for spec in BUILTIN_MODES
+        ]
+        index = next((i for i, s in enumerate(BUILTIN_MODES) if s.id == current), 0)
+
+        view = footer.ModePickerView(modes=items, selected=index, current_mode=current)
+        self._open_mode_picker(view, perm_runtime)
+
+    def _open_mode_picker(self, view: footer.ModePickerView, perm_runtime) -> None:
+        """Open the mode picker overlay."""
+        self._menu = {
+            "kind": "mode",
+            "view": view,
+            "selected": view.selected,
+            "perm_runtime": perm_runtime,
+            "filterable": False,
+            "noun": "Modes",
+            "type_hint": False,
+            "variants": (
+                "↑↓ navigate     enter select     esc close",
+                "↑↓ move  enter  esc",
+                "enter select  esc close",
+            ),
+        }
 
     # -- /thinking and /effort -------------------------------------------
 
@@ -356,3 +415,14 @@ class SettingsCommands(CommandSupport):
             "no truncation" if lines == "none" else f"{lines} line{'s' if lines != '1' else ''}"
         )
         self._ok(f"thinking lines changed to {label}", topic="settings")
+
+
+def _sync_mode_to_config(mode_id: str) -> None:
+    """Sync vx's mode to the ctx config so the hint row picks it up."""
+    import contextlib
+
+    # Map vx modes to ctx permission modes
+    mapping = {"ask": "prompt", "auto": "auto", "yolo": "auto"}
+    ctx_mode = mapping.get(mode_id, "prompt")
+    with contextlib.suppress(Exception):
+        set_permissions_mode(cast("CtxPermissionMode", ctx_mode))

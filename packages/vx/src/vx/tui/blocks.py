@@ -495,6 +495,43 @@ def _short(text: str, limit: int = 70) -> str:
     return flat[: limit - 1] + "…" if len(flat) > limit else flat
 
 
+@dataclass
+class ModeStatus(Block):
+    """Permission mode notice: ``Mode: Auto`` with description."""
+
+    mode_id: str = ""
+    mode_name: str = ""
+    description: str = ""
+    kind: str = "notice"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        name = self.mode_name or self.mode_id
+        line = f"{t.dim_style}Mode:{ansi.RESET} {t.tag_style}{name}{ansi.RESET}"
+        if self.description:
+            line += f" {t.dim_style}— {self.description}{ansi.RESET}"
+        return [ansi.clip_ellipsis(line, width)]
+
+
+@dataclass
+class ModeChanged(Block):
+    """Mode change confirmation: ``Switched to Ask — Confirm each action before it runs``."""
+
+    from_mode: str = ""
+    to_mode: str = ""
+    to_name: str = ""
+    description: str = ""
+    kind: str = "notice"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        name = self.to_name or self.to_mode
+        line = f"{t.dim_style}Switched to{ansi.RESET} {t.tag_style}{name}{ansi.RESET}"
+        if self.description:
+            line += f" {t.dim_style}— {self.description}{ansi.RESET}"
+        return [ansi.clip_ellipsis(line, width)]
+
+
 def spacing(previous: str | None, kind: str) -> int:
     """Blank rows fx leaves between two transcript blocks."""
     if previous is None:

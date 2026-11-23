@@ -15,6 +15,7 @@ _CSI_KEYS = {
     "D": "left",
     "H": "home",
     "F": "end",
+    "Z": "shift+tab",
     "1~": "home",
     "4~": "end",
     "2~": "insert",

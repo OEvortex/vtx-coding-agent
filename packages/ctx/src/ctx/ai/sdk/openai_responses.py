@@ -527,6 +527,7 @@ class OpenAIResponsesSDK(BaseLLMSDK):
                 ),
             },
             reasoning_content=reasoning,
+            tool_calls=tool_calls or None,
         )
 
     async def _generate_stream(

@@ -104,9 +104,12 @@ def compact_model(model: str) -> str:
 
 def permission_label(mode: str) -> str:
     t = _theme.current()
-    if mode in ("auto", "full-access", "yolo"):
-        text = "full access" if mode != "auto" else "auto"
-        return f"{t.permission_auto_style}{text}{t.statusline_style}"
+    if mode in ("auto",):
+        return f"{t.permission_auto_style}auto{t.statusline_style}"
+    if mode in ("yolo", "full-access"):
+        return f"{t.permission_auto_style}full access{t.statusline_style}"
+    if mode in ("ask", "prompt"):
+        return f"{t.permission_auto_style}ask{t.statusline_style}"
     return mode
 
 
@@ -442,6 +445,53 @@ class QuestionView:
         variants = (
             f"{progress}↑↓ options    type to answer    enter confirm    esc skip",
             f"{progress}enter confirm    esc skip",
+        )
+        for candidate in variants:
+            if ansi.width(candidate) <= cols:
+                return f"{t.dim_style}{candidate}{ansi.RESET}"
+        return f"{t.dim_style}{variants[-1]}{ansi.RESET}"
+
+
+# -- mode picker panel -------------------------------------------------------
+
+
+@dataclass
+class ModePickerView:
+    """Picker for switching permission modes: Ask, Auto, Full access."""
+
+    modes: list[MenuItem] = field(default_factory=list)
+    selected: int = 0
+    current_mode: str = ""
+
+    def panel(self, cols: int) -> list[str]:
+        t = _theme.current()
+        rows: list[str] = []
+        rows.append(f"  {ansi.BOLD}Permission mode{ansi.DIM_OFF}")
+        rows.append(f"  {t.dim_style}Choose how vx handles tool calls{ansi.RESET}")
+        rows.append("")
+        for index, mode in enumerate(self.modes):
+            is_selected = index == self.selected
+            is_current = mode.value == self.current_mode or mode.label[1:] == self.current_mode
+            style = t.selected_completion_style if is_selected else t.dim_style
+            marker = "❯ " if is_selected else "  "
+            label = mode.label
+            if is_current:
+                label = f"{label} (current)"
+            row = f"  {marker}{style}{label}{ansi.RESET}"
+            if mode.detail:
+                desc_col = min(cols, max(ansi.width(label) + 8, cols // 2))
+                row = ansi.pad(row, desc_col)
+                detail = ansi.clip_ellipsis(mode.detail, max(1, cols - desc_col))
+                row += f"{t.dim_style}{detail}{ansi.RESET}"
+            rows.append(ansi.clip(row, cols))
+        return rows
+
+    def hint(self, cols: int) -> str:
+        t = _theme.current()
+        variants = (
+            "↑↓ navigate     enter select     esc close",
+            "↑↓ move  enter  esc",
+            "enter select  esc close",
         )
         for candidate in variants:
             if ansi.width(candidate) <= cols:

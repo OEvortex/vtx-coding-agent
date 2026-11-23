@@ -160,3 +160,7 @@ class CommandSupport:
             self._warn(f"cannot {verb} while the agent is running — press esc to interrupt")
             return False
         return True
+
+    def _get_permission_runtime(self):
+        """Return the vx PermissionRuntime, if set on the app."""
+        return getattr(self, "_permission_runtime", None)

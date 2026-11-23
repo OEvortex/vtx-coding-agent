@@ -62,6 +62,7 @@ import vx.tools
 from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
 from vx.commands import SLASH_COMMANDS, CommandsMixin
+from vx.permissions import PermissionRuntime, VxPermissionHook, mode_spec
 from vx.tui import ansi, blocks, footer, theme
 from vx.tui.canvas import Painter
 from vx.tui.keys import KeyDecoder
@@ -149,6 +150,9 @@ class VxApp(CommandsMixin):
         self._ticker_task: asyncio.Task | None = None
         self._boot_task: asyncio.Task | None = None
         self._ready = asyncio.Event()
+
+        # Permission runtime (vx-native, inspired by fx)
+        self._permission_runtime = PermissionRuntime()
 
     # ==================================================================
     # lifecycle
@@ -354,6 +358,42 @@ class VxApp(CommandsMixin):
             return
         if self._ask is not None:
             self._ask_key(key)
+            return
+        if key == "tab" and not self._input:
+            # Tab cycles permission mode when composer is empty, like fx
+            new_mode = self._permission_runtime.toggle_mode()
+            spec = mode_spec(new_mode)
+            name = spec.name if spec else new_mode
+            desc = spec.description if spec else ""
+            self.viewport.add(
+                blocks.ModeChanged(
+                    from_mode=self._permission_runtime.mode,
+                    to_mode=new_mode,
+                    to_name=name,
+                    description=desc,
+                )
+            )
+            from vx.commands.settings import _sync_mode_to_config
+
+            _sync_mode_to_config(new_mode)
+            return
+        if key == "shift+tab" and not self._input:
+            # Shift+Tab also cycles permission mode, like fx
+            new_mode = self._permission_runtime.toggle_mode()
+            spec = mode_spec(new_mode)
+            name = spec.name if spec else new_mode
+            desc = spec.description if spec else ""
+            self.viewport.add(
+                blocks.ModeChanged(
+                    from_mode=self._permission_runtime.mode,
+                    to_mode=new_mode,
+                    to_name=name,
+                    description=desc,
+                )
+            )
+            from vx.commands.settings import _sync_mode_to_config
+
+            _sync_mode_to_config(new_mode)
             return
 
         if key == "esc" and self._prompt is not None:
@@ -671,6 +711,22 @@ class VxApp(CommandsMixin):
         if kind == "slash" and key == "tab":
             self._complete()
             return
+        if kind == "mode":
+            # Mode picker has its own navigation
+            if key in ("enter", "right"):
+                self._menu_choose_mode()
+                return
+            if key == "up":
+                view = menu.get("view")
+                if view:
+                    menu["selected"] = (menu["selected"] - 1) % len(view.modes)
+                return
+            if key == "down":
+                view = menu.get("view")
+                if view:
+                    menu["selected"] = (menu["selected"] + 1) % len(view.modes)
+                return
+            return
         if key in ("enter", "right"):
             self._menu_choose()
             return
@@ -753,6 +809,35 @@ class VxApp(CommandsMixin):
             after = self._input[replace_end:].lstrip()
             self._input = f"{before}{token} {after}"
             self._cursor = len(before) + len(token) + 1
+
+    def _menu_choose_mode(self) -> None:
+        """Handle selecting a mode from the mode picker."""
+        menu = self._menu
+        if menu is None:
+            return
+        view = menu.get("view")
+        perm_runtime = menu.get("perm_runtime")
+        if view is None or perm_runtime is None:
+            self._menu = None
+            return
+        selected_idx = max(0, min(menu["selected"], len(view.modes) - 1))
+        mode_item = view.modes[selected_idx]
+        mode_id = mode_item.value or mode_item.label
+        # Normalize label to mode id
+        label_map = {"Ask": "ask", "Auto": "auto", "Full access": "yolo"}
+        mode_id = label_map.get(mode_id, mode_id.lower())
+        old_mode = perm_runtime.mode
+        perm_runtime.set_mode(mode_id)
+        spec = mode_spec(mode_id)
+        name = spec.name if spec else mode_id
+        desc = spec.description if spec else ""
+        self._menu = None
+        self.viewport.add(
+            blocks.ModeChanged(from_mode=old_mode, to_mode=mode_id, to_name=name, description=desc)
+        )
+        from vx.commands.settings import _sync_mode_to_config
+
+        _sync_mode_to_config(mode_id)
 
     # -- submit ----------------------------------------------------------
 
@@ -879,6 +964,9 @@ class VxApp(CommandsMixin):
             self._notice("agent not initialized", tone="error")
             self._is_running = False
             return
+        # Wire the vx permission hook into the agent's hook chain
+        hook = VxPermissionHook(self._permission_runtime)
+        agent._hooks.append(hook)
         asyncio.get_running_loop().create_task(self._run_agent(agent, prompt))
 
     async def _run_agent(self, agent: Any, prompt: str) -> None:
@@ -1293,6 +1381,20 @@ class VxApp(CommandsMixin):
 
         menu = self._menu
         if menu is not None:
+            kind = menu.get("kind")
+            # Mode picker has its own panel rendering
+            if kind == "mode":
+                mode_view = menu.get("view")
+                if mode_view is not None:
+                    mode_view.selected = menu["selected"]
+                    panel = mode_view.panel(cols)
+                    return [
+                        footer.rule(cols),
+                        *panel,
+                        footer.rule(cols),
+                        mode_view.hint(cols),
+                    ], None
+                return rows, caret
             view = self._menu_view()
             # fx's budget: 5 fixed footer rows plus the composer, then leave
             # five transcript rows on screen, capped at six picker rows.
@@ -1336,9 +1438,11 @@ class VxApp(CommandsMixin):
         elif self._last_ctrl_c and time.monotonic() - self._last_ctrl_c < 2.0:
             right = "press ctrl+c again to exit"
         workspace = os.path.abspath(self.cwd)
+        # Use vx's own permission mode for the hint row
+        perm_mode = self._permission_runtime.mode
         return footer.hint_row(
             cols=cols,
-            permission=config.permissions.mode,
+            permission=perm_mode,
             model=getattr(rt, "model", "") or "",
             effort=getattr(rt, "thinking_level", "auto") or "auto",
             context_used=self._context_used,
