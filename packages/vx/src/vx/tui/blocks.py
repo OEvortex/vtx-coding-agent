@@ -452,20 +452,24 @@ class DiffOutput(Block):
         for op, ln, text in self.lines:
             # Build the gutter: "  │ " + line number padded + " "
             gutter = f"  │ {ln.rjust(gw)} " if ln else f"  │ {' ' * gw} "
-            # Choose style based on op
+            # Choose style based on op — use marker style for the +/- character,
+            # text style for the line content, and a subtle background highlight
             if op == "+":
-                marker = f"{t.diff_added_style}+{ansi.RESET}"
+                marker = f"{t.diff_added_marker_style}+{ansi.RESET}"
                 line_style = t.diff_added_style
+                bg = "\x1b[48;5;22m"  # dim green bg
             elif op == "-":
-                marker = f"{t.diff_removed_style}-{ansi.RESET}"
+                marker = f"{t.diff_removed_marker_style}-{ansi.RESET}"
                 line_style = t.diff_removed_style
+                bg = "\x1b[48;5;52m"  # dim red bg
             else:
                 marker = " "
                 line_style = t.diff_ctx_style
-            # Format: gutter + marker + " " + text
+                bg = ""
+            # Format: gutter + marker + " " + text (with background on added/removed)
             line = (
                 f"{t.dim_style}{gutter}{ansi.RESET}{marker} "
-                f"{line_style}{_escape_text(text)}{ansi.RESET}"
+                f"{bg}{line_style}{_escape_text(text)}{ansi.RESET}"
             )
             out.append(ansi.clip_ellipsis(line, width))
         return out
