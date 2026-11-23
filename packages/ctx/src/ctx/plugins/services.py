@@ -516,7 +516,7 @@ class MCPService:
         """
         if self._manager is not None:
             return self._manager
-        from ctx.mcp.manager import McpManager
+        from ctx.mcp.manager import McpManager  # ty: ignore[import-not-found]
 
         manager = McpManager(cwd=cwd)
         self._manager = manager

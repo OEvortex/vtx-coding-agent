@@ -22,11 +22,10 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel
-
 from ctx.agent.tools.base import BaseTool
 from ctx.agent.tools.schema import json_schema_to_pydantic
 from ctx.protocol.types import ToolResult
+from pydantic import BaseModel
 
 from .client import McpRequestOptions
 from .content import split_content, to_tool_content

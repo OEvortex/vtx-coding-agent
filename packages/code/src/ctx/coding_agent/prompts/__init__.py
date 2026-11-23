@@ -8,11 +8,7 @@ eagerly at ``ctx.coding_agent`` import — the same slot
 
 from __future__ import annotations
 
-from ctx.agent.prompts.registry import (
-    PromptEnv,
-    register_base_prompt,
-    register_prompt_section,
-)
+from ctx.agent.prompts.registry import PromptEnv, register_base_prompt, register_prompt_section
 
 from .identity import (
     BACKGROUND_TASKS,

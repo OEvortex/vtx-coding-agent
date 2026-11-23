@@ -31,8 +31,8 @@ BASE: list[Row] = [
     Row(id="compaction", name="ctx.plugins.builtins.services.compaction:PLUGIN"),
     Row(id="skills", name="ctx.plugins.builtins.services.skills:PLUGIN"),
     Row(id="telemetry", name="ctx.plugins.builtins.services.telemetry:PLUGIN"),
-    Row(id="sandbox", name="ctx.plugins.builtins.services.sandbox:PLUGIN"),
-    Row(id="mcp", name="ctx.plugins.builtins.services.mcp:PLUGIN"),
+    # ``mcp`` and ``sandbox`` are contributed by product packages: the MCP
+    # client and the codemode worker ship in ``ctx-code``, not the harness.
     Row(id="agents", name="ctx.plugins.builtins.services.agents:PLUGIN"),
     Row(id="agent-loop", name="ctx.plugins.builtins.services.agent_loop:PLUGIN"),
     Row(id="session-projections", name="ctx.plugins.builtins.services.projections:PLUGIN"),

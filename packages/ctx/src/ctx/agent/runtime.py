@@ -142,7 +142,12 @@ def _script_callable(tool: BaseTool) -> bool:
     at all: every consumer already excludes it, but leaving it in place means
     the next consumer has to remember.
     """
-    from ctx.mcp.exposure import SCRIPT_CALLABLE
+    try:
+        from ctx.mcp.exposure import SCRIPT_CALLABLE  # ty: ignore[import-not-found]
+    except ImportError:
+        # ctx.mcp ships in ctx-code; without it there are no exposure-tagged
+        # tools, so nothing is script-callable.
+        SCRIPT_CALLABLE: frozenset[str] = frozenset()  # noqa: N806
 
     exposure = getattr(tool, "exposure", None)
     return exposure is None or exposure in SCRIPT_CALLABLE
@@ -699,8 +704,12 @@ class ConversationRuntime:
         if self._mcp_manager is None:
             # Imported here rather than at module scope: ctx.mcp builds on the
             # harness tool contract in ctx.agent.tools, so a top-level
-            # import would close the dependency loop.
-            from ctx.mcp.manager import McpManager
+            # import would close the dependency loop. The package ships in
+            # ctx-code; a bare ctx install simply has no MCP integration.
+            try:
+                from ctx.mcp.manager import McpManager  # ty: ignore[import-not-found]
+            except ImportError:
+                return None
 
             self._mcp_manager = McpManager(cwd=self.cwd)
             self._mcp_manager.on_tools_changed(self._on_mcp_tools_changed)
@@ -713,6 +722,8 @@ class ConversationRuntime:
         ``/mcp`` rather than holding up or failing the session.
         """
         manager = self.ensure_mcp_manager()
+        if manager is None:
+            return []
         if startup_wait_seconds is not None:
             manager.startup_wait_seconds = startup_wait_seconds
         for message in manager.errors:
@@ -730,6 +741,8 @@ class ConversationRuntime:
     async def reload_mcp(self) -> list[BaseTool]:
         """Re-read ``mcp.json``, reconnect, and swap in the new tool set."""
         manager = self.ensure_mcp_manager()
+        if manager is None:
+            return []
         self._mcp_tools = await manager.reload()
         self._sync_mcp_tools()
         return self._mcp_tools
@@ -796,9 +809,14 @@ class ConversationRuntime:
         and ``codemode`` lists it -- it is simply not a tool the model may invoke
         by name.
         """
-        from ctx.mcp.exposure import declared_to_model
-
-        declared = [t for t in self.tools if declared_to_model(getattr(t, "exposure", None))]
+        try:
+            from ctx.mcp.exposure import declared_to_model  # ty: ignore[import-not-found]
+        except ImportError:
+            # No ctx.mcp: nothing carries an exposure tag, so every tool is
+            # model-declared.
+            declared = list(self.tools)
+        else:
+            declared = [t for t in self.tools if declared_to_model(getattr(t, "exposure", None))]
         search = self._tool_search_if_useful()
         if search is not None and not any(t.name == search.name for t in declared):
             declared.append(search)
@@ -820,7 +838,10 @@ class ConversationRuntime:
         tool a profile named would be the same un-deny ``_activate_tools`` was
         fixed to close.
         """
-        from ctx.mcp.exposure import SCRIPT_DISCOVERABLE
+        try:
+            from ctx.mcp.exposure import SCRIPT_DISCOVERABLE  # ty: ignore[import-not-found]
+        except ImportError:
+            SCRIPT_DISCOVERABLE: frozenset[str] = frozenset()  # noqa: N806
 
         if not any(getattr(t, "exposure", None) in SCRIPT_DISCOVERABLE for t in self.tools):
             return None

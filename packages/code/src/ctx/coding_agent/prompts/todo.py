@@ -19,7 +19,7 @@ def build_todo_section() -> str:
     # tool ships in the coding-agent product (ctx-code); without it there is
     # no todo list to render.
     try:
-        from ctx.coding_agent.tools.todo import current_todo_tool  # ty: ignore[import-not-found]
+        from ctx.coding_agent.tools.todo import current_todo_tool
     except ImportError:
         return ""
 

@@ -26,6 +26,10 @@ CODING_TOOL_ROWS: list[Row] = [
     Row(id="tool-search", name="ctx.coding_agent.tools.tool_search:PLUGIN"),
     Row(id="tool-codemode", name="ctx.coding_agent.tools.codemode:PLUGIN"),
     Row(id="coding-prompts", name="ctx.coding_agent.prompts_extras:PLUGIN"),
+    # External-server and confined-execution seams: the implementations ship
+    # beside the coding toolset that consumes them.
+    Row(id="mcp", name="ctx.mcp.plugin:PLUGIN"),
+    Row(id="sandbox", name="ctx.codemode.plugin:PLUGIN"),
 ]
 
 _MINIMAL_TOOL_ROWS: list[Row] = [
