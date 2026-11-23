@@ -60,7 +60,7 @@ class SettingsCommands(CommandSupport):
     def _handle_permissions_command(self, args: str) -> None:
         requested = args.strip().lower()
         if requested:
-            mode = {"full-access": "yolo", "prompt": "ask"}.get(requested, requested)
+            mode = {"prompt": "ask"}.get(requested, requested)
             if mode not in {spec.id for spec in BUILTIN_MODES}:
                 modes = ", ".join(spec.id for spec in BUILTIN_MODES)
                 self._fail(f"invalid permission mode: {requested}. use one of: {modes}")
@@ -111,7 +111,7 @@ class SettingsCommands(CommandSupport):
     # -- /mode -----------------------------------------------------------
 
     def _handle_mode_command(self, args: str) -> None:
-        """Switch vx's permission mode: ask, auto, or yolo (full access)."""
+        """Switch vx's permission mode: ask or auto."""
         perm_runtime = self._get_permission_runtime()
         if perm_runtime is None:
             self._fail("permission runtime not available", topic="mode")
@@ -451,7 +451,7 @@ def _sync_mode_to_config(mode_id: str) -> None:
     import contextlib
 
     # Map vx modes to ctx permission modes
-    mapping = {"ask": "prompt", "auto": "auto", "yolo": "auto"}
+    mapping = {"ask": "prompt", "auto": "auto"}
     ctx_mode = mapping.get(mode_id, "prompt")
     with contextlib.suppress(Exception):
         set_permissions_mode(cast("CtxPermissionMode", ctx_mode))

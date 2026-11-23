@@ -1,9 +1,8 @@
 """Permission modes and runtime for vx, inspired by fx's permission system.
 
-Three modes control how tool calls are handled:
+Two modes control how tool calls are handled:
 - **ask** — every mutating tool call prompts the user for approval
-- **auto** — automatic safety review via heuristic checks
-- **yolo** — full access, no permission checks
+- **auto** — bypass all checks, everything runs freely
 
 Session grants let the user allow a tool+path combination for the entire session.
 """
@@ -19,7 +18,6 @@ from ctx.agent.hooks.agent_hook import AgentHook
 class PermissionMode(Enum):
     ask = "ask"
     auto = "auto"
-    yolo = "yolo"
 
 
 @dataclass(frozen=True)
@@ -35,7 +33,7 @@ class ModeSpec:
     tool_policy_denial_message: str = ""
 
 
-#: The three built-in modes, matching fx's builtins/modes.zig.
+#: The two built-in modes.
 BUILTIN_MODES: list[ModeSpec] = [
     ModeSpec(
         id="ask",
@@ -46,14 +44,8 @@ BUILTIN_MODES: list[ModeSpec] = [
     ModeSpec(
         id="auto",
         name="Auto",
-        description="Automatic safety review",
+        description="Bypass all checks — everything runs freely",
         permission_mode=PermissionMode.auto,
-    ),
-    ModeSpec(
-        id="yolo",
-        name="Full access",
-        description="No confirmation — all tools run freely",
-        permission_mode=PermissionMode.yolo,
         tool_policy="full",
     ),
 ]
@@ -129,7 +121,7 @@ class PermissionRuntime:
         return True
 
     def toggle_mode(self) -> str:
-        """Cycle: ask → auto → yolo → ask …"""
+        """Cycle: ask → auto → ask …"""
         order = [m.id for m in BUILTIN_MODES]
         idx = order.index(self._mode) if self._mode in order else 0
         self._mode = order[(idx + 1) % len(order)]
@@ -165,8 +157,8 @@ class PermissionRuntime:
         """
         pm = self.permission_mode
 
-        # yolo → always allow
-        if pm == PermissionMode.yolo:
+        # auto → always allow (bypass all checks)
+        if pm == PermissionMode.auto:
             return PermissionResult(RuleDecision.allow)
 
         # read-only tools → always allow
@@ -177,66 +169,10 @@ class PermissionRuntime:
         if target_path and self._is_granted(tool_name, target_path):
             return PermissionResult(RuleDecision.allow)
 
-        # auto mode → heuristic review
-        if pm == PermissionMode.auto:
-            return _auto_review(tool_name, target_path)
-
         # ask mode → always prompt for mutating tools
         return PermissionResult(
             RuleDecision.permission_required, reason=f"Please confirm: {tool_name}"
         )
-
-
-def _auto_review(tool_name: str, target_path: str) -> PermissionResult:
-    """Heuristic auto-review for ``auto`` mode.
-
-    Allows clearly safe operations; prompts for anything uncertain.
-    """
-    # bash with known-safe commands
-    if tool_name == "bash":
-        safe_prefixes = (
-            "ls ",
-            "cat ",
-            "head ",
-            "tail ",
-            "wc ",
-            "find ",
-            "grep ",
-            "pwd",
-            "echo ",
-            "date",
-            "whoami",
-            "df ",
-            "du ",
-            "tree",
-            "git status",
-            "git log",
-            "git diff",
-            "git show",
-        )
-        for prefix in safe_prefixes:
-            if target_path.startswith(prefix):
-                return PermissionResult(RuleDecision.allow)
-        # deny dangerous bash commands without prompt
-        dangerous = ("rm -rf", "mkfs", "dd if=", "chmod -R 777", "sudo ")
-        for d in dangerous:
-            if d in target_path:
-                return PermissionResult(
-                    RuleDecision.permission_required,
-                    reason=f"Potentially dangerous command: {target_path[:80]}",
-                )
-        return PermissionResult(
-            RuleDecision.permission_required,
-            reason=f"Unreviewed command in auto mode: {target_path[:80]}",
-        )
-
-    # apply_patch → allow small edits, prompt for large ones
-    if tool_name == "apply_patch":
-        return PermissionResult(RuleDecision.allow)
-
-    return PermissionResult(
-        RuleDecision.permission_required, reason=f"Action needs review: {tool_name}"
-    )
 
 
 # -- lookups -----------------------------------------------------------------
@@ -270,9 +206,8 @@ class VxPermissionHook(AgentHook):
 
     Implements ``before_execute_tools`` to check each tool call against the
     current permission mode. In ``ask`` mode, mutating tools trigger the
-    existing ToolApprovalEvent flow. In ``auto`` mode, safe tools pass
-    through and uncertain ones trigger approval. In ``yolo`` mode, everything
-    passes silently.
+    existing ToolApprovalEvent flow. In ``auto`` mode, everything passes
+    silently without any checks.
 
     The hook stores a reference to the PermissionRuntime and the app's
     _request_approval method so it can trigger the UI approval flow.

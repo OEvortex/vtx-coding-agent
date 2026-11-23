@@ -604,6 +604,12 @@ class ConversationRuntime:
 
         # Hand the codemode singleton back before the tool list goes stale, so a
         # later session does not inherit this one's tools and permission config.
+        if self.provider is not None:
+            try:
+                await self.provider.aclose()
+            except Exception:
+                log.exception("Provider aclose failed")
+            self.provider = None
         self._unwire_codemode()
 
         try:

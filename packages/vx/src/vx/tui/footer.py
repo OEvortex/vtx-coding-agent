@@ -106,8 +106,6 @@ def permission_label(mode: str) -> str:
     t = _theme.current()
     if mode in ("auto",):
         return f"{t.permission_auto_style}auto{t.statusline_style}"
-    if mode in ("yolo", "full-access"):
-        return f"{t.permission_auto_style}full access{t.statusline_style}"
     if mode in ("ask", "prompt"):
         return f"{t.permission_auto_style}ask{t.statusline_style}"
     return mode
@@ -486,7 +484,7 @@ class PermissionsView:
 
 @dataclass
 class ModePickerView:
-    """Picker for switching permission modes: Ask, Auto, Full access."""
+    """Picker for switching permission modes: Ask, Auto."""
 
     modes: list[MenuItem] = field(default_factory=list)
     selected: int = 0

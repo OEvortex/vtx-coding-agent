@@ -77,6 +77,9 @@ class OpenAISDKProvider(BaseProvider):
             default_headers=config.default_headers,
         )
 
+    async def aclose(self) -> None:
+        await self._sdk.aclose()
+
     @staticmethod
     def _resolve_dynamic_key_for(config: ProviderConfig) -> str | None:
         from ctx.ai.oauth.dynamic import get_dynamic_api_key

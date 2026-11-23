@@ -362,10 +362,10 @@ class VxApp(CommandsMixin):
             self._ask_key(key)
             return
         if key == "tab" and not self._input:
-            self._toggle_permission_mode(1)
+            self._toggle_thinking_level(1)
             return
         if key == "shift+tab" and not self._input:
-            self._toggle_permission_mode(-1)
+            self._toggle_permission_mode(1)
             return
 
         if key == "esc" and self._prompt is not None:
@@ -788,6 +788,26 @@ class VxApp(CommandsMixin):
             self._input = f"{before}{token} {after}"
             self._cursor = len(before) + len(token) + 1
 
+    def _toggle_thinking_level(self, step: int) -> None:
+        """Cycle thinking levels: none → minimal → low → medium → high → none ..."""
+        rt = self.runtime
+        if rt is None:
+            return
+        try:
+            levels = list(rt.effective_thinking_levels)
+        except Exception:
+            return
+        if not levels:
+            return
+        current = rt.thinking_level or ""
+        idx = levels.index(current) if current in levels else 0
+        new_idx = (idx + step) % len(levels)
+        new_level = levels[new_idx]
+        rt.set_thinking_level(new_level)
+        self.viewport.add(
+            blocks.ThinkingLevelChanged(from_level=current or "none", to_level=new_level)
+        )
+
     def _toggle_permission_mode(self, step: int) -> None:
         order = [spec.id for spec in BUILTIN_MODES]
         old_mode = self._permission_runtime.mode
@@ -842,7 +862,7 @@ class VxApp(CommandsMixin):
         mode_item = view.modes[selected_idx]
         mode_id = mode_item.value or mode_item.label
         # Normalize label to mode id
-        label_map = {"Ask": "ask", "Auto": "auto", "Full access": "yolo"}
+        label_map = {"Ask": "ask", "Auto": "auto"}
         mode_id = label_map.get(mode_id, mode_id.lower())
         old_mode = perm_runtime.mode
         perm_runtime.set_mode(mode_id)
@@ -991,7 +1011,7 @@ class VxApp(CommandsMixin):
 
             perms = getattr(ctx_config, "permissions", None)
             if perms is not None:
-                mode_map = {"ask": "prompt", "auto": "auto", "yolo": "yolo"}
+                mode_map = {"ask": "prompt", "auto": "auto"}
                 perms.mode = mode_map.get(self._permission_runtime.mode, "prompt")
         except Exception:
             pass
@@ -1144,12 +1164,6 @@ class VxApp(CommandsMixin):
             if output is not None and not output.lines:
                 with suppress(Exception):
                     self.viewport.blocks.remove(output)
-            if ev.file_changes:
-                added = sum(f.added for f in ev.file_changes)
-                removed = sum(f.removed for f in ev.file_changes)
-                self.viewport.add(
-                    blocks.DiffSummary(files=len(ev.file_changes), added=added, removed=removed)
-                )
             return
         if isinstance(ev, ToolApprovalEvent):
             self._request_approval(ev)

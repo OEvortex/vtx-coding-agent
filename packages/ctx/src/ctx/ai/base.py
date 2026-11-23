@@ -316,6 +316,10 @@ class BaseProvider(ABC):
     @abstractmethod
     def should_retry_for_error(self, error: Exception) -> bool: ...
 
+    async def aclose(self) -> None:
+        """Release any held resources (e.g. aiohttp sessions)."""
+        return None
+
     @property
     def generation(self) -> Any:
         """Return generation settings (max_tokens, temperature, etc.)."""

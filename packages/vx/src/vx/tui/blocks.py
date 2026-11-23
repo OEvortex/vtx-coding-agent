@@ -399,7 +399,7 @@ class ReadToolStatus(Block):
 
 @dataclass
 class BashToolStatus(Block):
-    """Bash tool: ``$ command`` with exit code."""
+    """Bash tool: ``● Ran command`` — fx's compact one-row status."""
 
     name: str = "bash"
     command: str = ""
@@ -413,17 +413,17 @@ class BashToolStatus(Block):
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
         if self.status == "running":
-            line = f"{t.dim_style}$ {ansi.RESET}{ansi.BOLD}"
+            line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Running{ansi.RESET}"
             if self.command:
-                line += f"{self.command}{ansi.RESET}"
+                line += f" {t.tool_stdout_style}{self.command}{ansi.RESET}"
         else:
-            line = f"{t.dim_style}$ {ansi.RESET}{ansi.BOLD}{self.command}{ansi.RESET}"
-            if self.exit_code is not None:
-                if self.exit_code == 0:
-                    line += f" {t.task_completed_open}✓{ansi.RESET}"
-                else:
-                    line += f"{t.dim_style} (exit {self.exit_code}){ansi.RESET}"
-            elif self.status == "ok":
+            verb = self._verb()
+            line = f"{t.dim_style}●{ansi.RESET} {verb}"
+            if self.command:
+                line += f" {t.tool_stdout_style}{self.command}{ansi.RESET}"
+            if self.exit_code is not None and self.exit_code != 0:
+                line += f"{t.dim_style} (exit {self.exit_code}){ansi.RESET}"
+            if self.status == "ok":
                 line += f" {t.task_completed_open}✓{ansi.RESET}"
             elif self.status == "error":
                 line += f"{t.dim_style} ✗{ansi.RESET}"
@@ -432,7 +432,7 @@ class BashToolStatus(Block):
 
 @dataclass
 class ApplyPatchToolStatus(Block):
-    """apply_patch tool: ``± path +3 -1`` with diff summary."""
+    """apply_patch tool: ``● Edited path +3 -1`` — fx's compact one-row status."""
 
     name: str = "apply_patch"
     path: str = ""
@@ -450,21 +450,22 @@ class ApplyPatchToolStatus(Block):
         if self.status == "running":
             line = f"{t.dim_style}●{ansi.RESET} {t.dim_style}Editing{ansi.RESET}"
             if self.path:
-                line += f" {t.tag_style}{self.path}{ansi.RESET}"
+                line += f" {t.tool_stdout_style}{self.path}{ansi.RESET}"
         else:
-            line = f"{t.dim_style}±{ansi.RESET} {t.tag_style}{self.path}{ansi.RESET}"
-            parts = []
-            if self.added:
-                parts.append(f"+{self.added}")
-            if self.removed:
-                parts.append(f"-{self.removed}")
-            if parts:
-                line += f" {t.dim_style}{' '.join(parts)}{ansi.RESET}"
-            if self.ops_count > 1:
-                line += f"{t.dim_style} · {self.ops_count} ops{ansi.RESET}"
-            if self.status == "ok":
-                line += f" {t.task_completed_open}✓{ansi.RESET}"
-            elif self.status == "error":
+            verb = self._verb()
+            line = f"{t.dim_style}●{ansi.RESET} {verb}"
+            if self.path:
+                line += f" {t.tool_stdout_style}{self.path}{ansi.RESET}"
+            # fx-style diff stats: +N / -M in dim
+            if self.added > 0 and self.removed > 0:
+                line += f" {t.dim_style}+{self.added}{ansi.RESET}"
+                line += f" {t.dim_style}/{ansi.RESET}"
+                line += f" {t.dim_style}-{self.removed}{ansi.RESET}"
+            elif self.added > 0:
+                line += f" {t.dim_style}+{self.added}{ansi.RESET}"
+            elif self.removed > 0:
+                line += f" {t.dim_style}-{self.removed}{ansi.RESET}"
+            if self.status == "error":
                 line += f"{t.dim_style} ✗{ansi.RESET}"
         return [ansi.clip_ellipsis(line, width)]
 
@@ -562,6 +563,19 @@ class ModeStatus(Block):
         line = f"{t.dim_style}Mode:{ansi.RESET} {t.tag_style}{name}{ansi.RESET}"
         if self.description:
             line += f" {t.dim_style}— {self.description}{ansi.RESET}"
+        return [ansi.clip_ellipsis(line, width)]
+
+
+@dataclass
+class ThinkingLevelChanged(Block):
+    """Thinking level change confirmation: ``Thinking: high``."""
+
+    from_level: str = ""
+    to_level: str = ""
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        line = f"{t.dim_style}Thinking{ansi.RESET}: {t.dim_style}{self.to_level}{ansi.RESET}"
         return [ansi.clip_ellipsis(line, width)]
 
 

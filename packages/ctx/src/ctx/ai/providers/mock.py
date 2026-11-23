@@ -274,3 +274,6 @@ class MockProvider(BaseProvider):
         if self.scenario == "retries" or self.scenario == "retry_exhausted":
             return isinstance(error, ConnectionError)
         return False
+
+    async def aclose(self) -> None:
+        return None

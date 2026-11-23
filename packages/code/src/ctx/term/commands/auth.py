@@ -38,7 +38,6 @@ from ctx.ai import (
     get_provider_status,
     get_valid_cline_credentials,
     get_valid_codex_credentials,
-    get_valid_deepai_token_sync,
     junie_login,
     list_providers,
     save_api_key,
@@ -515,7 +514,7 @@ class AuthCommands(CommandSupport):
             chat.add_info_message(f"Login failed: {e}", error=True)
 
     async def _deepai_login_flow(self) -> None:
-        from ctx.ai.oauth.deepai import DeepAICredentials, load_deepai_credentials
+        from ctx.ai.oauth.deepai import load_deepai_credentials
 
         chat = self.query_one("#chat-log", ChatLog)
         try:

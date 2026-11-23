@@ -35,7 +35,7 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
     ("/model", "choose the model, or refresh the catalog", "Model"),
     ("/provider", "scope the model picker to one provider", "Model"),
     ("/thinking", "set the reasoning effort level", "Model"),
-    ("/mode", "switch permission mode: ask, auto, or full access", "Security"),
+    ("/mode", "switch permission mode: ask or auto", "Security"),
     ("/permissions", "view permission mode, rules, and session grants", "Security"),
     ("/login", "sign in to a provider", "Account"),
     ("/logout", "clear a provider's credentials", "Account"),
