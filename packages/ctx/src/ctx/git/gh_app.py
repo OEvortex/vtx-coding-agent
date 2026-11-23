@@ -22,6 +22,7 @@ referenced dev-to / josh-ops write-ups):
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import time
@@ -35,7 +36,7 @@ import aiohttp
 from ctx.core.paths import get_config_dir
 
 
-# ``jwt`` still ships only in the ``gh-app`` extra and is imported at its
+# JWT signing uses ``cryptography`` from the ``gh-app`` extra, imported at its
 # point of use so a plain install can import this module. HTTP uses aiohttp,
 # which is a hard dependency of ``ctx``.
 def _run_async(coro: Any) -> Any:
@@ -130,13 +131,32 @@ def is_configured() -> bool:
     return True
 
 
+def _b64url(data: bytes) -> str:
+    """Unpadded URL-safe base64, as required by the JWT spec."""
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
 def make_jwt(cfg: GitHubAppConfig) -> str:
-    """Sign a short-lived (10 min) JWT with the App's private key."""
-    import jwt
+    """Sign a short-lived (10 min) JWT with the App's private key (RS256).
+
+    GitHub App authentication needs only three claims and a plain RS256
+    signature, so signing directly with ``cryptography`` (already part of the
+    ``gh-app`` extra) avoids carrying a separate JWT package.
+    """
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
     now = int(time.time())
+    header = {"alg": "RS256", "typ": "JWT"}
     payload = {"iat": now - 30, "exp": now + 600, "iss": cfg.app_id}
-    return jwt.encode(payload, cfg.pem, algorithm="RS256")
+    compact = ".".join(
+        _b64url(json.dumps(part, separators=(",", ":")).encode()) for part in (header, payload)
+    )
+    key = serialization.load_pem_private_key(cfg.pem.encode(), password=None)
+    if not isinstance(key, rsa.RSAPrivateKey):
+        raise ValueError("GitHub App private key must be RSA")
+    signature = key.sign(compact.encode(), padding.PKCS1v15(), hashes.SHA256())
+    return f"{compact}.{_b64url(signature)}"
 
 
 def _headers(jwt_or_token: str, as_app: bool = True) -> dict[str, str]:

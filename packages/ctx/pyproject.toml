@@ -58,7 +58,6 @@ term = [
 
 gh-app = [
     "cryptography>=41.0",
-    "PyJWT",
 ]
 
 [tool.uv.sources]
