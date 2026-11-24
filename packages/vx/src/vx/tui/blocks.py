@@ -427,7 +427,14 @@ def _display_path(path: str) -> str:
 
 
 def _tool_row(block: ToolRow, width: int, lead: str) -> str:
-    return ansi.clip_ellipsis(f"{lead}{block.body()}{block.mark()}", width)
+    """``● Ran … ✓``: the body is clipped before the mark, never after it.
+
+    Clipping the joined string would let a long command eat the ✓ or the
+    duration, which is the part that says the call finished and how it ended.
+    """
+    mark = block.mark()
+    room = max(8, width - ansi.width(lead) - ansi.width(mark))
+    return f"{lead}{ansi.clip_ellipsis(block.body(), room)}{mark}"
 
 
 def _status_of(call: ToolRow) -> str:
@@ -688,83 +695,218 @@ def _heat_level(value: int, cuts: list[int]) -> int:
     return min(level, len(HEAT_GLYPHS) - 1)
 
 
-@dataclass
-class Heatmap(Block):
-    """Token activity as weeks by weekday, the shape ctx's ``/usage`` draws."""
+#: Card geometry, as ctx draws them: three summary cards in one row when the
+#: terminal is wide enough for each to hold a total without clipping.
+CARD_MIN_WIDTH = 28
+CARD_MAX_WIDTH = 34
+CARD_GAP = 2
 
-    totals: dict[Any, int] = field(default_factory=dict)
-    as_of: Any = None
-    weeks: int = 26
-    caption: str = ""
+
+def _usage_colors() -> Any:
+    """ctx's palette, so ``/usage`` matches the reference byte for byte."""
+    from ctx.core.config import config
+
+    return config.ui.colors
+
+
+def _usage_style(role: str, *, bold: bool = False) -> str:
+    from vx.tui.theme import _fg
+
+    with suppress(Exception):
+        return _fg(getattr(_usage_colors(), role, ""), bold=bold)
+    return "\x1b[1m" if bold else ""
+
+
+def _total_line(usage: Any) -> str:
+    """A compact total plus the exact count, so the arithmetic is checkable."""
+    from ctx.term.formatting import format_tokens
+
+    total = getattr(usage, "total_tokens", 0) or 0
+    return f" {format_tokens(total)} · {total:,}"
+
+
+def _usage_cells(title: str, usage: Any, inner: int, reset: str) -> list[str]:
+    """The four inner rows of one summary card, each padded to ``inner``."""
+    from ctx.term.formatting import format_tokens
+
+    border = _usage_style("border")
+    strong = _usage_style("fg", bold=True)
+    quiet = _usage_style("dim")
+
+    turns = getattr(usage, "turns", 0) or 0
+    noun = "turn" if turns == 1 else "turns"
+    lines = [
+        (f" {_total_line(usage)}", strong),
+        (f" {turns:,} {noun}", quiet),
+        (
+            f" ↑ {format_tokens(getattr(usage, 'input_tokens', 0) or 0)}"
+            f"  ↓ {format_tokens(getattr(usage, 'output_tokens', 0) or 0)}"
+            f"  ◈ {format_tokens(getattr(usage, 'cache_read_tokens', 0) or 0)}",
+            quiet,
+        ),
+    ]
+    out: list[str] = []
+    for text, style in lines:
+        text = ansi.clip(text, inner)
+        fill = " " * max(0, inner - ansi.width(text))
+        out.append(f"{border}│{reset}{style}{text}{reset}{fill}{border}│{reset}")
+    top_title = ansi.clip(f"─ {title} ", inner)
+    fill = "─" * max(0, inner - ansi.width(top_title))
+    return [
+        f"{border}╭{reset}{strong}{top_title}{reset}{border}{fill}╮{reset}",
+        *out,
+        f"{border}╰{'─' * inner}╯{reset}",
+    ]
+
+
+def _usage_cards(session: Any, report: Any, width: int) -> list[str]:
+    """Session / last 30 days / lifetime, side by side or stacked."""
+    reset = ansi.RESET
+    summaries = (
+        ("Session", session),
+        ("Last 30 days", getattr(report, "last_30_days", None)),
+        ("Lifetime", getattr(report, "lifetime", None)),
+    )
+    if all(usage is None for _, usage in summaries):
+        return []
+    summaries = tuple(
+        (title, usage if usage is not None else _empty_usage()) for title, usage in summaries
+    )
+
+    if width >= CARD_MIN_WIDTH * 3 + CARD_GAP * 2:
+        card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH, (width - CARD_GAP * 2) // 3))
+        cards = [_usage_cells(title, usage, card_w - 2, reset) for title, usage in summaries]
+        gap = " " * CARD_GAP
+        return [gap.join(card[row] for card in cards) for row in range(len(cards[0]))]
+
+    card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH, width - 2))
+    out: list[str] = []
+    for title, usage in summaries:
+        if out:
+            out.append("")
+        out += _usage_cells(title, usage, card_w - 2, reset)
+    return out
+
+
+def _empty_usage() -> Any:
+    from ctx.term.usage_stats import DailyUsage
+
+    return DailyUsage()
+
+
+def _usage_columns(report: Any, days: int, width: int) -> tuple[list[Any], Any]:
+    end = getattr(report, "as_of", None) or date.today()
+    start = end - timedelta(days=days - 1)
+    start -= timedelta(days=(start.weekday() + 1) % 7)
+    window_start = end - timedelta(days=days - 1)
+    columns = [start + timedelta(days=7 * week) for week in range((end - start).days // 7 + 1)]
+    fit = max(6, (width - 4 - 2) // 2)
+    if len(columns) > fit:
+        columns = columns[-fit:]
+        window_start = max(window_start, columns[0])
+    return columns, window_start
+
+
+def _usage_heatmap(report: Any, days: int, width: int) -> list[str]:
+    """The activity grid: weeks as columns, weekdays as rows."""
+    end = getattr(report, "as_of", None) or date.today()
+    columns, window_start = _usage_columns(report, days, width)
+    day_map = getattr(report, "days", None) or {}
+    cuts = _heat_levels([getattr(usage, "total_tokens", 0) for usage in day_map.values()])
+    reset = ansi.RESET
+    strong = _usage_style("fg", bold=True)
+    quiet = _usage_style("dim")
+    zero_shade = _usage_style("border")
+
+    if days <= 31:
+        subtitle = "Token activity · last 30 days"
+    elif len(columns) >= 50:
+        subtitle = "Token activity · last 12 months"
+    else:
+        months = max(1, round((end - columns[0]).days / 30.4))
+        subtitle = f"Token activity · last {months} months"
+
+    out = [f"{strong}{subtitle}{reset}", ""]
+
+    # Month labels sit over the week each month starts in, when they fit.
+    header = [" "] * (4 + len(columns) * 2)
+    last_month = ""
+    next_allowed = 4
+    for index, week_start in enumerate(columns):
+        month = ""
+        for offset in range(7):
+            visible = week_start + timedelta(days=offset)
+            if window_start <= visible <= end:
+                month = visible.strftime("%b")
+                break
+        if not month or month == last_month:
+            continue
+        position = 4 + index * 2
+        if position < next_allowed:
+            continue
+        while len(header) < position + len(month):
+            header.append(" ")
+        for offset, char in enumerate(month):
+            header[position + offset] = char
+        next_allowed = position + len(month) + 1
+        last_month = month
+    out.append(f"{quiet}{''.join(header).rstrip()}{reset}")
+
+    for weekday in range(7):
+        label = f"  {DAY_INITIALS[weekday]} " if weekday in DAY_LABELLED else "    "
+        cells: list[str] = []
+        for week_start in columns:
+            day = week_start + timedelta(days=weekday)
+            if day < window_start or day > end:
+                cells.append("  ")
+                continue
+            usage = day_map.get(day)
+            total = getattr(usage, "total_tokens", 0) if usage is not None else 0
+            level = _heat_level(total, cuts)
+            shade = _heat_shade(level) if level else zero_shade
+            cells.append(f"{shade}{HEAT_GLYPHS[level]}{reset} ")
+        out.append(f"{quiet}{label}{reset}{''.join(cells)}".rstrip())
+
+    legend = "".join(
+        f"{_heat_shade(i) if i else zero_shade}{HEAT_GLYPHS[i]}{reset} "
+        for i in range(len(HEAT_GLYPHS))
+    )
+    out.append(f"    {quiet}less {reset}{legend}{quiet}more{reset}")
+    return out
+
+
+def _heat_shade(level: int) -> str:
+    """Blends of the background toward the accent, one per heat level."""
+    from ctx.term.styles import _blend_hex
+
+    from vx.tui.theme import _fg
+
+    weights = (0.0, 0.25, 0.45, 0.7, 1.0)
+    with suppress(Exception):
+        colors = _usage_colors()
+        return _fg(_blend_hex(colors.bg, colors.accent, overlay_weight=weights[level]))
+    return _usage_style("accent")
+
+
+@dataclass
+class Usage(Block):
+    """ctx's ``/usage``: summary cards over a year of token activity."""
+
+    session: Any = None
+    report: Any = None
+    days: int = 365
     kind: str = "notice"
 
-    def _columns(self, width: int) -> tuple[list[Any], Any]:
-        from datetime import timedelta
-
-        end = self.as_of or date.today()
-        fit = max(4, (max(12, width - 4)) // 2)
-        # A young history should not paint a year of empty weeks, so the grid
-        # stops just past the oldest recorded day (and never shrinks past eight).
-        oldest = min(self.totals) if self.totals else end
-        span = max(8, (end - oldest).days // 7 + 1)
-        weeks = max(1, min(self.weeks, fit, span))
-        sunday = end - timedelta(days=(end.weekday() + 1) % 7)
-        start = sunday - timedelta(weeks=weeks - 1)
-        return [start + timedelta(weeks=i) for i in range(weeks)], start
-
     def rows(self, width: int) -> list[str]:
-        t = _theme.current()
-        columns, window_start = self._columns(width)
-        end = self.as_of or date.today()
-        cuts = _heat_levels([self.totals.get(day, 0) for day in self.totals])
-        gutter = 4
-        out: list[str] = []
-        label = f"{self.caption or 'Token activity'} · last {len(columns)} weeks"
-        out.append(f"{t.system_notice_label_style}{ansi.clip(label, width)}{ansi.RESET}")
-
-        # Month labels sit over the week each month starts in, when they fit.
-        header = [" "] * (gutter + len(columns) * 2)
-        last_month = ""
-        next_allowed = gutter
-        for index, week_start in enumerate(columns):
-            month = ""
-            for day_offset in range(7):
-                visible = week_start + timedelta(days=day_offset)
-                if window_start <= visible <= end:
-                    month = visible.strftime("%b")
-                    break
-            if not month or month == last_month:
-                continue
-            position = gutter + index * 2
-            if position < next_allowed:
-                continue
-            while len(header) < position + len(month):
-                header.append(" ")
-            for offset, ch in enumerate(month):
-                header[position + offset] = ch
-            next_allowed = position + len(month) + 1
-            last_month = month
-        out.append(f"{t.dim_style}{''.join(header).rstrip()}{ansi.RESET}")
-
-        for weekday in range(7):
-            label = f"  {DAY_INITIALS[weekday]} " if weekday in DAY_LABELLED else "    "
-            cells: list[str] = []
-            for week_start in columns:
-                day = week_start + timedelta(days=weekday)
-                if day < window_start or day > end:
-                    cells.append("  ")
-                    continue
-                level = _heat_level(self.totals.get(day, 0), cuts)
-                shade = t.dim_style if level == 0 else t.user_card_accent_style
-                cells.append(f"{shade}{HEAT_GLYPHS[level]}{ansi.RESET} ")
-            out.append(f"{t.dim_style}{label}{ansi.RESET}{''.join(cells)}".rstrip())
-
-        legend = "".join(f"{HEAT_GLYPHS[i]} " for i in range(len(HEAT_GLYPHS)))
-        out.append(
-            f"    {t.dim_style}less {ansi.RESET}"
-            f"{t.user_card_accent_style}{legend}{ansi.RESET}"
-            f"{t.dim_style}more{ansi.RESET}"
-        )
+        if self.report is None:
+            return []
+        reset = ansi.RESET
+        out = [f"{_usage_style('fg', bold=True)}Token usage{reset}", ""]
+        cards = _usage_cards(self.session, self.report, width)
+        if cards:
+            out += cards
+            out.append("")
+        out += _usage_heatmap(self.report, self.days, width)
         return out
 
 
@@ -872,223 +1014,12 @@ class BashToolStatus(ToolRow):
         else:
             label = "Ran"
         out = f"{t.dim_style}{label}{ansi.RESET}"
-        command = self.command if self.status == "running" else _short_command(self.command)
+        command = " ".join(self.command.split())
         if command:
             out += f" {t.tool_stdout_style}{command}{ansi.RESET}"
         if self.reason:
             out += f"{t.dim_style} · {self.reason}{ansi.RESET}"
         return out + self.duration()
-
-
-#: fx's names for the programs it shortens to their own name (plain_programs).
-_PLAIN_PROGRAMS = {
-    "echo", "printf", "cat", "ls", "grep", "rg", "find", "fd", "sed", "awk", "head",
-    "tail", "sleep", "rm", "cp", "mv", "mkdir", "rmdir", "touch", "chmod",
-    "chown", "ln", "wc", "sort", "uniq", "cut", "tr", "tee", "xargs", "which",
-    "pwd", "date", "curl", "wget", "jq", "diff", "stat", "du", "df", "ps",
-    "kill", "pkill", "pgrep", "open", "tar", "unzip", "zip", "ssh", "scp",
-    "rsync", "file", "basename", "dirname", "realpath", "readlink", "seq",
-    "watch", "uname", "whoami",
-}  # fmt: skip
-
-#: Steps that only change the shell's own state, so they name no work.
-_SHELL_SETUP = {
-    "cd", "pushd", "popd", "export", "set", "unset", "source", ".", "true", ":",
-    "exit", "wait", "trap", "shopt", "alias", "ulimit", "umask", "[", "[[", "test",
-}  # fmt: skip
-
-#: Shell words that lead into the command after them.
-_LEADING_KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!"}
-
-#: Shell words whose whole step runs no program of its own, such as a loop's
-#: header or its end.
-_STEP_KEYWORDS = {"for", "select", "case", "esac", "done", "fi", "in", "function"}
-
-#: Programs that run the program after them.
-_WRAPPERS = {"sudo", "time", "nohup", "exec", "command", "env", "builtin", "nice", "timeout"}
-
-#: Programs that only reshape the output of the step before a pipe.
-_OUTPUT_FILTERS = {
-    "head", "tail", "grep", "rg", "egrep", "fgrep", "jq", "sed", "awk", "sort",
-    "uniq", "wc", "cut", "tr", "tee", "less", "more", "cat", "column", "fold", "nl",
-}  # fmt: skip
-
-#: A command at most this long keeps its own text rather than its steps.
-SHORT_COMMAND_MAX_LEN = 60
-#: The most steps a short command names before " +N more".
-SHORT_COMMAND_MAX_STEPS = 3
-
-
-def _short_command(command: str) -> str:
-    """fx's short form of a command: a compound command is named by its steps.
-
-    ``cd desktop && npm ci --no-audit && npm run build`` reads as
-    ``npm ci, npm run build``, while a one-step command at most
-    ``SHORT_COMMAND_MAX_LEN`` long keeps its own text.
-    """
-    text = " ".join(command.split())
-    steps = _command_steps(text)
-    if not steps:
-        return ansi.clip_ellipsis(text, SHORT_COMMAND_MAX_LEN)
-    if len(_command_steps(text, raw=True)) <= 1 and len(text) <= SHORT_COMMAND_MAX_LEN:
-        return text
-    if len(steps) == 1 and (steps[0] == text or len(steps[0]) >= len(text)):
-        return ansi.clip_ellipsis(text, SHORT_COMMAND_MAX_LEN)
-    kept = steps[:SHORT_COMMAND_MAX_STEPS]
-    more = len(steps) - len(kept)
-    out = ", ".join(kept)
-    if more > 0:
-        out += f" +{more} more"
-    return ansi.clip_ellipsis(out, SHORT_COMMAND_MAX_LEN)
-
-
-def _command_steps(command: str, *, raw: bool = False) -> list[str]:
-    """The steps a shell command runs, by program and subcommand.
-
-    Ported in spirit from fx's ``shortCommandSteps``: quotes are respected,
-    wrapper programs, leading keywords, environment assignments and shell
-    setup are skipped, and words after a plain program are its arguments.
-    """
-    steps: list[str] = []
-    count = 0
-    for tokens, after_pipe in _split_steps(command):
-        counted, step = _step_name(tokens, after_pipe)
-        if not counted:
-            continue
-        count += 1
-        if raw:
-            steps.append(step or "")
-            continue
-        if step is None:
-            continue
-        if not steps or steps[-1] != step:
-            steps.append(step)
-    return steps
-
-
-def _step_name(tokens: list[tuple[str, bool]], after_pipe: bool) -> tuple[bool, str | None]:
-    """One step's short name, and whether the step counts as work at all."""
-    program = ""
-    words: list[str] = []
-    skip_next = False
-    for value, quoted in tokens:
-        if not program:
-            if not quoted and _is_assignment(value):
-                continue
-            if not quoted and value in _LEADING_KEYWORDS:
-                continue
-            if not quoted and value in _WRAPPERS:
-                skip_next = False
-                words = ["\0wrapper"]
-                continue
-            if words == ["\0wrapper"]:
-                if value.startswith("-") or value[:1].isdigit():
-                    continue
-                words = []
-            if not quoted and value in _SHELL_SETUP:
-                return True, None
-            if not quoted and value in _STEP_KEYWORDS:
-                return True, None
-            program = _program_name(value)
-            if program in _PLAIN_PROGRAMS:
-                break
-            if skip_next:
-                skip_next = False
-            continue
-        if skip_next:
-            skip_next = False
-            continue
-        if program == "git" and value in ("-C", "-c"):
-            skip_next = True
-            continue
-        if _is_word(value, quoted):
-            words.append(value)
-            if len(words) == 2:
-                break
-            continue
-        break
-    if not program:
-        return False, None
-    if after_pipe and program in _OUTPUT_FILTERS:
-        return True, None
-    return True, " ".join([program, *words])
-
-
-def _program_name(value: str) -> str:
-    """A program as the short form names it: its base name, or ./script."""
-    if value.startswith("./"):
-        return value.split("/", 2)[1] if value.count("/") == 1 else value
-    return value.rsplit("/", 1)[-1]
-
-
-def _is_word(value: str, quoted: bool) -> bool:
-    """Whether a token is a subcommand word rather than a flag or a path."""
-    if quoted or not value or not value[0].islower():
-        return False
-    return all(ch.islower() or ch.isdigit() or ch in "-_:." for ch in value)
-
-
-def _is_assignment(value: str) -> bool:
-    """Whether a token is a ``NAME=value`` environment assignment."""
-    name, sep, _ = value.partition("=")
-    return bool(sep) and bool(name) and all(ch == "_" or ch.isalnum() for ch in name)
-
-
-def _split_steps(command: str) -> list[tuple[list[tuple[str, bool]], bool]]:
-    """Shell words split at ``&&``, ``||``, ``;``, ``|`` and newlines."""
-    steps: list[tuple[list[tuple[str, bool]], bool]] = []
-    tokens: list[tuple[str, bool]] = []
-    word: list[str] = []
-    quoted = False
-    open_quote = ""
-    after_pipe = False
-    index = 0
-
-    def flush_word() -> None:
-        nonlocal word, quoted
-        if word:
-            tokens.append(("".join(word), quoted))
-            word = []
-            quoted = False
-
-    def flush_step(next_after_pipe: bool = False) -> None:
-        nonlocal tokens, after_pipe
-        flush_word()
-        if tokens:
-            steps.append((tokens, after_pipe))
-        tokens = []
-        after_pipe = next_after_pipe
-
-    while index < len(command):
-        ch = command[index]
-        if open_quote:
-            if ch == open_quote:
-                open_quote = ""
-            else:
-                word.append(ch)
-            index += 1
-            continue
-        if ch in "'\"":
-            open_quote = ch
-            quoted = True
-            index += 1
-            continue
-        if command.startswith("&&", index) or command.startswith("||", index):
-            flush_step(next_after_pipe=command.startswith("||", index))
-            index += 2
-            continue
-        if ch in ";|\n&":
-            flush_step(next_after_pipe=ch == "|")
-            index += 1
-            continue
-        if ch.isspace():
-            flush_word()
-            index += 1
-            continue
-        word.append(ch)
-        index += 1
-    flush_step()
-    return steps
 
 
 @dataclass

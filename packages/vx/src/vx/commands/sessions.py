@@ -299,80 +299,38 @@ class SessionCommands(CommandSupport):
     def _handle_usage_command(self) -> None:
         self._spawn(self._show_usage())
 
-    def _add_usage_heatmap(self, report: object) -> None:
-        """Draw the year of token activity above the totals.
-
-        ctx's ``/usage`` leads with a contribution grid; the numbers alone say
-        how much was spent but not whether the work was steady or bursty.
-        """
-        from datetime import date
-
-        from vx.tui.blocks import Heatmap
-
-        days = getattr(report, "days", None)
-        if not days:
-            return
-        totals = {day: getattr(usage, "total_tokens", 0) for day, usage in days.items()}
-        if not any(totals.values()):
-            return
-        self.viewport.add(
-            Heatmap(
-                totals=totals,
-                as_of=getattr(report, "as_of", None) or date.today(),
-                weeks=52,
-                caption="Token activity",
-            )
-        )
-        self.viewport.touch()
-
     async def _show_usage(self) -> None:
-        from ctx.term.usage_stats import aggregate_usage
+        """ctx's ``/usage``: session, rolling month and lifetime, over a year grid.
 
-        self._notice("reading session history…", topic="usage")
+        Reading every session log takes seconds, so it runs in a worker thread.
+        The wait is shown in the footer activity rather than the transcript: a
+        pending row would have to be removed again, and vx's transcript is a
+        record of what happened, not a scratch surface.
+        """
+        from ctx.term.usage_stats import HEATMAP_DAYS, DailyUsage, aggregate_usage
+
+        self._activity = "reading usage…"
         try:
             report = await asyncio.to_thread(aggregate_usage)
         except Exception as exc:
             self._fail(f"could not read usage: {exc}", topic="usage")
             return
+        finally:
+            self._activity = ""
 
-        session_rows: list[tuple[str, str]] = []
+        session = DailyUsage()
         rt = self.runtime
         if rt is not None and rt.session is not None:
             totals = rt.session.token_totals()
-            counts = rt.session.message_counts()
-            session_rows = [
-                ("turns", str(counts.assistant_messages)),
-                ("input", f"{totals.input_tokens:,}"),
-                ("output", f"{totals.output_tokens:,}"),
-                (
-                    "cache",
-                    f"{totals.cache_read_tokens:,} read · {totals.cache_write_tokens:,} write",
-                ),
-                ("context", f"{totals.context_tokens:,}"),
-            ]
-
-        sections: list[tuple[str, list[tuple[str, str]]]] = []
-        if session_rows:
-            sections.append(("this session", session_rows))
-        today = _today_rows(report)
-        if today:
-            sections.append(("today", today))
-        last_30 = _usage_rows(getattr(report, "last_30_days", None))
-        if last_30:
-            sections.append(("last 30 days", last_30))
-        lifetime = _usage_rows(getattr(report, "lifetime", None))
-        if lifetime:
-            sections.append(("all time", lifetime))
-        if not sections:
-            self._warn("no usage recorded yet", topic="usage")
-            return
-        self._add_usage_heatmap(report)
-        scanned = getattr(report, "sessions_scanned", 0)
-        self._report(
-            "Token usage",
-            sections,
-            detail=f"aggregated from {scanned} session log(s) in this workspace",
-        )
+            session = DailyUsage(
+                input_tokens=totals.input_tokens,
+                output_tokens=totals.output_tokens,
+                cache_read_tokens=totals.cache_read_tokens,
+                cache_write_tokens=totals.cache_write_tokens,
+                turns=rt.session.message_counts().assistant_messages,
+            )
+        self.viewport.add(blocks.Usage(session=session, report=report, days=HEATMAP_DAYS))
+        self.viewport.touch()
 
     # -- /compact --------------------------------------------------------
 
@@ -626,34 +584,3 @@ def _local_recap(session: Session | None) -> str:
     for prompt in prompts[-4:]:
         lines.append(f"- {prompt}")
     return "\n\n".join(lines)
-
-
-def _usage_rows(usage: Any) -> list[tuple[str, str]]:
-    """One period's token counts, formatted for the report block."""
-    if usage is None:
-        return []
-    total = getattr(usage, "total_tokens", 0) or 0
-    return [
-        ("turns", f"{getattr(usage, 'turns', 0):,}"),
-        ("input", f"{getattr(usage, 'input_tokens', 0):,}"),
-        ("output", f"{getattr(usage, 'output_tokens', 0):,}"),
-        (
-            "cache",
-            f"{getattr(usage, 'cache_read_tokens', 0):,} read · "
-            f"{getattr(usage, 'cache_write_tokens', 0):,} write",
-        ),
-        ("total", f"{total:,}"),
-    ]
-
-
-def _today_rows(report: Any) -> list[tuple[str, str]]:
-    """Today's bucket out of the per-day map ctx's report carries."""
-    days = getattr(report, "days", None)
-    as_of = getattr(report, "as_of", None)
-    if not isinstance(days, dict):
-        return []
-    if as_of is not None and as_of in days:
-        return _usage_rows(days[as_of])
-    if not days:
-        return []
-    return _usage_rows(days[max(days)])
