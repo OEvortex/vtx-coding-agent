@@ -537,6 +537,9 @@ class VxApp(_CommandBase):
         if self._ask is not None:
             self._ask_key(key)
             return
+        if key.startswith("mouse:"):
+            self._mouse_key(key)
+            return
         if self._searching:
             self._search_key(key)
             return
@@ -552,9 +555,6 @@ class VxApp(_CommandBase):
             step = 1 if key in ("n", "ctrl+n") else -1
             self.viewport.search_next(step, *self._size())
             self._draw()
-            return
-        if key.startswith("mouse:"):
-            self._mouse_key(key)
             return
         if key == "tab" and not self._input:
             self._toggle_thinking_level(1)
@@ -750,6 +750,11 @@ class VxApp(_CommandBase):
         if key in ("ctrl+n", "ctrl+p"):
             step = 1 if key == "ctrl+n" else -1
             self.viewport.search_next(step, *self._size())
+            self._draw()
+            return
+        if key in ("pageup", "pagedown", "ctrl+up", "ctrl+down"):
+            direction = 1 if key in ("pageup", "ctrl+up") else -1
+            self.viewport.page(direction, *self._size())
             self._draw()
             return
         text, cursor = self._search, self._search_cursor

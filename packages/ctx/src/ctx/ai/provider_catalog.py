@@ -564,6 +564,25 @@ def get_all_catalog_models() -> list[Model]:
     return models
 
 
+def get_catalog_models_for(slug: str) -> list[Model] | None:
+    """The catalog for one provider, or ``None`` when ``slug`` is unknown.
+
+    Building the whole catalog costs seconds (every provider's fetched list is
+    materialised with its token limits), which is wasted work when a picker is
+    scoped to a single provider. This is the same per-provider step
+    :func:`get_all_catalog_models` runs, so both agree on the entries.
+    """
+    from ctx.ai.model_fetcher import get_fetched_models
+
+    provider = get(slug)
+    if provider is None:
+        return None
+    fetched = get_fetched_models(provider)
+    if fetched:
+        return list(fetched)
+    return [_provider_info_to_model(provider, model_id) for model_id in provider.known_models]
+
+
 # =================================================================================================
 # Custom providers
 # =================================================================================================

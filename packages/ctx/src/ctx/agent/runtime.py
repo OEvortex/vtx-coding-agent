@@ -44,8 +44,20 @@ log = logging.getLogger("agent.runtime")
 
 
 def _warm_model_catalog() -> None:
-    """Build the memoized model catalog in the background; never raises."""
+    """Build the memoized model catalog in the background; never raises.
+
+    A picker scoped to one provider only ever shows that provider's models, and
+    materialising all ~6.4k of them costs seconds of CPU that competes with the
+    UI thread. Warm the scoped slice when a filter is set, the whole catalog
+    otherwise.
+    """
     try:
+        from ctx.ai.provider_catalog import get_catalog_models_for
+        from ctx.core.config import get_config
+
+        filtered = get_config().ui.model_provider_filter
+        if filtered and get_catalog_models_for(filtered) is not None:
+            return
         from ctx.ai.models import get_all_models
 
         get_all_models()
