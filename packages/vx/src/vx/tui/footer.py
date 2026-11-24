@@ -8,7 +8,9 @@ with middle-dot separators plus a right-aligned activity note.
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from vx.tui import ansi
 from vx.tui import theme as _theme
@@ -188,12 +190,45 @@ def _workspace_identity(workspace: str, branch: str | None, cols: int) -> str:
     return name
 
 
+def elapsed_note(seconds: float) -> str:
+    """``7s``, ``1m 20s``, ``2h 5m`` -- short enough for the status row."""
+    total = round(seconds)
+    if total < 60:
+        return f"{total}s"
+    if total < 3600:
+        return f"{total // 60}m {total % 60}s"
+    return f"{total // 3600}h {(total % 3600) // 60}m"
+
+
 def activity_note(label: str, started: float, now: float, queued: int = 0) -> str:
-    frame = SPINNER[int((now - started) * 10) % len(SPINNER)]
+    """The running note: spinner, what is happening, how long, and the way out."""
+    elapsed = max(0.0, now - started)
+    frame = SPINNER[int(elapsed * 10) % len(SPINNER)]
     note = f"{frame} {label}"
+    if elapsed >= 1:
+        note += f" {elapsed_note(elapsed)}"
+    note += " · esc to interrupt"
     if queued:
         note += f" · {queued} queued"
     return note
+
+
+def attachment_row(attachments: Sequence[Any], cols: int) -> str:
+    """The chips above the composer: what the next prompt will carry.
+
+    fx shows an attachment as a dim chip with its size, plus how to drop it, so
+    a pasted screenshot is visible before it is sent.
+    """
+    t = _theme.current()
+    chips: list[str] = []
+    for item in attachments:
+        label = str(getattr(item, "label", "") or "image")
+        size = str(getattr(item, "size_label", "") or "")
+        chips.append(f"{label} {size}".strip())
+    text = "  ".join(f"⧉ {chip}" for chip in chips)
+    hint = "ctrl+x to drop" if len(chips) == 1 else "ctrl+x drops the last"
+    body = f"{text}   {ansi.DIM_OFF}{hint}" if text else hint
+    return ansi.clip_ellipsis(f"  {t.tag_style}{body}{ansi.RESET}", cols)
 
 
 # -- pickers (slash menu, model menu, help) ----------------------------------
@@ -324,6 +359,15 @@ MENU_HINT_VARIANTS: tuple[str, ...] = (
     "\u2191\u2193 navigate  enter use  esc close",
     "\u2191\u2193 move  enter  esc",
     "enter use  esc close",
+    "enter esc",
+)
+
+#: The hint under the prompt-history picker (ctrl+r).
+HISTORY_HINT_VARIANTS: tuple[str, ...] = (
+    "\u2191\u2193 navigate     enter recall     esc close",
+    "\u2191\u2193 navigate  enter recall  esc close",
+    "\u2191\u2193 move  enter  esc",
+    "enter recall  esc close",
     "enter esc",
 )
 

@@ -284,6 +284,32 @@ class SessionCommands(CommandSupport):
     def _handle_usage_command(self) -> None:
         self._spawn(self._show_usage())
 
+    def _add_usage_heatmap(self, report: object) -> None:
+        """Draw the year of token activity above the totals.
+
+        ctx's ``/usage`` leads with a contribution grid; the numbers alone say
+        how much was spent but not whether the work was steady or bursty.
+        """
+        from datetime import date
+
+        from vx.tui.blocks import Heatmap
+
+        days = getattr(report, "days", None)
+        if not days:
+            return
+        totals = {day: getattr(usage, "total_tokens", 0) for day, usage in days.items()}
+        if not any(totals.values()):
+            return
+        self.viewport.add(
+            Heatmap(
+                totals=totals,
+                as_of=getattr(report, "as_of", None) or date.today(),
+                weeks=52,
+                caption="Token activity",
+            )
+        )
+        self.viewport.touch()
+
     async def _show_usage(self) -> None:
         from ctx.term.usage_stats import aggregate_usage
 
@@ -325,6 +351,7 @@ class SessionCommands(CommandSupport):
         if not sections:
             self._warn("no usage recorded yet", topic="usage")
             return
+        self._add_usage_heatmap(report)
         scanned = getattr(report, "sessions_scanned", 0)
         self._report(
             "Token usage",

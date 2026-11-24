@@ -7,6 +7,8 @@ Emits strings: printable chars, "enter", "esc", "backspace", "delete",
 
 from __future__ import annotations
 
+import re
+
 # CSI final bytes for special keys we care about.
 _CSI_KEYS = {
     "A": "up",
@@ -26,6 +28,42 @@ _CSI_KEYS = {
 
 _PASTE_START = b"\x1b[200~"
 _PASTE_END = b"\x1b[201~"
+
+#: CSI modifier parameters: 2 shift, 3 alt, 5 ctrl, and their sums.
+_MODIFIERS = {
+    2: "shift",
+    3: "alt",
+    4: "shift+alt",
+    5: "ctrl",
+    6: "shift+ctrl",
+    7: "alt+ctrl",
+    8: "shift+alt+ctrl",
+}
+
+
+#: A parameterised CSI: an optional code, an optional modifier, and a final.
+_MODIFIED_CSI = re.compile(r"^(?P<code>\d*)(?:;(?P<mod>\d+))?(?P<final>[A-Za-z~])$")
+
+
+def _modified_key(seq: str) -> str | None:
+    """``1;5D`` -> ``ctrl+left``: a cursor key pressed with modifiers.
+
+    Terminals report ctrl/alt/shift with a parameter before the final byte,
+    such as ``ESC [ 1 ; 5 D`` for ctrl+left, so word-wise movement has to read
+    the modifier rather than only the arrow.
+    """
+    match = _MODIFIED_CSI.match(seq)
+    if match is None or not match.group("mod"):
+        return None
+    code = match.group("code")
+    final = match.group("final")
+    base = _CSI_KEYS.get(f"{code}{final}") or _CSI_KEYS.get(final)
+    if base is None:
+        return None
+    name = _MODIFIERS.get(int(match.group("mod")))
+    if name is None:
+        return None
+    return f"{name}+{base}"
 
 
 def _decode_utf8(buf: bytes, pos: int) -> tuple[str | None, int]:
@@ -102,6 +140,11 @@ class KeyDecoder:
                     return None, False  # incomplete; wait for more bytes
                 seq, length = m
                 self._buf = buf[length:]
+                modified = _modified_key(seq)
+                if modified is not None:
+                    return modified, True
+                if seq.startswith("<"):
+                    return _mouse_event(seq), True
                 return _CSI_KEYS.get(seq, f"csi:{seq}"), True
             if nxt == 0x4F:  # 'O' -> SS3 (some terminals send ESC O A etc.)
                 if len(buf) < 3:
@@ -141,6 +184,35 @@ class KeyDecoder:
         return text, True
 
 
+#: Mouse buttons as SGR reports them, by their low two bits.
+_MOUSE_BUTTONS = {0: "left", 1: "middle", 2: "right"}
+
+
+def _mouse_event(seq: str) -> str:
+    """``<64;10;5M`` -> ``mouse:wheelup:10:5``.
+
+    Wheel reports arrive as buttons 64/65 in the same stream as clicks, so the
+    transcript can scroll under the pointer the way a pager would.
+    """
+    body = seq[1:-1]
+    parts = body.split(";")
+    if len(parts) != 3:
+        return f"csi:{seq}"
+    try:
+        code, x, y = (int(part) for part in parts)
+    except ValueError:
+        return f"csi:{seq}"
+    if code & 0x40:
+        action = "wheelup" if code & 1 == 0 else "wheeldown"
+    elif seq.endswith("m"):
+        action = "release"
+    else:
+        action = _MOUSE_BUTTONS.get(code & 3, "click")
+    if code & 32 and action not in ("wheelup", "wheeldown"):
+        action = "move"
+    return f"mouse:{action}:{x}:{y}"
+
+
 def _match_csi(buf: bytes) -> tuple[str, int] | None:
     """Match ``ESC [ params final`` and return (param-string, total length)."""
     i = 2
@@ -150,7 +222,7 @@ def _match_csi(buf: bytes) -> tuple[str, int] | None:
         if 0x40 <= c <= 0x7E:  # final byte
             seq = params.decode("ascii", errors="replace") + chr(c)
             return seq, i + 1
-        if c in (0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39) or c in (0x3B, 0x3F):
+        if 0x30 <= c <= 0x39 or c in (0x3B, 0x3C, 0x3F):
             params.append(c)
             i += 1
             continue

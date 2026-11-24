@@ -22,6 +22,7 @@ from ctx.core.config import (
 )
 from ctx.core.config import PermissionMode as CtxPermissionMode
 
+from vx import prefs
 from vx.commands.base import CommandSupport
 from vx.permissions import BUILTIN_MODES, mode_spec
 from vx.tui import footer
@@ -339,6 +340,7 @@ class SettingsCommands(CommandSupport):
                 detail="on" if config.llm.system_prompt.git_context else "off",
                 value="git-context",
             ),
+            footer.MenuItem(label="history", detail=prefs.history_label(), value="history"),
             footer.MenuItem(
                 label="notifications",
                 detail="on" if config.notifications.enabled else "off",
@@ -394,6 +396,9 @@ class SettingsCommands(CommandSupport):
             enabled = not config.ui.colored_tool_badge
             set_colored_tool_badge(enabled)
             self._ok(f"colored tool badge turned {'on' if enabled else 'off'}", topic="settings")
+        elif value == "history":
+            self._select_history_rows()
+            return
         elif value == "git-context":
             enabled = not config.llm.system_prompt.git_context
             set_git_context(enabled)
@@ -417,6 +422,30 @@ class SettingsCommands(CommandSupport):
             )
             return
         self._show_settings_picker(selected_value=value)
+
+    def _select_history_rows(self) -> None:
+        """The scrollback limit, offered the way tmux's ``history-limit`` is."""
+        current = prefs.history_rows()
+        choices = [prefs.history_label(rows) for rows in prefs.HISTORY_CHOICES]
+        self._pick_choice(
+            "Scrollback",
+            choices,
+            prefs.history_label(current),
+            self._set_history_rows,
+            {
+                "unlimited": "keep every row (default)",
+                "500 rows": "keep the tail of the conversation only",
+            },
+        )
+
+    def _set_history_rows(self, label: str) -> None:
+        # The picker hands back its label, so read the number out of it.
+        digits = "".join(ch for ch in label if ch.isdigit())
+        rows = int(digits) if digits else 0
+        prefs.set_history_rows(rows)
+        self.viewport.set_history_limit(rows)
+        self.viewport.touch()
+        self._ok(f"scrollback set to {prefs.history_label(rows)}", topic="settings")
 
     def _select_thinking_lines(self, lines: str) -> None:
         set_thinking_lines(cast("ThinkingLinesOption", lines))

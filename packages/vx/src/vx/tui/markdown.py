@@ -7,6 +7,7 @@ two-column gutter and the ``│ `` command rail.
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 
 from vx.tui import ansi
 from vx.tui import theme as _theme
@@ -204,6 +205,36 @@ def _task_prefix(body: str) -> tuple[str | None, str]:
     return f"[{mark}]", m.group("body")
 
 
+def _latex(line: str) -> str:
+    """Unicode math for a non-fenced line, when the helper is importable."""
+    with suppress(Exception):
+        from ctx.term.latex import preprocess_latex
+
+        return preprocess_latex(line)
+    return line
+
+
+_TASK_RE = re.compile(r"^\[([ xX])\][ \t]+(.*)$")
+
+
+def _checkbox(indent: int, mark: str, body: str, done: bool, cols: int) -> list[str]:
+    """A task row: ``☑ title``, with a finished task dimmed."""
+    t = _theme.current()
+    lead = " " * indent
+    style = t.dim_style if done else ""
+    tail = ansi.RESET if done else ""
+    marker = f"{t.dim_style}{mark}{ansi.RESET} "
+    prefix_w = indent + ansi.width(mark) + 1
+    rows = ansi.wrap(body, max(1, cols - prefix_w))
+    out: list[str] = []
+    for index, row in enumerate(rows):
+        if index == 0:
+            out.append(f"{lead}{marker}{style}{row}{tail}")
+        else:
+            out.append(" " * prefix_w + f"{style}{row}{tail}")
+    return out
+
+
 def _bullet(indent: int, body: str, cols: int) -> list[str]:
     lead = " " * indent
     task, body = _task_prefix(body)
@@ -385,6 +416,10 @@ def render(text: str, cols: int) -> list[str]:
             continue
         lines.append(_replace_html_breaks(raw))
 
+    # fx turns LaTeX math into Unicode so a formula reads as symbols rather than
+    # as backslash words; the helper leaves fenced code alone.
+    lines = [_latex(line) for line in lines]
+
     i = 0
     n = len(lines)
     paragraph: list[str] = []
@@ -521,6 +556,14 @@ def render(text: str, cols: int) -> list[str]:
         if bm and (len(bm.group(1)) < 4 or True):
             flush_paragraph()
             indent = min(len(bm.group(1)), 8)
+            task = _TASK_RE.match(bm.group(3))
+            if task:
+                # A task list reads as a checkbox, like fx's `- [x] done`.
+                done = task.group(1).lower() == "x"
+                mark = "☑" if done else "☐"
+                body = _inline(task.group(2))
+                rows.extend(_checkbox(indent, mark, body, done, cols))
+                continue
             rows.extend(_bullet(indent, _inline(bm.group(3)), cols))
             continue
 

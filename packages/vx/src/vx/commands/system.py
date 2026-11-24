@@ -91,6 +91,50 @@ def _tool_sections(tools: list[object]) -> list[tuple[str, list[tuple[str, str]]
 
 
 class SystemCommands(CommandSupport):
+    # -- /attach ---------------------------------------------------------
+
+    def _handle_attach_command(self, args: str) -> None:
+        """``/attach path.png`` binds an image to the next prompt.
+
+        ctrl+v is the quick road, but a terminal that eats the key or a file
+        found by name needs a word, so the same list also shows and clears.
+        """
+        from vx import attachments as attach
+
+        pending = getattr(self, "_attachments", None)
+        if pending is None:
+            self._warn("this build cannot carry images")
+            return
+        argument = args.strip()
+        if not argument:
+            if not pending:
+                self._notice("no images attached · /attach <path> or ctrl+v")
+                return
+            self._report(
+                f"Attached — {len(pending)} image{'s' if len(pending) > 1 else ''}",
+                [
+                    (
+                        "Images",
+                        [
+                            (item.label, " ".join(filter(None, [item.size_label, item.mime_type])))
+                            for item in pending
+                        ],
+                    )
+                ],
+            )
+            return
+        if argument in ("clear", "none", "off"):
+            pending.clear()
+            self._ok("cleared the attached images")
+            return
+        found = attach.from_path(argument, self.cwd)
+        if found is None:
+            self._fail(f"not an image: {argument}")
+            return
+        pending.append(found)
+        chip = f"{found.label} {found.size_label}".strip()
+        self._ok(f"attached {chip}")
+
     # -- /skills and /tools ----------------------------------------------
 
     def _handle_skills_command(self) -> None:

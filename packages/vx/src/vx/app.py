@@ -58,8 +58,12 @@ from ctx.protocol.types import (
     ToolResultMessage,
     UserMessage,
 )
+from ctx.term.fuzzy import fuzzy_filter
 
 import vx.tools
+from vx import attachments as attach
+from vx import history as prompt_history
+from vx import prefs
 from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
 from vx.commands import SLASH_COMMANDS, CommandsMixin
@@ -70,7 +74,10 @@ from vx.tui.keys import KeyDecoder
 from vx.tui.terminal import Terminal
 from vx.tui.viewport import Viewport
 
-HISTORY_LIMIT = 200
+#: Ceiling on the characters a live call keeps before its result arrives. The
+#: transcript is a record, so this is a memory guard, not a display limit: the
+#: result panel replaces the stream with the full text anyway.
+TOOL_OUTPUT_BUFFER = 400_000
 MAX_INPUT_LINES = 8
 
 
@@ -111,15 +118,25 @@ class VxApp(CommandsMixin):
         self.term = terminal or Terminal()
         self._term_ready = terminal is not None
         self.viewport = Viewport()
+        # The scrollback is ours to bound: the alternate screen gives the
+        # terminal none of its own, so this is vx's history-limit.
+        with suppress(Exception):
+            self.viewport.set_history_limit(prefs.history_rows())
         self.painter = painter or Painter()
         self.decoder = KeyDecoder()
 
         # Composer
         self._input = ""
         self._cursor = 0
-        self._history: list[str] = []
+        self._history: list[str] = prompt_history.load()
         self._history_idx: int | None = None
         self._history_draft = ""
+        #: Images the next prompt will carry, pasted or named with ``@``.
+        self._attachments: list[attach.Attachment] = []
+        #: The last killed text, so ctrl+y can bring it back.
+        self._kill_ring = ""
+        #: Composer edits, for ctrl+z.
+        self._undo_stack: list[tuple[str, int]] = []
 
         # Agent
         self.runtime: ConversationRuntime | None = None
@@ -133,6 +150,7 @@ class VxApp(CommandsMixin):
         self._live_assistant: blocks.Assistant | None = None
         self._live_thinking: blocks.Thinking | None = None
         self._tool_blocks: dict[str, blocks.ToolStatusBlock] = {}
+        self._tool_started: dict[str, float] = {}
         self._tool_groups: dict[str, blocks.ToolGroup] = {}
         self._tool_outputs: dict[str, blocks.ToolOutput] = {}
         #: The group the running turn is still adding calls to. fx groups a
@@ -142,6 +160,8 @@ class VxApp(CommandsMixin):
         self._turn_calls: list[blocks.ToolStatusBlock] = []
         self._finished = 0
         self._turn_usage = {"in": 0, "out": 0}
+        #: Rows the last frame gave the transcript, which bounds scrolling.
+        self._body_rows = 0
         self._last_ctrl_c = 0.0
         self._usage = {"in": 0, "out": 0}
         self._context_total: int | None = None
@@ -300,11 +320,9 @@ class VxApp(CommandsMixin):
         session = self.runtime.session if self.runtime else None
         if session is None:
             return
-        msgs = list(session.messages)
-        if len(msgs) > HISTORY_LIMIT:
-            msgs = msgs[-HISTORY_LIMIT:]
-            self._notice(f"showing the last {HISTORY_LIMIT} messages")
-        self._render_history_messages(msgs)
+        # ctx replays every active entry, so a resumed session shows the whole
+        # conversation; clipping it here was what hid older turns.
+        self._render_history_messages(list(session.messages))
 
     def _render_history_messages(self, msgs: list[Any]) -> None:
         """Replay a session's messages as the live transcript would draw them.
@@ -323,21 +341,27 @@ class VxApp(CommandsMixin):
                 content = msg.content
                 if isinstance(content, str):
                     text = content
+                    images = 0
                 else:
                     text = " ".join(p.text for p in content if isinstance(p, TextContent))
-                if text.strip():
-                    self.viewport.add(blocks.UserTurn(text=text))
+                    images = sum(1 for p in content if type(p).__name__ == "ImageContent")
+                if text.strip() or images:
+                    chip = f"{images} image{'s' if images != 1 else ''}" if images else ""
+                    self.viewport.add(blocks.UserTurn(text=text, attachments=chip))
                 continue
             if isinstance(msg, AssistantMessage):
                 thinking = "".join(
                     p.thinking for p in msg.content if isinstance(p, ThinkingContent)
                 )
                 text = "".join(p.text for p in msg.content if isinstance(p, TextContent))
+                # ctx replays thinking above the reply; keeping it means a
+                # resumed session still carries the reasoning, not just the
+                # answer (ctrl+o prints it).
+                if thinking.strip():
+                    self.viewport.add(blocks.Thinking(text=thinking))
+                    group = None
                 if text.strip():
                     self.viewport.add(blocks.Assistant(text=text))
-                    group = None
-                elif thinking.strip():
-                    self.viewport.add(blocks.Thinking(text=thinking))
                     group = None
                 for call in (p for p in msg.content if isinstance(p, ToolCall)):
                     block = _make_tool_status_block(call.name)
@@ -386,6 +410,15 @@ class VxApp(CommandsMixin):
         with suppress(Exception):
             self._draw(force=True)
 
+    def _mouse_key(self, key: str) -> None:
+        """The wheel scrolls the transcript; other buttons are ignored."""
+        action = key.split(":")[1]
+        if action not in ("wheelup", "wheeldown"):
+            return
+        step = 3 if action == "wheelup" else -3
+        self.viewport.scroll_by(step, *self._size())
+        self._draw()
+
     def _handle_key(self, key: str) -> None:
         if self._exiting:
             return
@@ -397,6 +430,9 @@ class VxApp(CommandsMixin):
             return
         if self._ask is not None:
             self._ask_key(key)
+            return
+        if key.startswith("mouse:"):
+            self._mouse_key(key)
             return
         if key == "tab" and not self._input:
             self._toggle_thinking_level(1)
@@ -486,19 +522,50 @@ class VxApp(CommandsMixin):
             self._refresh_atpath_menu()
             return
         if key == "ctrl+w":
-            start = self._cursor
-            while start > 0 and self._input[start - 1].isspace():
-                start -= 1
-            while start > 0 and not self._input[start - 1].isspace():
-                start -= 1
+            start = self._word_start()
+            self._kill(self._input[start : self._cursor], start)
             self._input = self._input[:start] + self._input[self._cursor :]
             self._cursor = start
-            self._refresh_slash_menu()
-            self._refresh_atpath_menu()
+            self._after_edit()
+            return
+        if key in ("alt+d", "ctrl+delete"):
+            end = self._word_end()
+            self._undo_push()
+            self._kill(self._input[self._cursor : end], self._cursor)
+            self._input = self._input[: self._cursor] + self._input[end:]
+            self._after_edit()
+            return
+        if key in ("ctrl+left", "alt+b"):
+            self._cursor = self._word_start()
+            return
+        if key in ("ctrl+right", "alt+f"):
+            self._cursor = self._word_end()
+            return
+        if key == "ctrl+y":
+            if self._kill_ring:
+                self._undo_push()
+                self._insert(self._kill_ring)
+            return
+        if key == "alt+y":
+            self._cycle_attachments()
+            return
+        if key == "ctrl+z":
+            self._undo_pop()
+            return
+        if key == "ctrl+v":
+            self._paste_image()
+            return
+        if key == "ctrl+x":
+            self._drop_attachment()
+            return
+        if key == "ctrl+r":
+            self._open_history_search()
             return
         if key == "up":
             if self._input:
                 self._history_move(-1)
+            elif self._is_running and self._pending_queue:
+                self._recall_queued()
             else:
                 self.viewport.page(1, *self._size())
             return
@@ -523,26 +590,54 @@ class VxApp(CommandsMixin):
             self._refresh_atpath_menu()
 
     def _size(self) -> tuple[int, int]:
+        """The scrolling area: terminal columns and the transcript's rows.
+
+        The footer's height changes with the composer, menus and the approval
+        panel, so a scroll bound taken from the terminal height alone lets the
+        window drift past the top of the transcript and hide its first rows.
+        """
         rows, cols = self.term.size()
-        return cols, rows
+        return cols, self._body_rows or max(1, rows - 1)
 
     # -- composer editing ------------------------------------------------
 
     def _insert(self, text: str) -> None:
+        self._undo_push()
         self._input = self._input[: self._cursor] + text + self._input[self._cursor :]
         self._cursor += len(text)
         self._history_idx = None
 
     def _backspace(self) -> None:
         if self._cursor > 0:
+            self._undo_push()
             self._input = self._input[: self._cursor - 1] + self._input[self._cursor :]
             self._cursor -= 1
         self._refresh_slash_menu()
 
     def _delete(self) -> None:
         if self._cursor < len(self._input):
+            self._undo_push()
             self._input = self._input[: self._cursor] + self._input[self._cursor + 1 :]
         self._refresh_slash_menu()
+
+    def _recall_queued(self) -> None:
+        """up on an empty composer takes back the last queued prompt.
+
+        A prompt typed mid-turn is only visible as a count, so without this the
+        only way to fix a typo is to wait for the turn to end.
+        """
+        if not self._pending_queue:
+            return
+        prompt = self._pending_queue.pop()
+        self._input = prompt
+        self._cursor = len(prompt)
+        self._history_idx = None
+        remaining = len(self._pending_queue)
+        self._notice(
+            "took back the queued prompt"
+            if not remaining
+            else f"took back the queued prompt · {remaining} still queued"
+        )
 
     def _history_move(self, delta: int) -> None:
         if not self._history:
@@ -562,6 +657,106 @@ class VxApp(CommandsMixin):
             self._history_idx = max(0, new)
         self._input = self._history[self._history_idx]
         self._cursor = len(self._input)
+
+    # -- composer helpers ------------------------------------------------
+
+    def _word_start(self) -> int:
+        """Where the word before the caret begins, as ctrl+left and ctrl+w move."""
+        index = self._cursor
+        while index > 0 and self._input[index - 1].isspace():
+            index -= 1
+        while index > 0 and not self._input[index - 1].isspace():
+            index -= 1
+        return index
+
+    def _word_end(self) -> int:
+        """Where the word after the caret ends, as ctrl+right and alt+d move."""
+        index = self._cursor
+        while index < len(self._input) and self._input[index].isspace():
+            index += 1
+        while index < len(self._input) and not self._input[index].isspace():
+            index += 1
+        return index
+
+    def _kill(self, text: str, at: int) -> None:
+        """Keep killed text for ctrl+y, the way readline does."""
+        self._kill_ring = text
+
+    def _undo_push(self) -> None:
+        """Remember the composer before an edit, for ctrl+z."""
+        state = (self._input, self._cursor)
+        if self._undo_stack and self._undo_stack[-1] == state:
+            return
+        self._undo_stack.append(state)
+        if len(self._undo_stack) > 200:
+            del self._undo_stack[:100]
+
+    def _undo_pop(self) -> None:
+        if not self._undo_stack:
+            return
+        self._input, self._cursor = self._undo_stack.pop()
+        self._history_idx = None
+        self._after_edit()
+
+    def _after_edit(self) -> None:
+        """Re-derive the pickers after the composer changed."""
+        self._history_idx = None
+        self._refresh_slash_menu()
+        self._refresh_atpath_menu()
+
+    def _paste_image(self) -> None:
+        """ctrl+v: attach the clipboard's image, or paste its text."""
+        image = attach.from_clipboard()
+        if image is None:
+            text = attach.clipboard_text()
+            if text:
+                self._insert(text.replace("\r\n", "\n").replace("\r", "\n"))
+                self._after_edit()
+                return
+            self._notice("clipboard is empty", tone="warning")
+            return
+        self._attachments.append(image)
+        self._activity = f"attached {image.label}"
+        self.viewport.touch()
+
+    def _drop_attachment(self) -> None:
+        if not self._attachments:
+            return
+        gone = self._attachments.pop()
+        self._activity = f"dropped {gone.label}"
+        self.viewport.touch()
+
+    def _cycle_attachments(self) -> None:
+        """Say what is attached, since a chip can hide behind a long prompt."""
+        if not self._attachments:
+            return
+        self._notice(attach.describe(self._attachments))
+
+    def _open_history_search(self) -> None:
+        """ctrl+r: recall an earlier prompt, filtered as you type."""
+        if not self._history:
+            self._notice("no prompt history yet")
+            return
+        items = [
+            footer.MenuItem(label=text.split("\n")[0], value=text)
+            for text in reversed(self._history)
+        ]
+        self._menu = {
+            "kind": "history",
+            "items": items,
+            "selected": 0,
+            "noun": "History",
+            "type_hint": True,
+            "filterable": True,
+            "variants": footer.HISTORY_HINT_VARIANTS,
+            "on_select": self._use_history_item,
+        }
+
+    def _use_history_item(self, item: footer.MenuItem) -> None:
+        self._undo_push()
+        self._input = item.value or item.label
+        self._cursor = len(self._input)
+        self._after_edit()
 
     def _refresh_slash_menu(self) -> None:
         # A text prompt owns the composer; typing / there is not a command.
@@ -691,13 +886,18 @@ class VxApp(CommandsMixin):
         if menu is None:
             return []
         items: list[footer.MenuItem] = menu["items"]
-        query = str(menu.get("query") or "").strip().lower()
+        query = str(menu.get("query") or "").strip()
         if not query or not menu.get("filterable"):
             return items
+        # ctx's fuzzy matcher scores subsequence hits and word starts, so a
+        # picker finds "/cmpct" or "ssion" the way a reader types them.
+        with suppress(Exception):
+            return fuzzy_filter(items, query, lambda item: f"{item.label} {item.detail}")
+        needle = query.lower()
         return [
             item
             for item in items
-            if query in f"{item.label} {item.detail} {item.metadata}".lower()
+            if needle in f"{item.label} {item.detail} {item.metadata}".lower()
         ]
 
     def _menu_key(self, key: str) -> None:
@@ -787,9 +987,10 @@ class VxApp(CommandsMixin):
             elif key == "ctrl+o":
                 blocks.set_expanded(not blocks.expanded())
                 self.viewport.touch()
-            else:
-                self._refresh_slash_menu()
-                self._refresh_atpath_menu()
+                return
+            # The menu follows the text, including the space that ends it.
+            self._refresh_slash_menu()
+            self._refresh_atpath_menu()
             return
         if menu.get("filterable") and (len(key) == 1 and ord(key) >= 32):
             menu["query"] = str(menu.get("query") or "") + key
@@ -919,14 +1120,22 @@ class VxApp(CommandsMixin):
                 callback(raw)
             return
         text = self._input.strip()
+        # An image named with @ rides along even when it was never pasted.
+        for path in attach.image_paths_in(text, self.cwd):
+            if all(a.name != os.path.basename(path) for a in self._attachments):
+                found = attach.from_path(path, self.cwd)
+                if found is not None:
+                    self._attachments.append(found)
+        images = [a.content() for a in self._attachments]
+        attached = attach.describe(self._attachments)
         self._input = ""
         self._cursor = 0
         self._menu = None
+        self._attachments = []
+        self._undo_stack.clear()
         if not text:
             return
-        self._history.append(text)
-        if len(self._history) > 500:
-            self._history = self._history[-500:]
+        self._history = prompt_history.append(text, self._history)
         self._history_idx = None
         if text.startswith("/"):
             # fx never echoes a command as a prompt; it acts on it.
@@ -936,8 +1145,8 @@ class VxApp(CommandsMixin):
             self._handle_shell(text)
             return
         self._break_group()
-        self.viewport.add(blocks.UserTurn(text=text))
-        self._enqueue_or_run(expand_paths(text, self.cwd))
+        self.viewport.add(blocks.UserTurn(text=text, attachments=attached))
+        self._enqueue_or_run(expand_paths(text, self.cwd), images=images)
 
     # ==================================================================
     # slash commands & shell
@@ -1016,7 +1225,7 @@ class VxApp(CommandsMixin):
     # agent runs
     # ==================================================================
 
-    def _enqueue_or_run(self, prompt: str) -> None:
+    def _enqueue_or_run(self, prompt: str, images: list[Any] | None = None) -> None:
         if self._is_running:
             self._pending_queue.append(prompt)
             self._notice(f"queued · {len(self._pending_queue)} pending")
@@ -1045,12 +1254,12 @@ class VxApp(CommandsMixin):
                 perms.mode = mode_map.get(self._permission_runtime.mode, "prompt")
         except Exception:
             pass
-        asyncio.get_running_loop().create_task(self._run_agent(agent, prompt))
+        asyncio.get_running_loop().create_task(self._run_agent(agent, prompt, images))
 
-    async def _run_agent(self, agent: Any, prompt: str) -> None:
+    async def _run_agent(self, agent: Any, prompt: str, images: list[Any] | None = None) -> None:
         try:
             async for event in agent.run(
-                prompt, images=None, cancel_event=self._cancel_event, steer_event=None
+                prompt, images=images or None, cancel_event=self._cancel_event, steer_event=None
             ):
                 self._events.put_nowait(event)
         except asyncio.CancelledError:
@@ -1110,6 +1319,7 @@ class VxApp(CommandsMixin):
             return
         if isinstance(ev, ThinkingStartEvent):
             self._break_group()
+            self._run_label = "thinking"
             if self._live_thinking is None:
                 self._live_thinking = blocks.Thinking(text="")
                 self.viewport.add(self._live_thinking)
@@ -1120,8 +1330,9 @@ class VxApp(CommandsMixin):
                 self.viewport.touch()
             return
         if isinstance(ev, ThinkingEndEvent):
-            if self._live_thinking is not None and not self._live_thinking.text.strip():
-                self.viewport.blocks.remove(self._live_thinking)
+            # The row stays behind as the transcript's record of the reasoning,
+            # the way ctx keeps a thinking block; ctrl+o prints it. Dropping it
+            # left a finished turn with no trace of what was thought.
             self._live_thinking = None
             return
         if isinstance(ev, TextStartEvent):
@@ -1146,6 +1357,7 @@ class VxApp(CommandsMixin):
         if isinstance(ev, ToolStartEvent):
             block = _make_tool_status_block(ev.tool_name)
             self._tool_blocks[ev.tool_call_id] = block
+            self._tool_started[ev.tool_call_id] = time.monotonic()
             group = self._live_group
             if group is None:
                 group = blocks.ToolGroup()
@@ -1193,7 +1405,7 @@ class VxApp(CommandsMixin):
                     else:
                         self.viewport.add(output)
                 buffer = getattr(output, "buffer", "") + ev.delta
-                output.buffer = buffer[-8000:]
+                output.buffer = buffer[-TOOL_OUTPUT_BUFFER:]
                 lines = buffer.replace("\r", "").split("\n")
                 while len(lines) > 1 and not lines[-1].strip():
                     lines.pop()
@@ -1209,6 +1421,9 @@ class VxApp(CommandsMixin):
                 ok = not result.is_error
             if block is not None:
                 block.status = "ok" if ok else "error"
+                started = self._tool_started.pop(ev.tool_call_id, None)
+                if started is not None:
+                    block.elapsed = max(0.0, time.monotonic() - started)
                 # The mark speaks for the command that returned last, and
                 # calls that ran together may not return in the order they
                 # started.
@@ -1347,6 +1562,7 @@ class VxApp(CommandsMixin):
         self._live_thinking = None
         self._live_group = None
         self._tool_blocks.clear()
+        self._tool_started.clear()
         self._tool_groups.clear()
         self._tool_outputs.clear()
         self.viewport.touch()
@@ -1575,6 +1791,9 @@ class VxApp(CommandsMixin):
         else:
             rows.append(footer.rule(cols))
         composer_at = len(rows)
+        if self._attachments:
+            rows.append(footer.attachment_row(self._attachments, cols))
+            composer_at += 1
         rows.extend(composer)
         caret: tuple[int, int] | None = (composer_at + caret_row, caret_col)
 
@@ -1653,6 +1872,9 @@ class VxApp(CommandsMixin):
             right = self._activity
         elif self._last_ctrl_c and time.monotonic() - self._last_ctrl_c < 2.0:
             right = "press ctrl+c again to exit"
+        if self.viewport.scroll and not self._is_running:
+            behind = self.viewport.scroll
+            right = f"↑ {behind} line{'s' if behind != 1 else ''} · pgdn or wheel down"
         workspace = os.path.abspath(self.cwd)
         # Use vx's own permission mode for the hint row
         perm_mode = self._permission_runtime.mode
@@ -1673,6 +1895,7 @@ class VxApp(CommandsMixin):
         foot, caret = self._footer(cols, rows)
         foot = foot[-max(1, rows - 1) :]
         area = max(1, rows - len(foot))
+        self._body_rows = area
         transcript = self.viewport.visible(cols, area)
         frame = transcript + foot
         frame = frame[:rows] if len(frame) > rows else frame + [""] * (rows - len(frame))
@@ -1689,6 +1912,9 @@ class VxApp(CommandsMixin):
                             "rows": rows,
                             "cols": cols,
                             "len": len(frame),
+                            "area": area,
+                            "scroll": self.viewport.scroll,
+                            "total": self.viewport.total(cols),
                             "tail": [ansi.strip_ansi(x) for x in frame[-4:]],
                         }
                     )
@@ -1748,13 +1974,14 @@ _OUTPUT_MARKERS = {"[stderr]", "[stdout]"}
 
 def _result_lines(result: Any, output: blocks.ToolOutput | None) -> list[str]:
     """A finished call's output lines, from its live stream or its result."""
-    if output is not None and output.buffer:
-        return output.buffer.replace("\r", "").rstrip("\n").split("\n")
     lines: list[str] = []
     for content in getattr(result, "content", None) or []:
         text = getattr(content, "text", None)
         if text:
             lines.extend(str(text).replace("\r", "").rstrip("\n").split("\n"))
+    if not lines and output is not None and output.buffer:
+        # No result content (an extension tool): fall back on what streamed in.
+        return output.buffer.replace("\r", "").rstrip("\n").split("\n")
     return [line for line in lines if line.strip()]
 
 
@@ -1949,21 +2176,44 @@ def _skill_source(path: str, cwd: str) -> str:
     return f"{scope} skills/"
 
 
+#: (cwd, second) -> branch label. Status runs on every frame otherwise, and a
+#: large tree makes that visible as lag; a two-second window is plenty fresh.
+_BRANCH_CACHE: dict[tuple[str, int], str | None] = {}
+
+
 def _git_branch(cwd: str) -> str | None:
+    """The branch name, with ``*`` when the working tree has uncommitted work."""
+    bucket = (os.path.abspath(cwd), int(time.monotonic() // 2))
+    if bucket in _BRANCH_CACHE:
+        return _BRANCH_CACHE[bucket]
+    label = _read_git_branch(cwd)
+    if len(_BRANCH_CACHE) > 64:
+        _BRANCH_CACHE.clear()
+    _BRANCH_CACHE[bucket] = label
+    return label
+
+
+def _read_git_branch(cwd: str) -> str | None:
     try:
         import subprocess
 
         out = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", "status", "--porcelain=v1", "--branch"],
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=0.25,
+            timeout=0.35,
         )
-        if out.returncode == 0:
-            branch = out.stdout.strip()
-            if branch and branch != "HEAD":
-                return branch
+        if out.returncode != 0:
+            return None
+        lines = out.stdout.splitlines()
+        if not lines or not lines[0].startswith("## "):
+            return None
+        head = lines[0][3:].strip()
+        # "main...origin/main [ahead 1]" -> "main"
+        branch = head.split("...")[0].split(" ")[0]
+        if not branch or branch == "HEAD" or branch.startswith("No commits"):
+            return None
+        return branch + ("*" if len(lines) > 1 else "")
     except Exception:
         return None
-    return None

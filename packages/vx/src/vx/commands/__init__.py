@@ -47,6 +47,7 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
     ("/clear", "clear the transcript, keep the session", "Session"),
     ("/resume", "open a saved session", "Session"),
     ("/tree", "jump to an earlier point in the conversation", "Session"),
+    ("/attach", "attach an image to the next prompt", "Session"),
     ("/compact", "summarise the context window", "Session"),
     ("/undo", "rewind the last turn and its files", "Session"),
     ("/redo", "step forward again", "Session"),
@@ -66,6 +67,26 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
 ]
 
 #: Aliases accepted on input, mapped to the command they run.
+#: Keys worth knowing, listed under the commands in ``/help``; the composer's
+#: readline set is not discoverable from the screen otherwise.
+KEY_BINDINGS: list[tuple[str, str]] = [
+    ("ctrl+r", "search prompt history"),
+    ("ctrl+v", "attach a clipboard image, or paste text"),
+    ("ctrl+x", "drop the attached images"),
+    ("ctrl+z / ctrl+y", "undo / redo the composer"),
+    ("alt+b / alt+f", "move by word"),
+    ("ctrl+left / right", "move by word"),
+    ("ctrl+y", "yank the last kill"),
+    ("alt+y", "cycle the kill ring"),
+    ("shift+enter", "new line without sending"),
+    ("ctrl+o", "expand tool output"),
+    ("pgup / pgdn", "scroll the transcript"),
+    ("wheel", "scroll the transcript"),
+    ("esc", "interrupt the turn, or clear the composer"),
+    ("ctrl+c twice", "exit"),
+    ("tab / shift+tab", "cycle reasoning effort / permission mode"),
+]
+
 SLASH_ALIASES: dict[str, str] = {
     "exit": "quit",
     "q": "quit",
@@ -159,6 +180,7 @@ class CommandsMixin(
             "clear": self._handle_clear_command,
             "resume": self._handle_resume_command,
             "tree": self._handle_tree_command,
+            "attach": lambda: self._handle_attach_command(args),
             "compact": lambda: self._handle_compact_command(args),
             "undo": self._handle_undo_command,
             "redo": self._handle_redo_command,
@@ -237,17 +259,25 @@ class CommandsMixin(
         return True
 
     def _show_help_menu(self) -> None:
+        items = [
+            footer.MenuItem(label=name, detail=description, metadata=category, value=name)
+            for name, description, category in SLASH_COMMANDS
+        ]
+        items.extend(
+            footer.MenuItem(label=keys, detail=description, metadata="Keys", value="key:")
+            for keys, description in KEY_BINDINGS
+        )
         self._open_menu(
-            [
-                footer.MenuItem(label=name, detail=description, metadata=category, value=name)
-                for name, description, category in SLASH_COMMANDS
-            ],
+            items,
             noun="Commands",
             on_select=lambda item: self._run_help_choice(item.value or item.label),
             filterable=True,
         )
 
     def _run_help_choice(self, name: str) -> None:
+        """A command fills the composer; a key row is reference only."""
+        if name.startswith("key:"):
+            return
         self._input = "/" + name.lstrip("/") + " "
         self._cursor = len(self._input)
 

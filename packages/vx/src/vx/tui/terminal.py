@@ -12,8 +12,13 @@ import termios
 import tty
 from typing import Any
 
-_ALTERNATE_SCREEN_ON = "\x1b[?1049h\x1b[?25l\x1b[?2004h"
-_ALTERNATE_SCREEN_OFF = "\x1b[?2004l\x1b[?25h\x1b[?1049l"
+#: Button events (clicks and the wheel) plus SGR coordinates. Drag reporting
+#: stays off so a terminal still owns text selection.
+_MOUSE_ON = "\x1b[?1000h\x1b[?1006h"
+_MOUSE_OFF = "\x1b[?1006l\x1b[?1000l"
+
+_ALTERNATE_SCREEN_ON = "\x1b[?1049h\x1b[?25l\x1b[?2004h" + _MOUSE_ON
+_ALTERNATE_SCREEN_OFF = _MOUSE_OFF + "\x1b[?2004l\x1b[?25h\x1b[?1049l"
 
 
 class Terminal:

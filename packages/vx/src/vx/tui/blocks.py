@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import date, timedelta
+from typing import Any
 
 from vx.brand import ITALIC_BRAND
 from vx.tui import ansi, markdown
@@ -115,9 +117,6 @@ OUTPUT_PREVIEW_ROWS = 5
 OUTPUT_EXPANDED_ROWS = 60
 #: Row budget for diff preview in the compact transcript.
 DIFF_PREVIEW_ROWS = 10
-#: Row budget for diff preview in the expanded transcript.
-DIFF_EXPANDED_ROWS = 60
-
 _expanded = False
 
 
@@ -178,6 +177,8 @@ class UserTurn(Block):
     """fx's prompt card: a connected rail, bold text, no background."""
 
     text: str = ""
+    #: What the prompt carried besides its words, such as an image chip.
+    attachments: str = ""
     kind: str = "user"
 
     def rows(self, width: int) -> list[str]:
@@ -189,6 +190,11 @@ class UserTurn(Block):
         for logical in body.replace("\r\n", "\n").split("\n"):
             for chunk in ansi.wrap(logical, window) if logical else [""]:
                 out.append(f"{lead}{chunk}{ansi.RESET}")
+        if self.attachments:
+            rail = f"{t.user_card_marker_style}{USER_RAIL}{ansi.RESET}"
+            chip = f"{t.dim_style}⧉ {self.attachments}{ansi.RESET}"
+            for chunk in ansi.wrap(chip, window) if window else [chip]:
+                out.append(f"{rail} {chunk}")
         return out or [f"{lead}{ansi.RESET}"]
 
 
@@ -209,11 +215,11 @@ class Assistant(Block):
 
 @dataclass
 class Thinking(Block):
-    """Single-line thinking activity status, matching fx's ``• Thinking`` row.
+    """fx's one-row ``• Thinking`` status; ctrl+o reveals the reasoning.
 
-    Fx never renders the thinking text content in the transcript — only a
-    one-row status with a blinking bullet marker.  The ``text`` field is
-    kept for protocol compatibility but intentionally ignored during render.
+    fx never prints the thinking text in the compact transcript, and vx keeps
+    that. The full-transcript view shows it, the way ctx does, so a resumed
+    session still carries what the model actually thought.
     """
 
     text: str = ""
@@ -221,7 +227,30 @@ class Thinking(Block):
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
-        return [f"{t.dim_style}• Thinking{ansi.RESET}"]
+        out = [f"{t.dim_style}• Thinking{ansi.RESET}"]
+        if not _expanded or not self.text.strip():
+            return out
+        for line in self.text.strip().split("\n"):
+            for chunk in ansi.wrap(line.rstrip(), max(1, width - 4)):
+                out.append(f"    {t.dim_style}{chunk}{ansi.RESET}")
+        return out
+
+
+@dataclass
+class HistoryFold(Block):
+    """What a scrollback limit dropped: one row where the old transcript was.
+
+    tmux grows a pane's history silently; a transcript that loses its own head
+    should say so, or an old turn simply disappears with no trace.
+    """
+
+    dropped: int = 0
+    kind: str = "notice"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        label = f"↑ {self.dropped:,} earlier rows dropped · /settings → history"
+        return [f"  {t.dim_style}{ansi.clip_ellipsis(label, max(1, width - 2))}{ansi.RESET}"]
 
 
 @dataclass
@@ -272,6 +301,7 @@ class ToolRow(Block):
     status: str = "running"  # running | ok | error | cancelled
     #: When the call finished, in the order calls that ran together returned.
     finished: int = 0
+    elapsed: float | None = None
     kind: str = "tool"
 
     def body(self) -> str:
@@ -279,6 +309,12 @@ class ToolRow(Block):
 
     def glyph(self) -> str:
         return "●"
+
+    def duration(self) -> str:
+        if self.elapsed is None:
+            return ""
+        label = f"{self.elapsed:.1f}s" if self.elapsed < 10 else _duration(self.elapsed)
+        return f" {ansi.dim()}· {label}{ansi.RESET}"
 
     @property
     def category(self) -> str:
@@ -329,7 +365,7 @@ class ToolStatus(ToolRow):
     def body(self) -> str:
         t = _theme.current()
         if self.status == "error":
-            return self.couldnt(_FAILED_VERBS.get(self.name, "run"), self.target)
+            return self.couldnt(_FAILED_VERBS.get(self.name, "run"), self.target) + self.duration()
         if self.status == "running":
             label = "Running"
         elif self.status == "cancelled":
@@ -341,7 +377,7 @@ class ToolStatus(ToolRow):
             out += f" {t.tag_style}{self.target}{ansi.RESET}"
         if self.calls > 1:
             out += f"{t.dim_style} ×{self.calls}{ansi.RESET}"
-        return out
+        return out + self.duration()
 
 
 def _display_path(path: str) -> str:
@@ -636,8 +672,6 @@ class ToolOutput(Block):
 #: How many of a call's output lines the compact transcript keeps. fx prints a
 #: result whole, so the fold only takes over for output nobody reads.
 RESULT_PREVIEW_ROWS = 20
-#: How many ctrl+o unfolds.
-RESULT_EXPANDED_ROWS = 200
 
 
 @dataclass
@@ -662,8 +696,9 @@ class ToolResult(Block):
             label = ansi.clip(self.label, max(1, width - 5))
             out.append(f"  {t.dim_style}•{ansi.RESET} {t.tag_style}{label}{ansi.RESET}:")
             out.append("")
-        limit = RESULT_EXPANDED_ROWS if _expanded else RESULT_PREVIEW_ROWS
-        shown = self.lines[:limit]
+        # ctrl+o is the full-transcript view: nothing stays folded, or a long
+        # output could never be read back the way ctx lets you read it.
+        shown = self.lines if _expanded else self.lines[:RESULT_PREVIEW_ROWS]
         hidden = len(self.lines) - len(shown)
         body = list(shown)
         if hidden > 0:
@@ -759,6 +794,118 @@ class DiffSummary(Block):
         return [f"{t.dim_style}{ansi.clip(text, width)}{ansi.RESET}"]
 
 
+#: Heat levels, from a quiet day to the busiest, as fx's contribution grid draws
+#: them: density rather than colour carries the intensity, so any palette works.
+HEAT_GLYPHS = ("░", "▒", "▓", "█")
+#: Weekday initials, Sunday first to match the columns the grid starts on.
+DAY_INITIALS = ("s", "m", "t", "w", "t", "f", "s")
+#: Rows that carry a weekday label: Monday, Wednesday and Friday.
+DAY_LABELLED = (1, 3, 5)
+
+
+def _heat_levels(values: list[int]) -> list[int]:
+    """Three ascending cut points at the 50th, 75th and 90th percentile.
+
+    Thresholds come from the data's own spread rather than fixed numbers, so a
+    history of huge days and one of small days both show a gradient.
+    """
+    positives = sorted(v for v in values if v > 0)
+    if not positives:
+        return []
+    return [
+        positives[min(len(positives) - 1, int(len(positives) * fraction))]
+        for fraction in (0.5, 0.75, 0.9)
+    ]
+
+
+def _heat_level(value: int, cuts: list[int]) -> int:
+    level = 0
+    for cut in cuts:
+        if value >= cut:
+            level += 1
+    return min(level, len(HEAT_GLYPHS) - 1)
+
+
+@dataclass
+class Heatmap(Block):
+    """Token activity as weeks by weekday, the shape ctx's ``/usage`` draws."""
+
+    totals: dict[Any, int] = field(default_factory=dict)
+    as_of: Any = None
+    weeks: int = 26
+    caption: str = ""
+    kind: str = "notice"
+
+    def _columns(self, width: int) -> tuple[list[Any], Any]:
+        from datetime import timedelta
+
+        end = self.as_of or date.today()
+        fit = max(4, (max(12, width - 4)) // 2)
+        # A young history should not paint a year of empty weeks, so the grid
+        # stops just past the oldest recorded day (and never shrinks past eight).
+        oldest = min(self.totals) if self.totals else end
+        span = max(8, (end - oldest).days // 7 + 1)
+        weeks = max(1, min(self.weeks, fit, span))
+        sunday = end - timedelta(days=(end.weekday() + 1) % 7)
+        start = sunday - timedelta(weeks=weeks - 1)
+        return [start + timedelta(weeks=i) for i in range(weeks)], start
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        columns, window_start = self._columns(width)
+        end = self.as_of or date.today()
+        cuts = _heat_levels([self.totals.get(day, 0) for day in self.totals])
+        gutter = 4
+        out: list[str] = []
+        label = f"{self.caption or 'Token activity'} · last {len(columns)} weeks"
+        out.append(f"{t.system_notice_label_style}{ansi.clip(label, width)}{ansi.RESET}")
+
+        # Month labels sit over the week each month starts in, when they fit.
+        header = [" "] * (gutter + len(columns) * 2)
+        last_month = ""
+        next_allowed = gutter
+        for index, week_start in enumerate(columns):
+            month = ""
+            for day_offset in range(7):
+                visible = week_start + timedelta(days=day_offset)
+                if window_start <= visible <= end:
+                    month = visible.strftime("%b")
+                    break
+            if not month or month == last_month:
+                continue
+            position = gutter + index * 2
+            if position < next_allowed:
+                continue
+            while len(header) < position + len(month):
+                header.append(" ")
+            for offset, ch in enumerate(month):
+                header[position + offset] = ch
+            next_allowed = position + len(month) + 1
+            last_month = month
+        out.append(f"{t.dim_style}{''.join(header).rstrip()}{ansi.RESET}")
+
+        for weekday in range(7):
+            label = f"  {DAY_INITIALS[weekday]} " if weekday in DAY_LABELLED else "    "
+            cells: list[str] = []
+            for week_start in columns:
+                day = week_start + timedelta(days=weekday)
+                if day < window_start or day > end:
+                    cells.append("  ")
+                    continue
+                level = _heat_level(self.totals.get(day, 0), cuts)
+                shade = t.dim_style if level == 0 else t.user_card_accent_style
+                cells.append(f"{shade}{HEAT_GLYPHS[level]}{ansi.RESET} ")
+            out.append(f"{t.dim_style}{label}{ansi.RESET}{''.join(cells)}".rstrip())
+
+        legend = "".join(f"{HEAT_GLYPHS[i]} " for i in range(len(HEAT_GLYPHS)))
+        out.append(
+            f"    {t.dim_style}less {ansi.RESET}"
+            f"{t.user_card_accent_style}{legend}{ansi.RESET}"
+            f"{t.dim_style}more{ansi.RESET}"
+        )
+        return out
+
+
 @dataclass
 class Sections(Block):
     """A titled report: sections of ``label / detail`` rows, as fx prints them."""
@@ -820,7 +967,7 @@ class ReadToolStatus(ToolRow):
     def body(self) -> str:
         t = _theme.current()
         if self.status == "error":
-            return self.couldnt("read", _display_path(self.path))
+            return self.couldnt("read", _display_path(self.path)) + self.duration()
         if self.status == "running":
             out = f"{t.dim_style}Reading{ansi.RESET}"
         elif self.status == "cancelled":
@@ -836,7 +983,7 @@ class ReadToolStatus(ToolRow):
                 out += f" {t.dim_style}:L{self.start_line}-{self.end_line}{ansi.RESET}"
         if self.total_lines and not self.is_dir:
             out += f"{t.dim_style} · {self.total_lines}L{ansi.RESET}"
-        return out
+        return out + self.duration()
 
 
 @dataclass
@@ -868,7 +1015,7 @@ class BashToolStatus(ToolRow):
             out += f" {t.tool_stdout_style}{command}{ansi.RESET}"
         if self.reason:
             out += f"{t.dim_style} · {self.reason}{ansi.RESET}"
-        return out
+        return out + self.duration()
 
 
 #: fx's names for the programs it shortens to their own name (plain_programs).
@@ -1158,7 +1305,7 @@ class ApplyPatchToolStatus(ToolRow):
     def body(self) -> str:
         t = _theme.current()
         if self.status == "error":
-            return self.couldnt("edit", _display_path(self.path))
+            return self.couldnt("edit", _display_path(self.path)) + self.duration()
         if self.status == "running":
             label = "Editing"
         elif self.status == "cancelled":
@@ -1178,7 +1325,7 @@ class ApplyPatchToolStatus(ToolRow):
                 out += f" {t.dim_style}+{self.added}{ansi.RESET}"
             elif self.removed > 0:
                 out += f" {t.dim_style}-{self.removed}{ansi.RESET}"
-        return out
+        return out + self.duration()
 
 
 @dataclass
@@ -1198,7 +1345,7 @@ class GrepToolStatus(ToolRow):
     def body(self) -> str:
         t = _theme.current()
         if self.status == "error":
-            return self.couldnt("search", self.pattern)
+            return self.couldnt("search", self.pattern) + self.duration()
         if self.status == "running":
             out = f"{t.dim_style}Searching{ansi.RESET}"
         elif self.status == "cancelled":
@@ -1213,7 +1360,7 @@ class GrepToolStatus(ToolRow):
         if self.status != "running" and self.match_count:
             noun = "match" if self.match_count == 1 else "matches"
             out += f" {t.dim_style}· {self.match_count} {noun}{ansi.RESET}"
-        return out
+        return out + self.duration()
 
 
 @dataclass
@@ -1245,7 +1392,7 @@ class WebToolStatus(ToolRow):
         if self.status != "running" and self.result_count:
             noun = "result" if self.result_count == 1 else "results"
             out += f" {t.dim_style}· {self.result_count} {noun}{ansi.RESET}"
-        return out
+        return out + self.duration()
 
 
 def _short(text: str, limit: int = 70) -> str:
