@@ -6,6 +6,11 @@ override-dependencies = [
     "aiofiles>=25.1.0",
 ]
 
+[tool.uv.sources]
+ctx-sdk = { workspace = true }
+ctx-term = { workspace = true }
+ctx-agent = { workspace = true }
+
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
 default = true

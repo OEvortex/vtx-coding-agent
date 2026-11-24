@@ -13,6 +13,7 @@ Custom providers are merged into the real catalog, so they're visible to
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import os
 from dataclasses import dataclass, field
@@ -48,6 +49,10 @@ class ProviderInfo:
     known_models: tuple[str, ...] = ()
     supports_tools: bool = True
     supports_vision: bool = False
+    #: Models that see images on a provider whose default is text-only, e.g.
+    #: junie serves Qwen (text) and GPT-6 Luna (vision) behind one slug.
+    #: Entries match the full model id, its bare name, or an ``fnmatch`` glob.
+    vision_models: tuple[str, ...] = ()
     api_key_optional: bool = False
     is_local: bool = False
     max_tokens: int | None = None
@@ -57,6 +62,24 @@ class ProviderInfo:
     headers: dict[str, str] = field(default_factory=dict)
     openmodelendpoint: bool = False
     model_parser: ModelParserConfig = field(default_factory=ModelParserConfig)
+
+    def sees_images(self, model_id: str) -> bool:
+        """Whether ``model_id`` accepts image input on this provider."""
+        if self.supports_vision:
+            return True
+        if not self.vision_models or not model_id:
+            return False
+        name = model_id.strip().lower()
+        bare = name.split("/", 1)[-1]
+        for pattern in self.vision_models:
+            rule = pattern.strip().lower()
+            if rule in (name, bare):
+                return True
+            if any(ch in rule for ch in "*?[") and (
+                fnmatch.fnmatch(name, rule) or fnmatch.fnmatch(bare, rule)
+            ):
+                return True
+        return False
 
 
 _YAML_PATH = Path(__file__).parent / "provider.yaml"
@@ -97,6 +120,7 @@ def _parse_entry(entry: dict) -> ProviderInfo:
         known_models=tuple(entry.get("known_models", [])),
         supports_tools=entry.get("supports_tools", True),
         supports_vision=entry.get("supports_vision", False),
+        vision_models=tuple(entry.get("vision_models", [])),
         api_key_optional=entry.get("api_key_optional", False),
         is_local=entry.get("is_local", False),
         max_tokens=entry.get("max_tokens"),
@@ -282,6 +306,7 @@ def _get_builtin_oauth_providers() -> dict[str, ProviderInfo]:
             known_models=("Qwen/Qwen3.6-27B-FP8", "gpt-6-luna"),
             supports_tools=True,
             supports_vision=False,
+            vision_models=("gpt-6-luna",),
             supports_thinking=True,
             fetch_models=True,
             models_endpoint="/models",
@@ -490,7 +515,9 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
 
     if is_matched:
         max_tokens = limits.output
-        supports_images = limits.supports_vision
+        # An explicit per-model allowlist beats the global catalog, which knows
+        # the model but not which providers expose image input for it.
+        supports_images = p.sees_images(model_id) if p.vision_models else limits.supports_vision
         supports_thinking = limits.supports_reasoning
         context_window = limits.context
         supports_tools = limits.supports_tools
@@ -498,7 +525,7 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
         thinking_level_map = limits.thinking_level_map
     else:
         max_tokens = p.max_tokens
-        supports_images = p.supports_vision
+        supports_images = p.sees_images(model_id)
         supports_thinking = p.supports_thinking
         context_window = limits.context
         supports_tools = p.supports_tools
@@ -612,6 +639,7 @@ def register_custom_provider(
     known_models: list[str] | None = None,
     supports_tools: bool = True,
     supports_vision: bool = False,
+    vision_models: list[str] | None = None,
     api_key_optional: bool = False,
     is_local: bool = False,
     max_tokens: int | None = None,
@@ -646,6 +674,7 @@ def register_custom_provider(
         known_models=tuple(known_models or []),
         supports_tools=supports_tools,
         supports_vision=supports_vision,
+        vision_models=tuple(vision_models or []),
         api_key_optional=api_key_optional,
         is_local=is_local,
         max_tokens=max_tokens,

@@ -12,13 +12,13 @@ description = "Minimal coding agent built on the ctx harness with its own termin
 requires-python = ">=3.12"
 keywords = ["coding-agent", "tui", "cli", "llm"]
 dependencies = [
-    "ctx",
-    "ctx-code",
+    "ctx-sdk>=0.1.0",
+    "ctx-agent>=0.1.0",
 ]
 
 [project.scripts]
 vx = "vx.cli:main"
 
 [tool.uv.sources]
-ctx = { workspace = true }
-ctx-code = { workspace = true }
+ctx-sdk = { workspace = true }
+ctx-agent = { workspace = true }

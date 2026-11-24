@@ -14,7 +14,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
-from ctx.core.image import is_image_file, read_and_process_image
+from ctx.core.image import is_image_file, read_and_process_image, resize_image
 from ctx.protocol.types import ImageContent
 
 #: Image extensions ``@`` attachment recognises. Mirrors ctx's read tool.
@@ -78,6 +78,10 @@ def from_clipboard() -> Attachment | None:
     raw, mime = found
     if not raw:
         return None
+    # A clipboard screenshot can be far larger than a model accepts; file
+    # attachments already pass through this, so pasted ones do too.
+    with suppress(Exception):
+        raw, mime, _note = resize_image(raw, mime)
     ext = _MIME_SUFFIX.get(mime, ".png")
     return Attachment(
         data=base64.b64encode(raw).decode("ascii"),

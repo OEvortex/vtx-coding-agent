@@ -59,7 +59,10 @@ def _ponytail_section(env: PromptEnv) -> str | None:
 def register() -> None:
     """Register the coding persona and ponytail section (idempotent)."""
     register_base_prompt(lambda: DEFAULT_CTX_BASE)
-    register_prompt_section("ponytail", _ponytail_section, order=15)
+    # Another front end (vx) may have registered its own ponytail section
+    # before this package was imported; the guidance is the same, so replacing
+    # is harmless and keeps import order from deciding who crashes.
+    register_prompt_section("ponytail", _ponytail_section, order=15, replace=True)
 
 
 register()

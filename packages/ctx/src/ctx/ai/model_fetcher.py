@@ -454,7 +454,7 @@ def get_fetched_models(provider) -> list[Model]:
         )
 
         max_tokens = entry.max_output_tokens or provider.max_tokens
-        supports_images = entry.supports_images or provider.supports_vision
+        supports_images = entry.supports_images or provider.sees_images(entry.id)
         supports_thinking = entry.supports_thinking or provider.supports_thinking
         context_window = entry.context_length or None
 
@@ -465,7 +465,7 @@ def get_fetched_models(provider) -> list[Model]:
                 max_tokens = limits.output
             if not supports_thinking:
                 supports_thinking = limits.supports_reasoning
-            if not supports_images:
+            if not supports_images and not provider.vision_models:
                 supports_images = limits.supports_vision
             supports_tools = limits.supports_tools
             supports_audio = limits.supports_audio

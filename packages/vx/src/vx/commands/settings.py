@@ -1,6 +1,6 @@
 """``/settings``, ``/themes``, ``/permissions``, ``/mode``, ``/thinking``,
-``/notifications``, ``/ponytail`` — the settings surface, ported from ctx-code's
-settings mixin, plus the vx-native /mode command inspired by fx."""
+``/notifications`` — the settings surface, ported from ctx-code's settings
+mixin, plus the vx-native /mode command inspired by fx."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from ctx.core.config import (
     set_git_context,
     set_notifications_enabled,
     set_permissions_mode,
-    set_ponytail,
     set_show_welcome_shortcuts,
     set_theme,
     set_thinking_lines,
@@ -300,26 +299,6 @@ class SettingsCommands(CommandSupport):
         set_notifications_enabled(mode == "on")
         self._ok(f"notifications turned {mode}", topic="notifications")
 
-    # -- /ponytail -------------------------------------------------------
-
-    def _handle_ponytail_command(self, args: str) -> None:
-        arg = args.strip().lower()
-        if arg in ("on", "true", "1", "enable"):
-            self._set_ponytail(True)
-        elif arg in ("off", "false", "0", "disable"):
-            self._set_ponytail(False)
-        elif not arg:
-            self._set_ponytail(not config.llm.system_prompt.ponytail)
-        else:
-            self._fail("usage: /ponytail [on|off]")
-
-    def _set_ponytail(self, enabled: bool) -> None:
-        set_ponytail(enabled)
-        mode = "on" if enabled else "off"
-        self._ok(f"ponytail mode turned {mode}", topic="ponytail")
-        if enabled:
-            self._warn("ponytail mode applies to new conversations (/new) or after a restart")
-
     # -- /settings -------------------------------------------------------
 
     def _settings_rows(self) -> list[footer.MenuItem]:
@@ -345,11 +324,6 @@ class SettingsCommands(CommandSupport):
                 label="notifications",
                 detail="on" if config.notifications.enabled else "off",
                 value="notifications",
-            ),
-            footer.MenuItem(
-                label="ponytail",
-                detail="on" if config.llm.system_prompt.ponytail else "off",
-                value="ponytail",
             ),
             footer.MenuItem(
                 label="show-shortcuts",
@@ -404,8 +378,6 @@ class SettingsCommands(CommandSupport):
             set_git_context(enabled)
             self._ok(f"git context turned {'on' if enabled else 'off'}", topic="settings")
             self._warn("git context applies to new conversations (/new) or after a restart")
-        elif value == "ponytail":
-            self._set_ponytail(not config.llm.system_prompt.ponytail)
         elif value == "themes":
             self._handle_themes_command("")
             return

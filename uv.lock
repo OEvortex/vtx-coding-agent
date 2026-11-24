@@ -12,9 +12,10 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "ctx",
-    "ctx-code",
+    "ctx-agent",
+    "ctx-sdk",
     "ctx-term",
+    "vtx-coding-agent",
     "vx",
 ]
 overrides = [{ name = "aiofiles", specifier = ">=25.1.0" }]
@@ -516,7 +517,24 @@ wheels = [
 ]
 
 [[package]]
-name = "ctx"
+name = "ctx-agent"
+version = "0.1.0"
+source = { editable = "packages/code" }
+dependencies = [
+    { name = "ctx-sdk" },
+    { name = "ctx-term" },
+    { name = "textual" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ctx-sdk", editable = "packages/ctx" },
+    { name = "ctx-term", editable = "packages/term" },
+    { name = "textual", specifier = ">=8.0.0" },
+]
+
+[[package]]
+name = "ctx-sdk"
 version = "0.1.0"
 source = { editable = "packages/ctx" }
 dependencies = [
@@ -578,35 +596,18 @@ requires-dist = [
 provides-extras = ["term", "gh-app"]
 
 [[package]]
-name = "ctx-code"
-version = "0.1.0"
-source = { editable = "packages/code" }
-dependencies = [
-    { name = "ctx" },
-    { name = "ctx-term" },
-    { name = "textual" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ctx", editable = "packages/ctx" },
-    { name = "ctx-term", editable = "packages/term" },
-    { name = "textual", specifier = ">=8.0.0" },
-]
-
-[[package]]
 name = "ctx-term"
 version = "0.1.0"
 source = { editable = "packages/term" }
 dependencies = [
-    { name = "ctx" },
+    { name = "ctx-sdk" },
     { name = "rich" },
     { name = "textual" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "ctx", editable = "packages/ctx" },
+    { name = "ctx-sdk", editable = "packages/ctx" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "textual", specifier = ">=8.0.0" },
 ]
@@ -1909,18 +1910,35 @@ wheels = [
 ]
 
 [[package]]
-name = "vx"
-version = "0.1.0"
-source = { editable = "packages/vx" }
+name = "vtx-coding-agent"
+version = "2.0.0"
+source = { editable = "packages/vtx-coding-agent" }
 dependencies = [
-    { name = "ctx" },
-    { name = "ctx-code" },
+    { name = "ctx-agent" },
+    { name = "ctx-sdk" },
+    { name = "ctx-term" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "ctx", editable = "packages/ctx" },
-    { name = "ctx-code", editable = "packages/code" },
+    { name = "ctx-agent", editable = "packages/code" },
+    { name = "ctx-sdk", editable = "packages/ctx" },
+    { name = "ctx-term", editable = "packages/term" },
+]
+
+[[package]]
+name = "vx"
+version = "0.1.0"
+source = { editable = "packages/vx" }
+dependencies = [
+    { name = "ctx-agent" },
+    { name = "ctx-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ctx-agent", editable = "packages/code" },
+    { name = "ctx-sdk", editable = "packages/ctx" },
 ]
 
 [[package]]

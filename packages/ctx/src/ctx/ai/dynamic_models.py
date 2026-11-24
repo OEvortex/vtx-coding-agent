@@ -1186,6 +1186,13 @@ def _to_static_model(
     else:
         if context_window and max_tokens and context_window - max_tokens <= 8192:
             max_tokens = safe_max_output_tokens(context_window)
+        # No catalog limits for this model: the provider entry is the only
+        # place a per-model vision override can come from.
+        if not supports_images:
+            from ctx.ai.provider_catalog import get
+
+            info = get(provider)
+            supports_images = bool(info and info.sees_images(entry.id))
         supports_tools = True
         supports_audio = False
         thinking_level_map = entry.thinking_level_map

@@ -40,6 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a single prompt non-interactively, then exit "
         "(omit the value or pipe stdin to read the prompt from stdin)",
     )
+    parser.add_argument(
+        "--verbose", action="store_true", help="With -p/--prompt, print each tool call to stderr"
+    )
     parser.add_argument("--api-key", "-k", help="API key")
     parser.add_argument("--base-url", "-u", help="Base URL for API")
     parser.add_argument(
@@ -154,8 +157,11 @@ def _boot(argv_args: argparse.Namespace, *, cwd: str) -> None:
     if argv_args.insecure_skip_verify:
         config.llm.tls.insecure_skip_verify = True
 
-    # Importing ctx.code registers the coding tool rows and the base prompt.
-    import ctx.code  # noqa: F401
+    # vx contributes its own persona: the harness base ships no prompt content
+    # of its own.
+    from vx import prompts as vx_prompts
+
+    vx_prompts.register()
     from ctx.plugins import boot as boot_plugins
 
     try:
@@ -183,9 +189,10 @@ def _run_headless(args: argparse.Namespace) -> int:
         print(f"{PROGRAM_NAME}: {exc}", file=sys.stderr)
         return 1
 
-    from ctx.code.headless import run_headless
     from ctx.core.config import config
     from ctx.plugins.extensions import load_for_runtime
+
+    from vx.headless import run_headless
 
     loaded = load_for_runtime(
         cwd=cwd,
@@ -208,6 +215,7 @@ def _run_headless(args: argparse.Namespace) -> int:
             active_agent_name=args.agent,
             agent_files=args.agent_files,
             auto_discover_agents=not args.no_agents,
+            verbose=args.verbose,
         )
     )
 

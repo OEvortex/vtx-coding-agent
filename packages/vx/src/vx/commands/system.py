@@ -538,7 +538,7 @@ class SystemCommands(CommandSupport):
 
     async def _do_update(self) -> None:
         try:
-            from ctx.code.self_update import self_update
+            from vx.update import self_update
 
             ok, message = await asyncio.to_thread(self_update)
         except Exception as exc:

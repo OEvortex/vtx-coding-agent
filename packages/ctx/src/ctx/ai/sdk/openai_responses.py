@@ -193,6 +193,17 @@ class OpenAIResponsesSDK(BaseLLMSDK):
             # avoid double-adding empty content when the turn was reasoning-only.
             if role == "assistant" and metadata.get("reasoning_items") and not msg.content:
                 continue
+            if msg.image_parts:
+                # Responses wants typed content parts; a bare string would drop
+                # the images without any error (the model then claims none was
+                # attached).
+                parts: list[dict[str, Any]] = []
+                if msg.content:
+                    parts.append({"type": "input_text", "text": msg.content})
+                for image_url in msg.image_parts:
+                    parts.append({"type": "input_image", "image_url": image_url})
+                input_items.append({"role": role, "content": parts})
+                continue
             input_items.append(
                 {"role": "user" if role == "user" else "assistant", "content": msg.content}
             )

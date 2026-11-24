@@ -13,6 +13,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Exported codemode runs mirror the terminal cell, and stop clipping** — `_codemode_parts` in `src/vtx/tui/export.py` now returns the same five parts the terminal draws (`code` / `trace` / `output` / `value` / `error` / `images`), `HtmlBuilder.codemode_block` emits each under a `.codemode-label` heading, and the per-call trace became a list of rows rather than one `·`-joined line capped at eight calls plus `+N more`. The 24-line code cap and the 5-line output and 12-line stack caps are gone. An exported transcript is a record of what ran, and a hidden tail is not a record.
 
+## [0.1.0] - 2026-11-24
+
+> **Monorepo split** — the monolithic `vtx-coding-agent` package has been split into three independent PyPI packages. The `vtx` command is deprecated in favor of `ctx`.
+
+### Added
+
+- **ctx-sdk (0.1.0)** — the core agent harness: agent loop, sessions, tools, plugin composition, MCP client, 65 LLM providers, and a Python SDK. Published as [`ctx-sdk`](https://pypi.org/project/ctx-sdk/).
+- **ctx-term (0.1.0)** — terminal UI building blocks: Textual widgets, scrollback blocks, formatting, and input primitives. Published as [`ctx-term`](https://pypi.org/project/ctx-term/).
+- **ctx-agent (0.1.0)** — the coding agent product: keyboard-driven TUI, headless CLI, built-in tools, and the `ctx` console script. Published as [`ctx-agent`](https://pypi.org/project/ctx-agent/).
+- **vtx-coding-agent (2.0.0)** — deprecation bridge that installs the three ctx packages and provides the `vtx` command as a compatibility wrapper. Published as [`vtx-coding-agent`](https://pypi.org/project/vtx-coding-agent/2.0.0/).
+
+### Changed
+
+- **Package rename** — `vtx-coding-agent` is now `ctx-agent`. The console script changed from `vtx` to `ctx`. All flags, subcommands, and behavior are identical.
+- **Monorepo layout** — the codebase is now organized as `packages/ctx` (sdk), `packages/term` (tui base), `packages/code` (product), with each publishable independently.
+- **Namespace reorganization** — all source moved from `vtx.*` to `ctx.*`. The `ctx.term` namespace is shared between ctx-term and ctx-agent via `pkgutil.extend_path`.
+
+### Removed
+
+- **`vtx` command** — deprecated; use `ctx` instead. The `vtx` bridge command continues to work but emits a `DeprecationWarning`.
+
 ## [1.3.0] - 2026-10-14
 
 ### Added

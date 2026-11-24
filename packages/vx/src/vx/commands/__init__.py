@@ -6,7 +6,7 @@ What differs is the surface: vx answers with a transcript block, a footer
 picker, or the composer used as a one-line prompt.
 
 - settings.py — /settings, /themes, /permissions, /thinking, /effort,
-  /notifications, /ponytail
+  /notifications
 - models.py   — /model, /provider
 - sessions.py — /new, /clear, /resume, /tree, /session, /handoff, /compact,
   /export, /copy, /undo, /redo, /usage, /recap
@@ -42,7 +42,6 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
     ("/settings", "toggle behaviour and appearance", "Appearance"),
     ("/themes", "switch palette", "Appearance"),
     ("/notifications", "turn notification sounds on or off", "Appearance"),
-    ("/ponytail", "toggle the terse prompt", "Appearance"),
     ("/new", "start a fresh session", "Session"),
     ("/clear", "clear the transcript, keep the session", "Session"),
     ("/resume", "open a saved session", "Session"),
@@ -113,7 +112,6 @@ NEEDS_RUNTIME = frozenset(
         "settings",
         "themes",
         "notifications",
-        "ponytail",
         "new",
         "clear",
         "resume",
@@ -175,7 +173,6 @@ class CommandsMixin(
             "settings": lambda: self._handle_settings_command(args),
             "themes": lambda: self._handle_themes_command(args),
             "notifications": lambda: self._handle_notifications_command(args),
-            "ponytail": lambda: self._handle_ponytail_command(args),
             "new": self._handle_new_command,
             "clear": self._handle_clear_command,
             "resume": self._handle_resume_command,
