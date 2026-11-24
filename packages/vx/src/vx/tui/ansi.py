@@ -35,16 +35,8 @@ def style(name: str) -> str:
     return getattr(_t(), name)
 
 
-def divider() -> str:
-    return _t().divider_style
-
-
 def dim() -> str:
     return _t().dim_style
-
-
-def statusline() -> str:
-    return _t().statusline_style
 
 
 def tag() -> str:
@@ -109,21 +101,6 @@ def clip_ellipsis(text: str, limit: int) -> str:
     if limit == 1:
         return "…"
     return clip(text, limit - 1) + "…"
-
-
-def clip_ellipsis_middle(text: str, limit: int) -> str:
-    """``ab…ef``: the head and tail of a path stay readable."""
-    if limit <= 0:
-        return ""
-    if width(text) <= limit:
-        return text
-    if limit == 1:
-        return "…"
-    budget = limit - 1
-    head = (budget + 1) // 2
-    tail = budget - head
-    plain = strip_ansi(text)
-    return _prefix_plain(plain, head) + "…" + _suffix_plain(plain, tail)
 
 
 def _prefix_plain(text: str, limit: int) -> str:

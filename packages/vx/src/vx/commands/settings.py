@@ -420,7 +420,7 @@ class SettingsCommands(CommandSupport):
         self._ok(f"scrollback set to {prefs.history_label(rows)}", topic="settings")
 
     def _select_thinking_lines(self, lines: str) -> None:
-        set_thinking_lines(cast("ThinkingLinesOption", lines))
+        set_thinking_lines(cast(ThinkingLinesOption, lines))
         label = (
             "no truncation" if lines == "none" else f"{lines} line{'s' if lines != '1' else ''}"
         )
@@ -435,4 +435,4 @@ def _sync_mode_to_config(mode_id: str) -> None:
     mapping = {"ask": "prompt", "auto": "auto"}
     ctx_mode = mapping.get(mode_id, "prompt")
     with contextlib.suppress(Exception):
-        set_permissions_mode(cast("CtxPermissionMode", ctx_mode))
+        set_permissions_mode(cast(CtxPermissionMode, ctx_mode))

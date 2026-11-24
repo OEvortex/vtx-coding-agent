@@ -10,7 +10,6 @@ import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
@@ -179,7 +178,6 @@ class BashTool(BaseTool):
         cancel_event: asyncio.Event | None = None,
         inline_output: bool = False,
         on_output: Callable[[str], None] | None = None,
-        **kwargs: Any,
     ) -> ToolResult:
         if not params.command.strip():
             msg = "Command cannot be empty"

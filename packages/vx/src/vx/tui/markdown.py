@@ -193,10 +193,6 @@ def _inline(text: str) -> str:
     return "".join(out)
 
 
-def _row(text: str, cols: int) -> str:
-    return ansi.clip_ellipsis(text, cols) if ansi.width(text) > cols else text
-
-
 def _task_prefix(body: str) -> tuple[str | None, str]:
     m = _TASK_RE.match(body)
     if not m:

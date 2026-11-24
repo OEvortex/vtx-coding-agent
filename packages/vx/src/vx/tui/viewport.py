@@ -27,7 +27,6 @@ class Viewport:
         self.fold: blocks.HistoryFold | None = None
         self._width = 0
         self._rows: list[str] = []
-        self._kinds: list[str | None] = []
         self._dirty = True
         self._pinned_rows = 2
 
@@ -38,15 +37,9 @@ class Viewport:
         self._dirty = True
         self.scroll = 0
 
-    def replace_all(self, blocks: list[blocks.Block]) -> None:
-        self.blocks = list(blocks)
-        self._dirty = True
-        self.scroll = 0
-
     def clear(self) -> None:
         self.blocks.clear()
         self._rows = []
-        self._kinds = []
         self.scroll = 0
         self.dropped_rows = 0
         self.fold = None
@@ -65,10 +58,9 @@ class Viewport:
 
     # -- measurement -------------------------------------------------------
 
-    def _build(self, width: int) -> tuple[list[str], list[str | None], list[int]]:
-        """Rows, their kinds, and how many rows each block (plus its gap) took."""
+    def _build(self, width: int) -> tuple[list[str], list[int]]:
+        """Rows, and how many rows each block (plus its gap) took."""
         rows: list[str] = []
-        kinds: list[str | None] = []
         heights: list[int] = []
         previous: str | None = None
         for block in self.blocks:
@@ -80,22 +72,18 @@ class Viewport:
             heights.append(gap + len(block_rows))
             for _ in range(gap):
                 rows.append("")
-                kinds.append(previous)
-            for row in block_rows:
-                rows.append(row)
-                kinds.append(block.kind)
+            rows.extend(block_rows)
             previous = block.kind
-        return rows, kinds, heights
+        return rows, heights
 
     def _rebuild(self, width: int) -> None:
-        rows, kinds, heights = self._build(width)
+        rows, heights = self._build(width)
         if self.history_rows and len(rows) > self.history_rows:
             # The fold marker is added by the prune, so it has to fit too.
             excess = len(rows) - self.history_rows + (0 if self.fold is not None else 2)
             if self._prune(width, excess, heights):
-                rows, kinds, _ = self._build(width)
+                rows, _ = self._build(width)
         self._rows = rows
-        self._kinds = kinds
         self._width = width
         self._dirty = False
 
@@ -185,10 +173,3 @@ class Viewport:
 
     def page(self, direction: int, width: int, height: int) -> None:
         self.scroll_by(direction * max(1, height - 2), width, height)
-
-    def at_bottom(self) -> bool:
-        return self.scroll == 0
-
-
-def blank_row() -> str:
-    return ""

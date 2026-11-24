@@ -288,10 +288,6 @@ def current() -> Theme:
     return _active
 
 
-def is_light() -> bool:
-    return _active.light
-
-
 def selected_theme() -> Theme:
     """Resolve the theme the way fx does: an explicit pin, then the terminal.
 

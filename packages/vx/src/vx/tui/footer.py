@@ -477,7 +477,6 @@ class QuestionView:
     index: int = 0
     total: int = 1
     draft: str = ""
-    draft_cursor: int = 0
 
     def panel(self, cols: int) -> list[str]:
         t = _theme.current()

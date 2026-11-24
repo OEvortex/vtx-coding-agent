@@ -529,7 +529,7 @@ class VxApp(CommandsMixin):
             return
         if key == "ctrl+w":
             start = self._word_start()
-            self._kill(self._input[start : self._cursor], start)
+            self._kill(self._input[start : self._cursor])
             self._input = self._input[:start] + self._input[self._cursor :]
             self._cursor = start
             self._after_edit()
@@ -537,7 +537,7 @@ class VxApp(CommandsMixin):
         if key in ("alt+d", "ctrl+delete"):
             end = self._word_end()
             self._undo_push()
-            self._kill(self._input[self._cursor : end], self._cursor)
+            self._kill(self._input[self._cursor : end])
             self._input = self._input[: self._cursor] + self._input[end:]
             self._after_edit()
             return
@@ -740,7 +740,7 @@ class VxApp(CommandsMixin):
             index += 1
         return index
 
-    def _kill(self, text: str, at: int) -> None:
+    def _kill(self, text: str) -> None:
         """Keep killed text for ctrl+y, the way readline does."""
         self._kill_ring = text
 
@@ -2139,9 +2139,6 @@ def _populate_tool_block_args(block: blocks.Block, tool_name: str, args: Any) ->
         path = a.get("path", a.get("file_path", ""))
         if path:
             block.path = str(path)
-        ops = a.get("ops", a.get("edits", []))
-        if isinstance(ops, list):
-            block.ops_count = len(ops)
     elif isinstance(block, blocks.GrepToolStatus):
         pattern = a.get("pattern", a.get("query", a.get("regex", a.get("search", ""))))
         if pattern:

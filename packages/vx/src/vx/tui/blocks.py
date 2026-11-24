@@ -114,7 +114,6 @@ HEADER_MAX_PARTS = 3
 
 #: Row budget for a tool's folded output, mirroring fx's compact transcript.
 OUTPUT_PREVIEW_ROWS = 5
-OUTPUT_EXPANDED_ROWS = 60
 #: Row budget for diff preview in the compact transcript.
 DIFF_PREVIEW_ROWS = 10
 _expanded = False
@@ -780,20 +779,6 @@ class ShellRun(Block):
         return out
 
 
-@dataclass
-class DiffSummary(Block):
-    files: int = 0
-    added: int = 0
-    removed: int = 0
-    kind: str = "notice"
-
-    def rows(self, width: int) -> list[str]:
-        t = _theme.current()
-        noun = "file" if self.files == 1 else "files"
-        text = f"± {self.files} {noun} +{self.added} -{self.removed}"
-        return [f"{t.dim_style}{ansi.clip(text, width)}{ansi.RESET}"]
-
-
 #: Heat levels, from a quiet day to the busiest, as fx's contribution grid draws
 #: them: density rather than colour carries the intensity, so any palette works.
 HEAT_GLYPHS = ("░", "▒", "▓", "█")
@@ -1296,7 +1281,6 @@ class ApplyPatchToolStatus(ToolRow):
     path: str = ""
     added: int = 0
     removed: int = 0
-    ops_count: int = 0
     status: str = "running"
     kind: str = "tool"
     diff_lines: list[tuple[str, str, str]] = field(default_factory=list)
@@ -1400,56 +1384,6 @@ def _short(text: str, limit: int = 70) -> str:
     """Truncate text to *limit* chars, adding ellipsis if needed."""
     flat = " ".join(str(text).split())
     return flat[: limit - 1] + "…" if len(flat) > limit else flat
-
-
-@dataclass
-class ModeStatus(Block):
-    """Permission mode notice: ``Mode: Auto`` with description."""
-
-    mode_id: str = ""
-    mode_name: str = ""
-    description: str = ""
-    kind: str = "notice"
-
-    def rows(self, width: int) -> list[str]:
-        t = _theme.current()
-        name = self.mode_name or self.mode_id
-        line = f"{t.dim_style}Mode:{ansi.RESET} {t.tag_style}{name}{ansi.RESET}"
-        if self.description:
-            line += f" {t.dim_style}— {self.description}{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
-
-
-@dataclass
-class ThinkingLevelChanged(Block):
-    """Thinking level change confirmation: ``Thinking: high``."""
-
-    from_level: str = ""
-    to_level: str = ""
-
-    def rows(self, width: int) -> list[str]:
-        t = _theme.current()
-        line = f"{t.dim_style}Thinking{ansi.RESET}: {t.dim_style}{self.to_level}{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
-
-
-@dataclass
-class ModeChanged(Block):
-    """Mode change confirmation: ``Switched to Ask — Confirm each action before it runs``."""
-
-    from_mode: str = ""
-    to_mode: str = ""
-    to_name: str = ""
-    description: str = ""
-    kind: str = "notice"
-
-    def rows(self, width: int) -> list[str]:
-        t = _theme.current()
-        name = self.to_name or self.to_mode
-        line = f"{t.dim_style}Switched to{ansi.RESET} {t.tag_style}{name}{ansi.RESET}"
-        if self.description:
-            line += f" {t.dim_style}— {self.description}{ansi.RESET}"
-        return [ansi.clip_ellipsis(line, width)]
 
 
 def spacing(previous: str | None, kind: str) -> int:
