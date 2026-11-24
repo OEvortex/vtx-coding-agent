@@ -103,6 +103,86 @@ def clip_ellipsis(text: str, limit: int) -> str:
     return clip(text, limit - 1) + "…"
 
 
+REVERSE = "\x1b[7m"
+REVERSE_OFF = "\x1b[27m"
+
+
+def highlight_matches(text: str, spans: list[tuple[int, int]]) -> str:
+    """Reverse-video plain-text character spans without losing the row's SGR.
+
+    ``27`` turns *only* reverse video off, so a match inside a coloured/spinner
+    row keeps its colours on both sides. Spans are (start, end) indices into
+    the text with escapes removed; escapes are copied through untouched.
+    """
+    events: dict[int, list[str]] = {}
+    for start, end in sorted(spans):
+        if end <= start:
+            continue
+        events.setdefault(start, []).append(REVERSE)
+        events.setdefault(end, []).append(REVERSE_OFF)
+    if not events:
+        return text
+
+    out: list[str] = []
+    plain_i = 0
+    i = 0
+    for code in events.get(0, ()):
+        out.append(code)
+    while i < len(text):
+        if text[i] == "\x1b":
+            match = _ANSI_RE.match(text, i) or _OSC_RE.match(text, i)
+            if match:
+                out.append(match.group(0))
+                i = match.end()
+                continue
+        out.append(text[i])
+        plain_i += 1
+        i += 1
+        for code in events.get(plain_i, ()):
+            out.append(code)
+    return "".join(out)
+
+
+def osc8(url: str, text: str) -> str:
+    """Wrap ``text`` in an OSC 8 hyperlink so terminals can open it directly."""
+    safe = "".join(ch for ch in str(url).strip() if ch.isprintable() and ch not in "\x1b\\")
+    if not safe:
+        return text
+    return f"\x1b]8;;{safe}\x1b\\{text}\x1b]8;;\x1b\\"
+
+
+def link_at(text: str, col: int) -> str | None:
+    """The OSC 8 destination covering display column ``col`` of ``text``."""
+    if col < 0:
+        return None
+    uri: str | None = None
+    start = 0
+    cell = 0
+    i = 0
+    while i < len(text):
+        if text[i] == "\x1b":
+            match = _OSC_RE.match(text, i)
+            if match:
+                raw = match.group(0)
+                body = raw[2:-1] if raw.endswith("\x07") else raw[2:-2]
+                if body.startswith("8;;"):
+                    target = body[3:]
+                    uri = target or None
+                    start = cell
+                i = match.end()
+                continue
+            match = _ANSI_RE.match(text, i)
+            if match:
+                i = match.end()
+                continue
+        size = char_width(text[i])
+        if uri is not None and start <= col < start + size:
+            return uri
+        cell += size
+        i += 1
+    return None
+
+
 def _prefix_plain(text: str, limit: int) -> str:
     out = []
     used = 0

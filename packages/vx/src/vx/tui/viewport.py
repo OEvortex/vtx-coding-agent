@@ -29,13 +29,29 @@ class Viewport:
         self._rows: list[str] = []
         self._dirty = True
         self._pinned_rows = 2
+        #: ``scroll == 0`` means the tail is on screen. Scrolling up sets this
+        #: false; new rows then count up instead of yanking the window down.
+        self.follow = True
+        self.unseen = 0
+        #: Incremental search (ctrl+f): (row, start, end) spans into the rows.
+        self.search = ""
+        self.search_matches: list[tuple[int, int, int]] = []
+        self.search_index = 0
+        #: Full-transcript row behind each visible row, for highlighting.
+        self._window: list[int | None] = []
 
     # -- content -----------------------------------------------------------
 
     def add(self, block: blocks.Block) -> None:
+        """Append a block, keeping the reader's place if they scrolled up.
+
+        Resetting the scroll here would yank the view back to the tail every
+        time a token or a tool call arrived, which makes reading scrollback
+        impossible while a turn is running. ``_rebuild`` moves the anchor by
+        the new rows instead, so the visible text does not shift.
+        """
         self.blocks.append(block)
         self._dirty = True
-        self.scroll = 0
 
     def clear(self) -> None:
         self.blocks.clear()
@@ -44,6 +60,12 @@ class Viewport:
         self.dropped_rows = 0
         self.fold = None
         self._dirty = False
+        self.follow = True
+        self.unseen = 0
+        self.search = ""
+        self.search_matches = []
+        self.search_index = 0
+        self._window = []
 
     def set_history_limit(self, rows: int) -> None:
         """Bound the transcript to ``rows`` of scrollback; 0 keeps everything."""
@@ -83,9 +105,16 @@ class Viewport:
             excess = len(rows) - self.history_rows + (0 if self.fold is not None else 2)
             if self._prune(width, excess, heights):
                 rows, _ = self._build(width)
+        grown = len(rows) - len(self._rows)
+        if not self.follow:
+            # Hold the reader's place: rows appended below the window would
+            # otherwise slide the text they are looking at out from under them.
+            self.scroll = max(0, self.scroll + grown)
+            self.unseen += max(0, grown)
         self._rows = rows
         self._width = width
         self._dirty = False
+        self._recompute_matches()
 
     def _first_droppable(self) -> int:
         """Index of the first block the limit may drop.
@@ -128,6 +157,59 @@ class Viewport:
     def total(self, width: int) -> int:
         return len(self.lines(width))
 
+    # -- search ------------------------------------------------------------
+
+    def _recompute_matches(self) -> None:
+        query = self.search.strip()
+        self.search_matches = []
+        if query:
+            needle = query.lower()
+            for row_index, row in enumerate(self._rows):
+                plain = ansi.strip_ansi(row).lower()
+                start = 0
+                while True:
+                    found = plain.find(needle, start)
+                    if found < 0:
+                        break
+                    self.search_matches.append((row_index, found, found + len(needle)))
+                    start = found + max(1, len(needle))
+        self.search_index = min(self.search_index, max(0, len(self.search_matches) - 1))
+
+    def set_search(self, query: str, width: int) -> None:
+        self.search = query
+        self.search_index = 0
+        self._recompute_matches()
+        self.touch()
+
+    def search_next(self, delta: int, width: int, height: int) -> tuple[int, int, int] | None:
+        """Cycle matches (``n``/``N``) and bring the current one into view."""
+        if not self.search_matches:
+            return None
+        self.search_index = (self.search_index + delta) % len(self.search_matches)
+        match = self.search_matches[self.search_index]
+        total = self.total(width)
+        body = max(1, height - 1)
+        tail_space = max(1, body - self._pinned_rows)
+        end = min(total, match[0] + max(1, tail_space // 2) + 1)
+        self.scroll = max(0, min(self._max_scroll(width, height), total - end))
+        self._set_follow()
+        return match
+
+    def highlight(self, rows: list[str]) -> list[str]:
+        """Reverse-video the matches currently on screen."""
+        if not self.search_matches or len(self._window) != len(rows):
+            return rows
+        where = {full: vis for vis, full in enumerate(self._window) if full is not None}
+        spans: dict[int, list[tuple[int, int]]] = {}
+        for row_index, start, end in self.search_matches:
+            visible_index = where.get(row_index)
+            if visible_index is not None:
+                spans.setdefault(visible_index, []).append((start, end))
+        return [
+            ansi.highlight_matches(row, spans[index]) if index in spans else row
+            for index, row in enumerate(rows)
+        ]
+
     # -- window ------------------------------------------------------------
 
     def visible(self, width: int, height: int) -> list[str]:
@@ -142,17 +224,27 @@ class Viewport:
         body = max(1, height - 1)  # keep one blank row as the footer gap
 
         if len(rows) <= body:
-            window = list(rows) + [""] * (body - len(rows))
+            window = list(rows)
+            where: list[int | None] = list(range(len(rows)))
+            window += [""] * (body - len(rows))
+            where += [None] * (body - len(rows))
+            self._window = [*where, None]
             return [*window, ""]
 
         pinned = min(self._pinned_rows, body - 1, len(rows))
         tail_space = max(1, body - pinned)
         self.scroll = max(0, min(self.scroll, self._max_scroll(width, height)))
+        if self.scroll == 0 and not self.follow:
+            self._set_follow()
         end = len(rows) - self.scroll
         start = max(pinned, end - tail_space)
         window = list(rows[:pinned]) + list(rows[start:end])
         window = window[:body]
+        where = list(range(pinned)) + list(range(start, start + len(window) - pinned))
+        where = where[:body]
         window += [""] * (body - len(window))
+        where += [None] * (body - len(window))
+        self._window = [*where, None]
         return [*window, ""]
 
     # -- scrolling ---------------------------------------------------------
@@ -168,8 +260,21 @@ class Viewport:
         tail_space = max(1, body - self._pinned_rows)
         return max(0, len(self.lines(width)) - self._pinned_rows - tail_space)
 
+    def _set_follow(self) -> None:
+        if self.scroll <= 0:
+            self.follow = True
+            self.unseen = 0
+        else:
+            self.follow = False
+
+    def bottom(self) -> None:
+        """Return to the tail and clear the new-rows counter (``end``/submit)."""
+        self.scroll = 0
+        self._set_follow()
+
     def scroll_by(self, delta: int, width: int, height: int) -> None:
         self.scroll = max(0, min(self._max_scroll(width, height), self.scroll + delta))
+        self._set_follow()
 
     def page(self, direction: int, width: int, height: int) -> None:
         self.scroll_by(direction * max(1, height - 2), width, height)

@@ -173,6 +173,14 @@ class VxApp(_CommandBase):
         self._prompt: dict[str, Any] | None = None
         self._activity: str = ""
 
+        # Transcript search (ctrl+f). The query lives here; the matches and
+        # highlight spans live on the viewport so a redraw cannot lose them.
+        self._searching = False
+        self._search = ""
+        self._search_cursor = 0
+        #: The last painted frame, for hit-testing OSC 8 links under the mouse.
+        self._frame: list[str] = []
+
         self._exiting = False
         self._ticker_task: asyncio.Task | None = None
         #: Session ids already asked for a title, and the call that is running.
@@ -489,13 +497,33 @@ class VxApp(_CommandBase):
             self._draw(force=True)
 
     def _mouse_key(self, key: str) -> None:
-        """The wheel scrolls the transcript; other buttons are ignored."""
-        action = key.split(":")[1]
-        if action not in ("wheelup", "wheeldown"):
+        """The wheel scrolls; a left click opens an OSC 8 link if one is there."""
+        parts = key.split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        if action in ("wheelup", "wheeldown"):
+            step = 3 if action == "wheelup" else -3
+            self.viewport.scroll_by(step, *self._size())
+            self._draw()
             return
-        step = 3 if action == "wheelup" else -3
-        self.viewport.scroll_by(step, *self._size())
-        self._draw()
+        if action in ("left", "click") and len(parts) >= 4:
+            with suppress(Exception):
+                x, y = int(parts[2]), int(parts[3])
+                if 1 <= y <= len(self._frame):
+                    uri = ansi.link_at(self._frame[y - 1], x - 1)
+                    if uri:
+                        self._open_link(uri)
+
+    @staticmethod
+    def _open_link(uri: str) -> None:
+        """Open a hyperlink off the event loop; a slow browser must not stall keys."""
+        import threading
+        import webbrowser
+
+        def go() -> None:
+            with suppress(Exception):
+                webbrowser.open(uri)
+
+        threading.Thread(target=go, daemon=True).start()
 
     def _handle_key(self, key: str) -> None:
         if self._exiting:
@@ -508,6 +536,22 @@ class VxApp(_CommandBase):
             return
         if self._ask is not None:
             self._ask_key(key)
+            return
+        if self._searching:
+            self._search_key(key)
+            return
+        if key == "ctrl+f" and self._prompt is None:
+            self._open_search()
+            return
+        if (
+            self.viewport.search
+            and self._prompt is None
+            and not self._input
+            and key in ("n", "N", "ctrl+n", "ctrl+p")
+        ):
+            step = 1 if key in ("n", "ctrl+n") else -1
+            self.viewport.search_next(step, *self._size())
+            self._draw()
             return
         if key.startswith("mouse:"):
             self._mouse_key(key)
@@ -554,17 +598,17 @@ class VxApp(_CommandBase):
             blocks.set_expanded(not blocks.expanded())
             self.viewport.touch()
             return
-        if key in ("pageup", "ctrl+up"):
+        # ``shift+pageup``/``ctrl+pageup`` mean the same thing in every
+        # terminal that sends them; only the bare key is guaranteed to exist.
+        base_key = key.rsplit("+", 1)[-1]
+        if base_key in ("pageup", "pagedown") or key in ("ctrl+up", "ctrl+down"):
+            step = -1 if base_key == "pageup" or key == "ctrl+up" else 1
             # A composer taller than its window takes the page keys first.
-            if not self._page_input(-1):
-                self.viewport.page(1, *self._size())
-            return
-        if key in ("pagedown", "ctrl+down"):
-            if not self._page_input(1):
-                self.viewport.page(-1, *self._size())
+            if not self._page_input(step):
+                self.viewport.page(-step, *self._size())
             return
         if key == "end":
-            self.viewport.scroll = 0
+            self.viewport.bottom()
             return
         if key == "enter":
             self._submit()
@@ -676,6 +720,69 @@ class VxApp(_CommandBase):
             self._insert(key)
             self._refresh_slash_menu()
             self._refresh_atpath_menu()
+
+    # -- transcript search ------------------------------------------------
+
+    def _open_search(self) -> None:
+        self._searching = True
+        self._search_cursor = len(self._search)
+        if self.viewport.search_matches:
+            self.viewport.search_next(0, *self._size())
+
+    def _set_search(self, text: str, cursor: int | None = None) -> None:
+        self._search = text
+        self._search_cursor = len(text) if cursor is None else max(0, min(len(text), cursor))
+        cols, _ = self._size()
+        self.viewport.set_search(text, cols)
+        self._draw()
+
+    def _search_key(self, key: str) -> None:
+        if key in ("esc", "ctrl+f"):
+            self._searching = False
+            self._draw()
+            return
+        if key == "enter":
+            if self.viewport.search_matches:
+                self.viewport.search_next(0, *self._size())
+            self._searching = False
+            self._draw()
+            return
+        if key in ("ctrl+n", "ctrl+p"):
+            step = 1 if key == "ctrl+n" else -1
+            self.viewport.search_next(step, *self._size())
+            self._draw()
+            return
+        text, cursor = self._search, self._search_cursor
+        if key in ("left", "ctrl+b"):
+            self._search_cursor = max(0, cursor - 1)
+            return
+        if key == "right":
+            self._search_cursor = min(len(text), cursor + 1)
+            return
+        if key in ("home", "ctrl+a"):
+            self._search_cursor = 0
+            return
+        if key in ("end", "ctrl+e"):
+            self._search_cursor = len(text)
+            return
+        if key == "backspace" and cursor:
+            self._set_search(text[: cursor - 1] + text[cursor:], cursor - 1)
+            return
+        if key == "delete" and cursor < len(text):
+            self._set_search(text[:cursor] + text[cursor + 1 :], cursor)
+            return
+        if key == "ctrl+u":
+            self._set_search(text[cursor:], 0)
+            return
+        if key == "ctrl+k":
+            self._set_search(text[:cursor], cursor)
+            return
+        if key.startswith("paste:"):
+            inserted = key[6:].replace("\r\n", "\n").replace("\r", "\n")
+            self._set_search(text[:cursor] + inserted + text[cursor:], cursor + len(inserted))
+            return
+        if len(key) == 1 and ord(key) >= 32:
+            self._set_search(text[:cursor] + key + text[cursor:], cursor + 1)
 
     def _size(self) -> tuple[int, int]:
         """The scrolling area: terminal columns and the transcript's rows.
@@ -1288,6 +1395,8 @@ class VxApp(_CommandBase):
             self._handle_shell(text)
             return
         self._break_group()
+        # Sending a prompt means "show me the answer", so jump to the tail.
+        self.viewport.bottom()
         self.viewport.add(blocks.UserTurn(text=text, attachments=attached))
         self._enqueue_or_run(expand_paths(text, self.cwd), images=images)
 
@@ -1981,6 +2090,22 @@ class VxApp(_CommandBase):
             panel = view.panel(cols)
             return [footer.rule(cols), "", *panel, footer.rule(cols), view.hint(cols)], None
 
+        if self._searching:
+            search_rows, caret_row, caret_col = footer.composer_rows(
+                self._search, self._search_cursor, cols, 1, prompt=footer.SEARCH_PROMPT
+            )
+            caret = (1 + caret_row, caret_col) if 0 <= caret_row < len(search_rows) else None
+            return [
+                footer.rule(cols),
+                *search_rows,
+                footer.rule(cols),
+                footer.search_hint(
+                    cols=cols,
+                    index=self.viewport.search_index,
+                    count=len(self.viewport.search_matches),
+                ),
+            ], caret
+
         prompt = self._prompt
         input_rows = max(1, min(MAX_INPUT_LINES, len(footer.wrap_input(self._input, cols))))
         pinned = self._input_scroll
@@ -2082,7 +2207,8 @@ class VxApp(_CommandBase):
             right = self._activity
         elif self._last_ctrl_c and time.monotonic() - self._last_ctrl_c < 2.0:
             right = "press ctrl+c again to exit"
-        if self.viewport.scroll and not self._is_running:
+        unseen = self.viewport.unseen
+        if self.viewport.scroll and not self._is_running and not unseen:
             behind = self.viewport.scroll
             right = f"↑ {behind} line{'s' if behind != 1 else ''} · pgdn or wheel down"
         window = self._input_window()
@@ -2104,6 +2230,7 @@ class VxApp(_CommandBase):
             workspace=workspace,
             branch=_git_branch(self.cwd),
             right=right,
+            unseen=unseen,
         )
 
     def _draw(self, *, force: bool = False) -> None:
@@ -2113,8 +2240,10 @@ class VxApp(_CommandBase):
         area = max(1, rows - len(foot))
         self._body_rows = area
         transcript = self.viewport.visible(cols, area)
+        transcript = self.viewport.highlight(transcript)
         frame = transcript + foot
         frame = frame[:rows] if len(frame) > rows else frame + [""] * (rows - len(frame))
+        self._frame = frame
         cursor = None
         if caret is not None:
             cursor = (area + caret[0], caret[1])

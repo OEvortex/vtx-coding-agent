@@ -32,6 +32,7 @@ from vx.tui import blocks, footer
 #: vx shows the category in the picker's metadata column.
 SLASH_COMMANDS: list[tuple[str, str, str]] = [
     ("/help", "show commands and key bindings", "General"),
+    ("/find", "search the transcript", "General"),
     ("/model", "choose the model, or refresh the catalog", "Model"),
     ("/provider", "scope the model picker to one provider", "Model"),
     ("/thinking", "set the reasoning effort level", "Model"),
@@ -68,6 +69,8 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
 #: Keys worth knowing, listed under the commands in ``/help``; the composer's
 #: readline set is not discoverable from the screen otherwise.
 KEY_BINDINGS: list[tuple[str, str]] = [
+    ("ctrl+f", "search the transcript"),
+    ("n / N", "next / previous search match"),
     ("ctrl+r", "search prompt history"),
     ("ctrl+v", "attach a clipboard image, or paste text"),
     ("ctrl+x", "drop the attached images"),
@@ -191,6 +194,7 @@ class CommandsMixin(
             "mcp": lambda: self._handle_mcp_command(args),
             "reload": lambda: self._handle_reload_command(args),
             "update": self._handle_update_command,
+            "find": lambda: self._handle_find_command(args),
         }
         handler = handlers.get(cmd)
         if handler is None:
@@ -275,6 +279,13 @@ class CommandsMixin(
             return
         self._input = "/" + name.lstrip("/") + " "
         self._cursor = len(self._input)
+
+    def _handle_find_command(self, args: str) -> None:
+        """``/find query`` opens the same search UI as ctrl+f, prefilled."""
+        self._searching = True
+        self._set_search(args)
+        if self.viewport.search_matches:
+            self.viewport.search_next(0, *self._size())
 
 
 __all__ = ["NEEDS_RUNTIME", "SLASH_ALIASES", "SLASH_COMMANDS", "CommandsMixin"]

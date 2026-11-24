@@ -60,7 +60,12 @@ def _modified_key(seq: str) -> str | None:
     base = _CSI_KEYS.get(f"{code}{final}") or _CSI_KEYS.get(final)
     if base is None:
         return None
-    name = _MODIFIERS.get(int(match.group("mod")))
+    mod = int(match.group("mod"))
+    if mod == 1:
+        # ``CSI 5;1~`` is PageUp with an explicit "no modifiers" parameter;
+        # some terminals send it that way and it must not be a distinct key.
+        return base
+    name = _MODIFIERS.get(mod)
     if name is None:
         return None
     return f"{name}+{base}"

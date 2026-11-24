@@ -123,12 +123,11 @@ def _inline(text: str) -> str:
             if close is not None and close + 1 < n and text[close + 1] == "(":
                 dest = _link_destination(text, close + 2)
                 if dest is not None:
-                    _, after = dest
+                    url, after = dest
                     if after < n and text[after] == ")":
                         label = _inline(text[i + 1 : close])
-                        out.append(
-                            f"{t.link_style}{ansi.UNDERLINE}{label}{ansi.UNDERLINE_OFF}\x1b[39m"
-                        )
+                        link = f"{t.link_style}{ansi.UNDERLINE}{label}{ansi.UNDERLINE_OFF}\x1b[39m"
+                        out.append(ansi.osc8(url, link))
                         i = after + 1
                         continue
         if text.startswith("**", i) or text.startswith("__", i):
@@ -183,7 +182,8 @@ def _inline(text: str) -> str:
                 trail = url[-1] + trail
                 url = url[:-1]
             if len(url) > 8:
-                out.append(f"{t.link_style}{ansi.UNDERLINE}{url}{ansi.UNDERLINE_OFF}\x1b[39m")
+                link = f"{t.link_style}{ansi.UNDERLINE}{url}{ansi.UNDERLINE_OFF}\x1b[39m"
+                out.append(ansi.osc8(url, link))
                 if trail:
                     out.append(trail)
                 i += len(url) + len(trail)

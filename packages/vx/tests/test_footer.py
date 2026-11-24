@@ -120,3 +120,36 @@ class TestHintRow:
         from vx.tui import ansi
 
         assert ansi.width(row) == 60
+
+    def test_unseen_new_lines_hint(self):
+        row = footer.hint_row(
+            cols=100,
+            permission="auto",
+            model="",
+            effort="",
+            context_used=0,
+            context_total=None,
+            workspace="",
+            unseen=12,
+        )
+        assert "↓ 12 new lines · end" in plain(row)
+
+    def test_unseen_hint_does_not_break_width(self):
+        row = footer.hint_row(
+            cols=60,
+            permission="auto",
+            model="m",
+            effort="",
+            context_used=0,
+            context_total=None,
+            workspace="/w",
+            unseen=7,
+        )
+        from vx.tui import ansi
+
+        assert ansi.width(row) == 60
+
+    def test_custom_composer_prompt(self):
+        rows, caret_row, caret_col = footer.composer_rows("hi", 2, 20, 1, prompt="⌕ ")
+        assert rows[0].startswith("⌕ ")
+        assert (caret_row, caret_col) == (0, 4)

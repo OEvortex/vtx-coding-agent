@@ -84,6 +84,14 @@ class TestInline:
         rows = markdown.render("visit https://example.com now", 80)
         assert any("https://example.com" in r for r in rows)
 
+    def test_link_is_an_osc8_hyperlink(self):
+        rows = markdown.render("see [docs](https://x.com)", 80)
+        assert any("\x1b]8;;https://x.com\x1b\\" in r for r in rows)
+
+    def test_autolink_is_an_osc8_hyperlink(self):
+        rows = markdown.render("visit https://example.com now", 80)
+        assert any("\x1b]8;;https://example.com\x1b\\" in r for r in rows)
+
 
 class TestTable:
     def test_table_renders_cells(self):

@@ -16,6 +16,7 @@ from vx.tui import ansi
 from vx.tui import theme as _theme
 
 PROMPT = "❯ "
+SEARCH_PROMPT = "⌕ "
 CONTINUATION = "  "
 SEPARATOR = " · "
 
@@ -89,6 +90,7 @@ def composer_rows(
     *,
     secret: bool = False,
     scroll: int | None = None,
+    prompt: str = PROMPT,
 ) -> tuple[list[str], int, int]:
     """Styled composer rows plus the caret's (row, column) inside them.
 
@@ -109,7 +111,7 @@ def composer_rows(
     window = rows[first : first + visible]
     out: list[str] = []
     for index, (start, end) in enumerate(window):
-        prefix = PROMPT if first + index == 0 else CONTINUATION
+        prefix = prompt if first + index == 0 else CONTINUATION
         out.append(prefix + text[start:end])
     while len(out) < visible:
         out.append("")
@@ -151,9 +153,16 @@ def hint_row(
     workspace: str,
     branch: str | None = None,
     right: str = "",
+    unseen: int = 0,
 ) -> str:
     t = _theme.current()
     segments: list[str] = []
+    if unseen > 0:
+        note = f"{t.selected_completion_style}↓ {unseen} new lines · end{ansi.RESET}"
+        if right:
+            segments.append(note)
+        else:
+            right = note
     if permission:
         segments.append(permission_label(permission))
     if model:
@@ -416,6 +425,20 @@ def menu_hint(*, cols: int, variants: tuple[str, ...] = MENU_HINT_VARIANTS) -> s
             hint = candidate
             break
     return f"{t.dim_style}{ansi.clip(hint, cols)}{ansi.RESET}"
+
+
+def search_hint(*, cols: int, index: int, count: int) -> str:
+    """The incremental-search hint: position, match count and the way out."""
+    t = _theme.current()
+    if count:
+        text = f"{index + 1}/{count} · n next · N prev · enter jump · esc close"
+    else:
+        text = "no matches · esc close"
+    for candidate in (text, "n/N next · enter · esc"):
+        if ansi.width(candidate) <= cols:
+            text = candidate
+            break
+    return f"{t.dim_style}{ansi.clip_ellipsis(text, cols)}{ansi.RESET}"
 
 
 # -- approval panel ----------------------------------------------------------

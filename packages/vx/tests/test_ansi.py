@@ -96,3 +96,38 @@ class TestMarkupToAnsi:
         # parses and the hex branch in _sgr_for_tag is unreachable today.
         out = ansi.markup_to_ansi("[#ff0000]red[/#ff0000]")
         assert out == "[#ff0000]red[/#ff0000]"
+
+
+class TestHighlightMatches:
+    def test_wraps_a_plain_span(self):
+        out = ansi.highlight_matches("hello world", [(6, 11)])
+        assert out == "hello \x1b[7mworld\x1b[27m"
+
+    def test_keeps_existing_sgr(self):
+        out = ansi.highlight_matches("\x1b[31mhello\x1b[0m", [(0, 5)])
+        assert out.startswith("\x1b[7m")
+        assert "\x1b[31m" in out and "\x1b[0m" in out
+        assert plain(out) == "hello"
+
+    def test_two_spans(self):
+        out = ansi.highlight_matches("ab cd", [(0, 2), (3, 5)])
+        assert out == "\x1b[7mab\x1b[27m \x1b[7mcd\x1b[27m"
+
+
+class TestOsc8:
+    def test_link_is_zero_width(self):
+        out = ansi.osc8("https://example.com", "docs")
+        assert ansi.width(out) == 4
+        assert ansi.strip_ansi(out) == "docs"
+
+    def test_link_at_finds_uri(self):
+        out = ansi.osc8("https://example.com", "docs")
+        for col in range(4):
+            assert ansi.link_at(out, col) == "https://example.com"
+        assert ansi.link_at(out, 4) is None
+
+    def test_link_at_ignores_plain_text(self):
+        assert ansi.link_at("plain", 2) is None
+
+    def test_empty_url_falls_back_to_text(self):
+        assert ansi.osc8("\x1b", "text") == "text"
