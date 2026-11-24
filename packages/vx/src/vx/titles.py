@@ -11,11 +11,12 @@ the picker, which is what it had before.
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ctx.protocol.abc import BaseProvider
-from ctx.protocol.types import TextPart, UserMessage
+if TYPE_CHECKING:
+    # Annotation only: ctx.protocol costs a few hundred ms to import and this
+    # module sits on the shell's import path.
+    from ctx.protocol.abc import BaseProvider
 
 #: Long enough to describe the work, short enough for a picker row.
 MAX_TITLE_CHARS = 60
@@ -87,6 +88,8 @@ def clean_title(text: str) -> str | None:
 
 async def generate_title(provider: BaseProvider, session: Any) -> str | None:
     """Ask the model for a title. Returns None on any failure, by design."""
+    from ctx.protocol.types import TextPart, UserMessage
+
     opening = seed(session)
     if not opening:
         return None
@@ -104,6 +107,8 @@ async def title_session(
     provider: BaseProvider, session: Any, *, timeout: float = 25.0
 ) -> str | None:
     """Generate a title with a deadline; a slow title is no title."""
+    import asyncio
+
     try:
         return await asyncio.wait_for(generate_title(provider, session), timeout)
     except Exception:

@@ -8,10 +8,25 @@ real frame simply replaces it once the runtime is up.
 
 from __future__ import annotations
 
-from vx.brand import VERSION
-from vx.tui import blocks, footer, theme
+from vx.brand import ITALIC_BRAND, VERSION
+from vx.tui import ansi, footer, theme
 from vx.tui.canvas import Painter
 from vx.tui.terminal import Terminal
+
+
+def _welcome_rows(width: int) -> list[str]:
+    """The welcome line, drawn without importing ``vx.tui.blocks`` (~55 ms).
+
+    ``blocks.Welcome`` renders exactly this; the splash is the one frame that
+    must be on screen before anything else loads, so it repeats the two lines
+    rather than paying for the block library first.
+    """
+    t = theme.current()
+    return ansi.wrap(
+        f"{t.subtitle_style}{ITALIC_BRAND}{ansi.RESET}"
+        f"{t.dim_style} v{VERSION} · Run /help for commands{ansi.RESET}",
+        width,
+    )
 
 
 def paint(term: Terminal, *, cwd: str, note: str = "starting") -> Painter:
@@ -37,7 +52,7 @@ def paint(term: Terminal, *, cwd: str, note: str = "starting") -> Painter:
     foot = [footer.rule(cols), *composer, footer.rule(cols), hint]
     area = max(1, rows - len(foot))
 
-    welcome = blocks.Welcome(version=VERSION).rows(cols)
+    welcome = _welcome_rows(cols)
     transcript = welcome + [""] * (area - len(welcome))
 
     frame = transcript + foot

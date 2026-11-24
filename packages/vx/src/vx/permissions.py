@@ -12,8 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from ctx.agent.hooks.agent_hook import AgentHook
-
 
 class PermissionMode(Enum):
     ask = "ask"
@@ -199,44 +197,3 @@ def mode_description(mode_id: str) -> str:
 
 
 # -- ctx agent hook integration --------------------------------------------
-
-
-class VxPermissionHook(AgentHook):
-    """Bridges vx's PermissionRuntime into ctx's AgentHook system.
-
-    Implements ``before_execute_tools`` to check each tool call against the
-    current permission mode. In ``ask`` mode, mutating tools trigger the
-    existing ToolApprovalEvent flow. In ``auto`` mode, everything passes
-    silently without any checks.
-
-    The hook stores a reference to the PermissionRuntime and the app's
-    _request_approval method so it can trigger the UI approval flow.
-    """
-
-    def __init__(self, perm_runtime: PermissionRuntime) -> None:
-        super().__init__()
-        self.perm_runtime = perm_runtime
-
-    async def before_execute_tools(self, context) -> None:
-        """Check each pending tool call against the permission mode.
-
-        This fires before the engine executes any tools in the iteration.
-        Tool calls that need approval are handled by the existing
-        ToolApprovalEvent mechanism in the turn loop, so this hook mainly
-        tracks which tools were reviewed.
-        """
-        for tc in context.tool_calls:
-            tool_name = getattr(tc, "name", "")
-            # Extract target path from arguments
-            target = ""
-            args = getattr(tc, "arguments", None)
-            if isinstance(args, dict):
-                for key in ("path", "file_path", "filename", "command", "cmd"):
-                    val = args.get(key)
-                    if isinstance(val, str) and val.strip():
-                        target = val.strip()
-                        break
-            self.perm_runtime.check(tool_name, target)
-            # The actual approval gating happens in the turn loop via
-            # ToolApprovalEvent; this hook records the decision for
-            # telemetry and future auto-review enhancements.

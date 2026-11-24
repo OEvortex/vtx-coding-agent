@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from typing import Any
-
-from ctx.agent.runtime import ConversationRuntime
+from typing import TYPE_CHECKING, Any
 
 from vx.tui import blocks, footer
 from vx.tui.terminal import Terminal
 from vx.tui.viewport import Viewport
+
+if TYPE_CHECKING:
+    # Annotation only: importing the runtime here dragged ctx's whole agent
+    # graph (and aiohttp) in before vx could paint or read a key.
+    from ctx.agent.runtime import ConversationRuntime
 
 
 class CommandSupport:

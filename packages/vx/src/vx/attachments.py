@@ -13,9 +13,11 @@ import os
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ctx.core.image import is_image_file, read_and_process_image, resize_image
-from ctx.protocol.types import ImageContent
+if TYPE_CHECKING:
+    # Annotation only: ctx.protocol drags aiohttp and ~200 ms of models in.
+    from ctx.protocol.types import ImageContent
 
 #: Image extensions ``@`` attachment recognises. Mirrors ctx's read tool.
 IMAGE_SUFFIXES = frozenset(
@@ -60,6 +62,8 @@ class Attachment:
         return f"{n} B"
 
     def content(self) -> ImageContent:
+        from ctx.protocol.types import ImageContent
+
         return ImageContent(data=self.data, mime_type=self.mime_type)
 
 
@@ -81,6 +85,8 @@ def from_clipboard() -> Attachment | None:
     # A clipboard screenshot can be far larger than a model accepts; file
     # attachments already pass through this, so pasted ones do too.
     with suppress(Exception):
+        from ctx.core.image import resize_image
+
         raw, mime, _note = resize_image(raw, mime)
     ext = _MIME_SUFFIX.get(mime, ".png")
     return Attachment(
@@ -118,7 +124,11 @@ def from_path(path: str, cwd: str) -> Attachment | None:
         resolved = resolved.expanduser().resolve()
     except Exception:
         return None
-    if not resolved.is_file() or not is_image_file(str(resolved)):
+    if not resolved.is_file():
+        return None
+    from ctx.core.image import is_image_file, read_and_process_image
+
+    if not is_image_file(str(resolved)):
         return None
     try:
         data, mime, _note = read_and_process_image(str(resolved))

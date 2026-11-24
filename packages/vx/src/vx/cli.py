@@ -127,12 +127,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     argv = sys.argv[1:]
+    trace("main entered")
     # argparse's version action needs the parser; printing the bundled string
     # first keeps `vx --version` free of every ctx import.
     if argv and all(arg in ("--version", "-V") for arg in argv):
         print(f"{PROGRAM_NAME} {VERSION}")
         return
-
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.provider:
@@ -146,12 +146,44 @@ def main() -> None:
     raise SystemExit(_run_tui(args))
 
 
+def _process_age() -> float | None:
+    """Seconds since this process was exec'd, from /proc (Linux only)."""
+    try:
+        with open("/proc/self/stat", encoding="utf-8") as fh:
+            fields = fh.read().rsplit(")", 1)[1].split()
+        start_ticks = float(fields[19])
+        with open("/proc/uptime", encoding="utf-8") as fh:
+            uptime = float(fh.read().split()[0])
+        return uptime - start_ticks / os.sysconf("SC_CLK_TCK")
+    except Exception:
+        return None
+
+
+def trace(label: str) -> None:
+    """Append one boot timestamp when ``VX_BOOT_TRACE`` names a file.
+
+    Startup latency is measured, not guessed: the whole point of the split
+    below is which work happens before the keyboard is live.
+    """
+    path = os.environ.get("VX_BOOT_TRACE")
+    if not path:
+        return
+    age = _process_age()
+    stamp = f"{age * 1000:8.1f} ms  {label}\n" if age is not None else f"{label}\n"
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(stamp)
+
+
 class BootError(RuntimeError):
     """Startup failed before the UI took over; the caller prints it."""
 
 
-def _boot(argv_args: argparse.Namespace, *, cwd: str) -> None:
-    """Load the ctx plugin graph. Everything here costs a few hundred ms."""
+def boot_plugin_graph(argv_args: argparse.Namespace, *, cwd: str) -> None:
+    """Load the ctx plugin graph. Everything here costs a few hundred ms.
+
+    Called from the app's background boot, not from the shell: the frame is
+    painted and reading keys before this runs.
+    """
     from ctx.core.config import config
 
     if argv_args.insecure_skip_verify:
@@ -184,7 +216,7 @@ def _run_headless(args: argparse.Namespace) -> int:
 
     cwd = os.getcwd()
     try:
-        _boot(args, cwd=cwd)
+        boot_plugin_graph(args, cwd=cwd)
     except BootError as exc:
         print(f"{PROGRAM_NAME}: {exc}", file=sys.stderr)
         return 1
@@ -221,9 +253,8 @@ def _run_headless(args: argparse.Namespace) -> int:
 
 
 def _run_tui(args: argparse.Namespace) -> int:
-    import asyncio
-
     cwd = os.getcwd()
+    trace("args parsed")
 
     # Paint the shell before ctx loads, so the terminal is never blank.
     from vx.tui import splash
@@ -231,12 +262,14 @@ def _run_tui(args: argparse.Namespace) -> int:
 
     term = Terminal()
     term.enter()
+    trace("terminal in raw mode")
     try:
         painter = splash.paint(term, cwd=cwd)
-        _boot(args, cwd=cwd)
+        trace("splash painted")
 
         from vx.app import VxApp
 
+        trace("vx.app imported")
         app = VxApp(
             cwd=cwd,
             model=args.model,
@@ -249,7 +282,11 @@ def _run_tui(args: argparse.Namespace) -> int:
             anthropic_compat_auth_mode=args.anthropic_compat_auth,
             terminal=term,
             painter=painter,
+            # The plugin graph loads in the app's background boot, so the
+            # shell is on screen and reading keys first.
+            boot_args=args,
         )
+        trace("app constructed")
     except BootError as exc:
         # The message belongs on the normal screen, not the alternate one.
         term.exit()
@@ -258,6 +295,9 @@ def _run_tui(args: argparse.Namespace) -> int:
     except BaseException:
         term.exit()
         raise
+    # asyncio costs ~90 ms to import; it is only needed once the frame is up.
+    import asyncio
+
     return asyncio.run(app.run())
 
 

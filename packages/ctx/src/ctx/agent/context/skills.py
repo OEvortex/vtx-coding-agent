@@ -339,8 +339,27 @@ def get_registered_skills_packages() -> list[str]:
     return list(_REGISTERED_SKILL_PACKAGES)
 
 
+def _tree_signature(root: Path) -> list[tuple[str, int, int]]:
+    """Cheap (path, size, mtime) fingerprint of a skill directory."""
+    signature: list[tuple[str, int, int]] = []
+    try:
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            signature.append((str(path.relative_to(root)), stat.st_size, stat.st_mtime_ns))
+    except OSError:
+        return []
+    signature.sort()
+    return signature
+
+
 def sync_builtin_skills(package_names: str | list[str] | None = None) -> None:
-    """Copy built-in skills from registered packages to ~/.ctx/skills/ for filesystem access."""
+    """Copy built-in skills from registered packages to ~/.ctx/skills/ for filesystem access.
+
+    Skills are only rewritten when their contents differ: this runs on every
+    startup, and unconditionally re-copying ~30 skill trees cost ~0.5 s.
+    """
     if package_names is None:
         pkgs = get_registered_skills_packages()
     elif isinstance(package_names, str):
@@ -365,6 +384,8 @@ def sync_builtin_skills(package_names: str | list[str] | None = None) -> None:
                         if not (skill_dir / "SKILL.md").is_file():
                             continue
                         dst = dst_root / skill_dir.name
+                        if dst.is_dir() and _tree_signature(skill_dir) == _tree_signature(dst):
+                            continue
                         if dst.exists():
                             shutil.rmtree(dst)
                         shutil.copytree(skill_dir, dst)

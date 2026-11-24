@@ -7,58 +7,13 @@ the composer's place instead of printing into the transcript.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import re
 import signal
 import time
 from collections import deque
 from contextlib import suppress
-from typing import Any
-
-from ctx.agent.agents import AgentRegistry, load_all_agents
-from ctx.agent.runtime import ConversationRuntime
-from ctx.agent.tools import get_tool
-from ctx.core import (
-    AgentEndEvent,
-    ApprovalResponse,
-    AskUserAnswer,
-    AskUserEvent,
-    AskUserResponse,
-    BackgroundTaskCompletedEvent,
-    CompactionEndEvent,
-    CompactionStartEvent,
-    ErrorEvent,
-    HostNoticeEvent,
-    InterruptedEvent,
-    RetryEvent,
-    TextDeltaEvent,
-    TextEndEvent,
-    TextStartEvent,
-    ThinkingDeltaEvent,
-    ThinkingEndEvent,
-    ThinkingStartEvent,
-    ToolApprovalEvent,
-    ToolArgsDeltaEvent,
-    ToolEndEvent,
-    ToolOutputDeltaEvent,
-    ToolResultEvent,
-    ToolStartEvent,
-    TurnEndEvent,
-    TurnStartEvent,
-    WarningEvent,
-)
-from ctx.core.config import config
-from ctx.plugins.extensions import load_for_runtime
-from ctx.protocol.types import (
-    AssistantMessage,
-    TextContent,
-    ThinkingContent,
-    ToolCall,
-    ToolResultMessage,
-    UserMessage,
-)
-from ctx.term.fuzzy import fuzzy_filter
+from typing import TYPE_CHECKING, Any
 
 import vx.tools
 from vx import attachments as attach
@@ -66,22 +21,60 @@ from vx import history as prompt_history
 from vx import prefs, titles
 from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
-from vx.commands import SLASH_COMMANDS, CommandsMixin
-from vx.permissions import BUILTIN_MODES, PermissionRuntime, VxPermissionHook
+from vx.permissions import BUILTIN_MODES, PermissionRuntime
 from vx.tui import ansi, blocks, footer, theme
 from vx.tui.canvas import Painter
 from vx.tui.keys import KeyDecoder
 from vx.tui.terminal import Terminal
 from vx.tui.viewport import Viewport
 
+if TYPE_CHECKING:
+    # Annotation only: these modules pull ctx's agent graph (plus aiohttp) in,
+    # and the shell has to answer a key before that finishes loading.
+    from ctx.agent.runtime import ConversationRuntime
+    from ctx.core import AskUserEvent, ToolApprovalEvent
+
+    from vx.commands import CommandsMixin as _CommandBase
+else:
+    # The real mixin is grafted onto the class on the first ``/`` (see
+    # ``_graft_commands``); importing it here would cost ~600 ms of ctx.
+    _CommandBase = object
+
 MAX_INPUT_LINES = 8
+
+#: Bound in ``run``: importing asyncio before the first frame would put ~85 ms
+#: of module loading in front of the keyboard.
+asyncio: Any = None
 
 
 class _RunDone:
     pass
 
 
-class VxApp(CommandsMixin):
+#: Classes whose command mixins are already grafted.
+_GRAFTED: set[type] = set()
+
+
+def _graft_commands(cls: type, mixin: type) -> None:
+    """Copy a command mixin's methods onto ``cls``, first time only.
+
+    Names the shell already defines win: ``CommandSupport`` declares stubs for
+    ``_notice``/``_draw`` and friends, and those must not overwrite the real
+    implementations.
+    """
+    if cls in _GRAFTED:
+        return
+    for name in dir(mixin):
+        if name.startswith("__"):
+            continue
+        if name not in cls.__dict__:
+            setattr(cls, name, getattr(mixin, name))
+    _GRAFTED.add(cls)
+
+
+class VxApp(_CommandBase):
+    """The shell. Slash commands live in ``vx.commands`` and load on first use."""
+
     def __init__(
         self,
         *,
@@ -96,8 +89,11 @@ class VxApp(CommandsMixin):
         anthropic_compat_auth_mode: str | None = None,
         terminal: Terminal | None = None,
         painter: Painter | None = None,
+        boot_args: Any = None,
     ) -> None:
         self.cwd = cwd
+        #: argv for the deferred plugin boot (see ``_init_runtime``).
+        self._boot_args = boot_args
         self._init_kwargs: dict[str, Any] = dict(
             model=model,
             provider=provider,
@@ -124,7 +120,7 @@ class VxApp(CommandsMixin):
         # Composer
         self._input = ""
         self._cursor = 0
-        self._history: list[str] = prompt_history.load()
+        self._history: list[str] = []
         self._history_idx: int | None = None
         self._history_draft = ""
         #: Images the next prompt will carry, pasted or named with ``@``.
@@ -142,7 +138,9 @@ class VxApp(CommandsMixin):
         self._run_started = 0.0
         self._cancel_event: asyncio.Event | None = None
         self._pending_queue: deque[str] = deque()
-        self._events: asyncio.Queue[Any] = asyncio.Queue()
+        #: Filled in ``run``: asyncio costs ~85 ms and none of it is needed to
+        #: paint the frame or read a key.
+        self._events: Any = None
         self._live_assistant: blocks.Assistant | None = None
         self._live_thinking: blocks.Thinking | None = None
         self._thinking_started: float | None = None
@@ -181,7 +179,7 @@ class VxApp(CommandsMixin):
         self._titled: set[str] = set()
         self._title_task: asyncio.Task | None = None
         self._boot_task: asyncio.Task | None = None
-        self._ready = asyncio.Event()
+        self._ready: Any = None
 
         # Permission runtime (vx-native, inspired by fx)
         self._permission_runtime = PermissionRuntime()
@@ -191,6 +189,12 @@ class VxApp(CommandsMixin):
     # ==================================================================
 
     async def run(self) -> int:
+        global asyncio
+
+        import asyncio
+
+        self._events = asyncio.Queue()
+        self._ready = asyncio.Event()
         loop = asyncio.get_running_loop()
         self._ticker_task = loop.create_task(self._ticker())
         try:
@@ -216,6 +220,9 @@ class VxApp(CommandsMixin):
         loop = asyncio.get_running_loop()
         loop.add_reader(self.term._fd, self._on_stdin)
         signal.signal(signal.SIGWINCH, lambda *_: self._on_resize())
+        from vx.cli import trace
+
+        trace("keyboard live")
         self._welcome()
         # Paint and start reading keys before the runtime loads: ctx's context
         # load (skills, MCP, model limits) costs over a second.
@@ -235,6 +242,21 @@ class VxApp(CommandsMixin):
         path = getattr(session, "session_file", None)
         prune_in_background(protect=[path] if path is not None else [])
 
+    def _load_prompt_history(self) -> None:
+        """Fill the composer's history off the boot path.
+
+        ``ctx.core`` exports the event types, so importing ``ctx.core.store`` to
+        read 50 prompt strings pulls ctx.protocol and aiohttp first (~300 ms).
+        Nothing needs the history until an arrow key is pressed.
+        """
+        from vx import history as prompt_history
+
+        try:
+            entries = prompt_history.load()
+        except Exception:
+            return
+        self._history = entries + self._history if self._history else entries
+
     async def _boot(self) -> None:
         try:
             await self._init_runtime()
@@ -245,6 +267,11 @@ class VxApp(CommandsMixin):
         finally:
             with suppress(Exception):
                 self._prune_old_sessions()
+            with suppress(Exception):
+                self._load_prompt_history()
+            from vx.cli import trace
+
+            trace("runtime ready")
             self._ready.set()
             self.viewport.touch()
             if self._pending_queue and not self._is_running:
@@ -254,6 +281,25 @@ class VxApp(CommandsMixin):
         self.viewport.add(blocks.Welcome(version=VERSION))
 
     async def _init_runtime(self) -> None:
+        # Everything ctx lives behind this point: the module graph alone costs
+        # most of a second, and the frame above is already painted and reading
+        # keys by the time this runs.
+        if self._boot_args is not None:
+            from vx.cli import BootError, boot_plugin_graph, trace
+
+            try:
+                boot_plugin_graph(self._boot_args, cwd=self.cwd)
+            except BootError as exc:
+                self._notice(f"startup failed: {exc}", tone="error")
+                raise
+            finally:
+                trace("plugin graph loaded")
+
+        from ctx.agent.agents import AgentRegistry, load_all_agents
+        from ctx.agent.runtime import ConversationRuntime
+        from ctx.core.config import config
+        from ctx.plugins.extensions import load_for_runtime
+
         k = self._init_kwargs
         tools = vx.tools.register_all()
         try:
@@ -293,9 +339,13 @@ class VxApp(CommandsMixin):
             with suppress(Exception):
                 self.runtime.set_loaded_extensions(self._loaded)
 
+        from vx.cli import trace
+
+        trace("runtime constructed")
         result = self.runtime.initialize(
             resume_session=k["resume_session"], continue_recent=k["continue_recent"]
         )
+        trace("runtime initialized")
         with suppress(Exception):
             # ctx's config carries the theme the user last chose; the splash
             # painted with the default before ctx was importable.
@@ -352,6 +402,14 @@ class VxApp(CommandsMixin):
         """
         group: blocks.ToolGroup | None = None
         by_call_id: dict[str, blocks.ToolStatusBlock] = {}
+        from ctx.protocol.types import (
+            AssistantMessage,
+            TextContent,
+            ThinkingContent,
+            ToolCall,
+            ToolResultMessage,
+            UserMessage,
+        )
 
         for msg in msgs:
             if isinstance(msg, UserMessage):
@@ -908,6 +966,9 @@ class VxApp(CommandsMixin):
         source or path. Commands and skills share the one ranked list.
         """
         ranked: list[tuple[int, int, int, footer.MenuItem]] = []
+        # The command table lives in vx.commands, which is imported lazily.
+        from vx.commands import SLASH_COMMANDS
+
         for order, (name, description, category) in enumerate(SLASH_COMMANDS):
             stem = name[1:].lower()
             rank = _name_rank(prefix, stem)
@@ -971,6 +1032,8 @@ class VxApp(CommandsMixin):
         # ctx's fuzzy matcher scores subsequence hits and word starts, so a
         # picker finds "/cmpct" or "ssion" the way a reader types them.
         with suppress(Exception):
+            from ctx.term.fuzzy import fuzzy_filter
+
             return fuzzy_filter(items, query, lambda item: f"{item.label} {item.detail}")
         needle = query.lower()
         return [
@@ -1233,8 +1296,17 @@ class VxApp(CommandsMixin):
     # ==================================================================
 
     def _handle_slash(self, text: str) -> bool:
-        """Slash commands live in ``vx.commands``; this is the entry point."""
-        return self.handle_slash(text)
+        """Slash commands live in ``vx.commands``; this is the entry point.
+
+        Importing that package pulls ctx's config, provider catalog and aiohttp
+        (~600 ms here), so it happens on the first ``/`` and not at boot. The
+        mixin's methods are copied onto the class once, after which dispatch is
+        plain attribute lookup.
+        """
+        from vx.commands import CommandsMixin
+
+        _graft_commands(type(self), CommandsMixin)
+        return CommandsMixin.handle_slash(self, text)
 
     async def _compact(self) -> None:
         rt = self.runtime
@@ -1260,6 +1332,8 @@ class VxApp(CommandsMixin):
         asyncio.get_running_loop().create_task(self._run_shell(block, command, send_to_llm))
 
     async def _run_shell(self, block: blocks.ShellRun, command: str, send_to_llm: bool) -> None:
+        from ctx.agent.tools import get_tool
+
         bash = get_tool("bash")
         if bash is None:
             block.output = "no bash tool registered"
@@ -1323,6 +1397,8 @@ class VxApp(CommandsMixin):
             self._is_running = False
             return
         # Reuse one hook per run; prepare_for_run may return the same Agent.
+        from vx.hook import VxPermissionHook
+
         agent._hooks[:] = [hook for hook in agent._hooks if not isinstance(hook, VxPermissionHook)]
         agent._hooks.append(VxPermissionHook(self._permission_runtime))
         # Sync vx's permission mode to ctx config so check_permission() respects it
@@ -1346,6 +1422,8 @@ class VxApp(CommandsMixin):
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            from ctx.core import ErrorEvent
+
             self._events.put_nowait(ErrorEvent(error=str(e)))
         finally:
             self._events.put_nowait(_RunDone())
@@ -1388,6 +1466,36 @@ class VxApp(CommandsMixin):
         return self._live_assistant
 
     def _handle_event(self, ev: Any) -> None:
+        # ctx.core carries the event types and, through it, ctx.protocol and
+        # aiohttp: ~500 ms of imports. During boot nothing is dispatched, so
+        # the import happens here, on the first event of the first turn.
+        from ctx.core import (
+            AgentEndEvent,
+            AskUserEvent,
+            BackgroundTaskCompletedEvent,
+            CompactionEndEvent,
+            CompactionStartEvent,
+            ErrorEvent,
+            HostNoticeEvent,
+            InterruptedEvent,
+            RetryEvent,
+            TextDeltaEvent,
+            TextEndEvent,
+            TextStartEvent,
+            ThinkingDeltaEvent,
+            ThinkingEndEvent,
+            ThinkingStartEvent,
+            ToolApprovalEvent,
+            ToolArgsDeltaEvent,
+            ToolEndEvent,
+            ToolOutputDeltaEvent,
+            ToolResultEvent,
+            ToolStartEvent,
+            TurnEndEvent,
+            TurnStartEvent,
+            WarningEvent,
+        )
+
         if isinstance(ev, _RunDone):
             self._finish_live()
             self._is_running = False
@@ -1688,6 +1796,8 @@ class VxApp(CommandsMixin):
         self._draw()
 
     def _approval_key(self, key: str) -> None:
+        from ctx.core import ApprovalResponse
+
         ap = self._approval
         if ap is None:
             return
@@ -1713,6 +1823,8 @@ class VxApp(CommandsMixin):
             self._approval = None
 
     def _resolve_approval(self) -> None:
+        from ctx.core import ApprovalResponse
+
         ap = self._approval
         if ap is None:
             return
@@ -1725,6 +1837,8 @@ class VxApp(CommandsMixin):
     # ==================================================================
 
     def _request_ask_user(self, ev: AskUserEvent) -> None:
+        from ctx.core import AskUserResponse
+
         if ev.future is None or ev.future.done() or not ev.questions:
             if ev.future is not None and not ev.future.done():
                 ev.future.set_result(AskUserResponse())
@@ -1755,6 +1869,8 @@ class VxApp(CommandsMixin):
         )
 
     def _ask_key(self, key: str) -> None:
+        from ctx.core import AskUserResponse
+
         ask = self._ask
         if ask is None:
             return
@@ -1796,6 +1912,8 @@ class VxApp(CommandsMixin):
             ask["draft"] += key
 
     def _answer_question(self, text: str, *, custom: bool = False) -> None:
+        from ctx.core import AskUserAnswer, AskUserResponse
+
         ask = self._ask
         if ask is None:
             return

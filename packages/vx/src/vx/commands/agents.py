@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import contextlib
 
-from ctx.core.config import config
-
 from vx.commands.base import CommandSupport
 from vx.tui import footer
 
@@ -102,6 +100,7 @@ class AgentCommands(CommandSupport):
 
     def _reload_agents(self) -> None:
         from ctx.agent.agents import load_all_agents
+        from ctx.core.config import config
 
         rt = self.runtime
         if rt is None:
