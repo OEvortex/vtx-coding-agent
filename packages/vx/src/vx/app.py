@@ -342,6 +342,9 @@ class VxApp(_CommandBase):
             agent_registry=registry,
             active_agent=registry.active,
             agent_extensions=ext_list,
+            # ``/model`` reads one provider when a filter is set, so warming all
+            # ~6.4k models would be seconds of CPU for rows we throw away.
+            warm_model_catalog=False,
         )
         if self._loaded is not None:
             with suppress(Exception):
@@ -354,6 +357,7 @@ class VxApp(_CommandBase):
             resume_session=k["resume_session"], continue_recent=k["continue_recent"]
         )
         trace("runtime initialized")
+        self._warm_model_catalog()
         with suppress(Exception):
             # ctx's config carries the theme the user last chose; the splash
             # painted with the default before ctx was importable.
@@ -379,6 +383,32 @@ class VxApp(_CommandBase):
 
         with suppress(RuntimeError):
             asyncio.get_running_loop().create_task(self._connect_mcp())
+
+    def _warm_model_catalog(self) -> None:
+        """Warm the rows ``/model`` will show, so the picker opens at once.
+
+        A scoped picker only reads its own provider back out of the catalog
+        store, so that slice is warmed here (tens to hundreds of ms). Without a
+        filter the full catalog (~6.4k models, seconds) is built on a worker
+        thread instead of blocking the boot task.
+        """
+        with suppress(Exception):
+            from ctx.ai.provider_catalog import get_catalog_models_for
+            from ctx.core.config import get_config
+
+            from vx.cli import trace
+
+            filtered = get_config().ui.model_provider_filter
+            trace("catalog warm start")
+            if filtered and get_catalog_models_for(filtered, enrich=False) is not None:
+                trace("catalog warm end (scoped)")
+                return
+            trace("catalog warm end (deferred)")
+            import threading
+
+            from ctx.ai.models import get_all_models
+
+            threading.Thread(target=lambda: get_all_models(enrich=False), daemon=True).start()
 
     async def _connect_mcp(self) -> None:
         rt = self.runtime

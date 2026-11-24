@@ -44,20 +44,8 @@ log = logging.getLogger("agent.runtime")
 
 
 def _warm_model_catalog() -> None:
-    """Build the memoized model catalog in the background; never raises.
-
-    A picker scoped to one provider only ever shows that provider's models, and
-    materialising all ~6.4k of them costs seconds of CPU that competes with the
-    UI thread. Warm the scoped slice when a filter is set, the whole catalog
-    otherwise.
-    """
+    """Build the memoized model catalog in the background; never raises."""
     try:
-        from ctx.ai.provider_catalog import get_catalog_models_for
-        from ctx.core.config import get_config
-
-        filtered = get_config().ui.model_provider_filter
-        if filtered and get_catalog_models_for(filtered) is not None:
-            return
         from ctx.ai.models import get_all_models
 
         get_all_models()
@@ -204,6 +192,7 @@ class ConversationRuntime:
         agent_extensions: list | None = None,
         progress_callback: Callable[[str, dict], None] | None = None,
         plugins: Any = None,
+        warm_model_catalog: bool = True,
     ) -> None:
         self.cwd = cwd
         self._progress_callback = progress_callback
@@ -290,9 +279,12 @@ class ConversationRuntime:
         # Warm the model catalog off the UI thread: building it cold costs
         # ~1.5s (limits-DB parse + fuzzy enrichment), and /model reads the
         # memoized result, so pre-building here makes the picker open in ms.
+        # A host whose picker is provider-scoped opts out and warms only the
+        # slice it can show (see ``vx.app``), which is seconds cheaper.
         import threading
 
-        threading.Thread(target=_warm_model_catalog, daemon=True).start()
+        if warm_model_catalog:
+            threading.Thread(target=_warm_model_catalog, daemon=True).start()
 
     # ---- agent lifecycle ------------------------------------------------
 

@@ -37,8 +37,15 @@ class CommandSupport:
     _activity: str
     _exiting: bool
     _history: list[str]
+    _searching: bool
 
     # -- provided by VxApp (declared here for type checking) --------------
+
+    def _set_search(self, text: str) -> None: ...
+
+    if TYPE_CHECKING:
+
+        def _size(self) -> tuple[int, int]: ...
 
     def _notice(
         self, body: str, *, topic: str = "", tone: str = "information", detail: str = ""

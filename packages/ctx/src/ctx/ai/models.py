@@ -72,18 +72,23 @@ def get_model(model_id: str, provider: str | None = None) -> Model | None:
 
 
 _ALL_MODELS_CACHE: list[Model] | None = None
+_ALL_MODELS_LITE_CACHE: list[Model] | None = None
 
 
 def invalidate_all_models_cache() -> None:
     """Drop the memoized catalog after providers/models change."""
-    global _ALL_MODELS_CACHE
+    global _ALL_MODELS_CACHE, _ALL_MODELS_LITE_CACHE
     _ALL_MODELS_CACHE = None
+    _ALL_MODELS_LITE_CACHE = None
 
 
-def get_all_models() -> list[Model]:
-    global _ALL_MODELS_CACHE
-    if _ALL_MODELS_CACHE is not None:
-        return list(_ALL_MODELS_CACHE)
+def get_all_models(*, enrich: bool = True) -> list[Model]:
+    global _ALL_MODELS_CACHE, _ALL_MODELS_LITE_CACHE
+    if enrich:
+        if _ALL_MODELS_CACHE is not None:
+            return list(_ALL_MODELS_CACHE)
+    elif _ALL_MODELS_LITE_CACHE is not None:
+        return list(_ALL_MODELS_LITE_CACHE)
 
     from ctx.ai.provider_catalog import get_all_catalog_models
 
@@ -95,9 +100,14 @@ def get_all_models() -> list[Model]:
     # The catalog is expensive to build (~1.5s cold: limits-DB parse plus
     # fuzzy enrichment for thousands of entries) and changes only on an
     # explicit refresh, so it is memoized. Callers get a shallow copy so a
-    # mutation cannot poison the cache.
-    _ALL_MODELS_CACHE = dedupe_models(get_all_catalog_models())
-    return list(_ALL_MODELS_CACHE)
+    # mutation cannot poison the cache. ``enrich=False`` builds names only
+    # (~40 ms for the whole catalog) and is kept in its own cache.
+    catalog = dedupe_models(get_all_catalog_models(enrich=enrich))
+    if enrich:
+        _ALL_MODELS_CACHE = catalog
+    else:
+        _ALL_MODELS_LITE_CACHE = catalog
+    return list(catalog)
 
 
 def dedupe_models(models: list[Model]) -> list[Model]:

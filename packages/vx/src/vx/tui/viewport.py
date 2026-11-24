@@ -240,7 +240,9 @@ class Viewport:
         start = max(pinned, end - tail_space)
         window = list(rows[:pinned]) + list(rows[start:end])
         window = window[:body]
-        where = list(range(pinned)) + list(range(start, start + len(window) - pinned))
+        where: list[int | None] = []
+        where.extend(range(pinned))
+        where.extend(range(start, start + len(window) - pinned))
         where = where[:body]
         window += [""] * (body - len(window))
         where += [None] * (body - len(window))

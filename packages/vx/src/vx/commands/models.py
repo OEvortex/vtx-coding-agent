@@ -22,7 +22,7 @@ from ctx.ai.context_length import safe_max_output_tokens
 from ctx.ai.dynamic_models import find_dynamic_model
 from ctx.ai.models import get_model
 from ctx.ai.provider_catalog import get as get_provider_info
-from ctx.ai.provider_catalog import provider_api_type
+from ctx.ai.provider_catalog import get_catalog_models_for, provider_api_type
 from ctx.core.config import get_config, get_recent_models, set_model_provider_filter
 
 from vx.commands.base import CommandSupport
@@ -30,9 +30,6 @@ from vx.tui import footer
 
 #: The "clear the filter" row in the provider picker.
 ALL_PROVIDERS = "__all__"
-
-#: Models shown per provider before the list is truncated for the widget.
-MAX_MODEL_ROWS = 400
 
 
 def _parse_hidden_entries(entries: list[str]) -> tuple[set[str], set[tuple[str, str]]]:
@@ -77,7 +74,13 @@ class ModelCommands(CommandSupport):
             hidden_providers, hidden_combos = _parse_hidden_entries(
                 list(get_config().ui.hidden_models)
             )
-            models = list(get_all_models())
+            filter_slug = get_config().ui.model_provider_filter
+            # A scoped picker reads one provider out of the catalog store: the
+            # full list is ~6.4k models and takes seconds to materialise, and
+            # everything outside the filter would be thrown away anyway. Names
+            # only — the chosen model's limits are resolved on selection.
+            scoped = get_catalog_models_for(filter_slug, enrich=False) if filter_slug else None
+            models = scoped if scoped is not None else list(get_all_models(enrich=False))
         except Exception as exc:
             self._fail(f"failed to load model catalog: {exc}", topic="model")
             return None
@@ -109,13 +112,20 @@ class ModelCommands(CommandSupport):
         current_provider = getattr(self.runtime, "model_provider", None)
 
         recent_pairs = get_recent_models()[:5]
-        recent_order = {pair: index for index, pair in enumerate(recent_pairs)}
         by_pair = {(m.provider, m.id): m for m in models}
 
         rows: list[footer.MenuItem] = []
         seen: set[tuple[str, str]] = set()
-        recent_models = [by_pair[pair] for pair in recent_pairs if pair in by_pair]
-        recent_models.sort(key=lambda m: recent_order.get((m.provider, m.id), 99))
+        # Recent models are resolved one at a time: a scoped picker does not
+        # hold other providers' catalogs, and a recent model from another
+        # provider is still one keystroke away.
+        recent_models: list[Model] = []
+        for pair in recent_pairs:
+            model = by_pair.get(pair) or get_model(pair[1], pair[0])
+            if model is None:
+                model = find_dynamic_model(pair[1], pair[0])
+            if model is not None:
+                recent_models.append(model)
         for model in recent_models:
             seen.add((model.provider, model.id))
             rows.append(self._model_item(model, current_id, current_provider, recent=True))

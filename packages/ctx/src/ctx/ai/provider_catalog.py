@@ -500,8 +500,21 @@ def provider_api_type(p: ProviderInfo) -> ApiType:
     return _FAMILY_TO_API.get(p.family, ApiType(ApiType.OPENAI_SDK))
 
 
-def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
+def _provider_info_to_model(p: ProviderInfo, model_id: str, *, enrich: bool = True) -> Model:
     api = provider_api_type(p)
+    if not enrich:
+        # Names only: no limits lookup. The model is enriched when it is picked.
+        return Model(
+            id=model_id,
+            provider=p.slug,
+            api=api,
+            base_url=p.base_url or "",
+            max_tokens=p.max_tokens,
+            supports_images=p.sees_images(model_id),
+            supports_thinking=p.supports_thinking,
+            supports_tools=p.supports_tools,
+        )
+
     from ctx.ai.context_length import context_length_manager
 
     limits = context_length_manager.get_limits(model_id, provider=p.slug)
@@ -550,37 +563,42 @@ def _provider_info_to_model(p: ProviderInfo, model_id: str) -> Model:
     )
 
 
-def get_all_catalog_models() -> list[Model]:
+def get_all_catalog_models(*, enrich: bool = True) -> list[Model]:
     from ctx.ai.model_fetcher import get_fetched_models
 
     models: list[Model] = []
     for p in _load().values():
-        fetched = get_fetched_models(p)
+        fetched = get_fetched_models(p, enrich=enrich)
         if fetched:
             models.extend(fetched)
         else:
             for model_id in p.known_models:
-                models.append(_provider_info_to_model(p, model_id))
+                models.append(_provider_info_to_model(p, model_id, enrich=enrich))
     return models
 
 
-def get_catalog_models_for(slug: str) -> list[Model] | None:
+def get_catalog_models_for(slug: str, *, enrich: bool = True) -> list[Model] | None:
     """The catalog for one provider, or ``None`` when ``slug`` is unknown.
 
     Building the whole catalog costs seconds (every provider's fetched list is
     materialised with its token limits), which is wasted work when a picker is
     scoped to a single provider. This is the same per-provider step
     :func:`get_all_catalog_models` runs, so both agree on the entries.
+
+    ``enrich=False`` lists names without resolving any token limits.
     """
     from ctx.ai.model_fetcher import get_fetched_models
 
     provider = get(slug)
     if provider is None:
         return None
-    fetched = get_fetched_models(provider)
+    fetched = get_fetched_models(provider, enrich=enrich)
     if fetched:
         return list(fetched)
-    return [_provider_info_to_model(provider, model_id) for model_id in provider.known_models]
+    return [
+        _provider_info_to_model(provider, model_id, enrich=enrich)
+        for model_id in provider.known_models
+    ]
 
 
 # =================================================================================================
@@ -835,24 +853,25 @@ def custom_provider_slugs() -> list[str]:
 
 
 def find_model(model_id: str, provider: str | None = None) -> Model | None:
-    from ctx.ai.model_fetcher import get_fetched_models
+    from ctx.ai.model_fetcher import fetched_ids, get_fetched_models
 
     providers = _load()
     if provider:
         p = providers.get(provider)
         if p:
-            fetched = get_fetched_models(p)
-            if fetched:
-                for m in fetched:
+            if model_id in fetched_ids(p):
+                for m in get_fetched_models(p):
                     if m.id == model_id:
                         return m
             if model_id in p.known_models:
                 return _provider_info_to_model(p, model_id)
 
     for p in providers.values():
-        fetched = get_fetched_models(p)
-        if fetched:
-            for m in fetched:
+        # ``fetched_ids`` is a cache read per provider; materialising the models
+        # themselves resolves limits for every entry, which is the difference
+        # between a lookup that misses in ~2 s and one that misses in ~20 ms.
+        if model_id in fetched_ids(p):
+            for m in get_fetched_models(p):
                 if m.id == model_id:
                     return m
         if model_id in p.known_models:

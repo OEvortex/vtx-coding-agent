@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = "models"
 DEFAULT_COOLDOWN = 60  # minutes
 
+#: provider slug -> models built from its cached fetch, in this process.
+_MODELS_CACHE: dict[str, list[Model]] = {}
+
+#: Same, but without resolving token limits (names/metadata only).
+_LITE_CACHE: dict[str, list[Model]] = {}
+
 
 @dataclass
 class FetchedModel:
@@ -125,6 +131,9 @@ def _read_cache(provider_slug: str, *, check_cooldown: bool = False) -> list[Fet
 def _write_cache(provider_slug: str, models: list[FetchedModel], cooldown_minutes: int) -> None:
     from ctx.core import store
 
+    _MODELS_CACHE.pop(provider_slug, None)
+    _LITE_CACHE.pop(provider_slug, None)
+    _IDS_CACHE.pop(provider_slug, None)
     try:
         store.put_catalog(
             f"fetch:{provider_slug}",
@@ -435,14 +444,57 @@ def refresh_all_provider_models(provider_slugs: list[str] | None = None) -> dict
     return results
 
 
-def get_fetched_models(provider) -> list[Model]:
-    """Get fetched models from cache only (no network). Returns empty if not cached."""
+#: provider slug -> model ids present in its cached fetch, in this process.
+_IDS_CACHE: dict[str, set[str]] = {}
+
+
+def fetched_ids(provider) -> set[str]:
+    """Ids this provider has cached, without resolving any token limits.
+
+    ``get_fetched_models`` enriches each entry (limits lookup, vision flags),
+    which costs about a second across the whole catalog. A caller that only
+    wants to know *whether* an id exists can read the ids instead.
+    """
+    ids = _IDS_CACHE.get(provider.slug)
+    if ids is None:
+        ids = {entry.id for entry in (_read_cache(provider.slug) or [])}
+        _IDS_CACHE[provider.slug] = ids
+    return ids
+
+
+def get_fetched_models(provider, *, enrich: bool = True) -> list[Model]:
+    """Get fetched models from cache only (no network). Returns empty if not cached.
+
+    Materialising a provider's list resolves token limits for every entry,
+    which is the single most expensive catalog step, and lookups walk every
+    provider (``find_model`` with no provider scope). The result is memoized per
+    provider and invalidated when a refresh rewrites the cache.
+
+    ``enrich=False`` skips the limits lookup and reports only what the cache
+    itself recorded, which is what a menu needs to list names; the selected
+    model is enriched the moment it is chosen.
+    """
+    memo = _MODELS_CACHE if enrich else _LITE_CACHE
+    memoized = memo.get(provider.slug)
+    if memoized is not None:
+        return list(memoized)
+    models = _build_fetched_models(provider, enrich=enrich)
+    memo[provider.slug] = models
+    return list(models)
+
+
+def _build_fetched_models(provider, *, enrich: bool = True) -> list[Model]:
     cached = _read_cache(provider.slug)
     if not cached:
         return []
 
-    from ctx.ai.context_length import context_length_manager
     from ctx.ai.provider_catalog import provider_api_type
+
+    context_length_manager = None
+    if enrich:
+        from ctx.ai.context_length import context_length_manager as manager
+
+        context_length_manager = manager
 
     # cline free list for is_free marking
     cline_free_ids: set[str] = set()
@@ -456,6 +508,29 @@ def get_fetched_models(provider) -> list[Model]:
 
     models: list[Model] = []
     for entry in cached:
+        if context_length_manager is None:
+            # Names only: the cache already carries the id, flags and (for most
+            # providers) a context length, so no limits lookup is needed here.
+            models.append(
+                Model(
+                    id=entry.id,
+                    provider=provider.slug,
+                    api=provider_api_type(provider),
+                    base_url=entry.base_url or provider.base_url or "",
+                    max_tokens=entry.max_output_tokens or provider.max_tokens,
+                    supports_images=entry.supports_images or provider.sees_images(entry.id),
+                    supports_thinking=entry.supports_thinking or provider.supports_thinking,
+                    thinking_level_map=entry.thinking_level_map,
+                    context_window=entry.context_length or None,
+                    supports_tools=provider.supports_tools,
+                    supports_audio=False,
+                    api_model_id=entry.api_model_id,
+                    is_free=entry.is_free,
+                    hidden=entry.hidden,
+                )
+            )
+            continue
+
         limits = context_length_manager.get_limits(entry.id, provider=provider.slug)
         is_matched = (
             limits.context > 0
