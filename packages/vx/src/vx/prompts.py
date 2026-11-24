@@ -18,7 +18,7 @@ VX_BASE = """# You
 
 You are vx, a coding agent in a terminal. Read, search, edit code, run commands,
 check results. `<available_skills>` win over general habits: load a matching one
-with read (or `/name`) before acting. `<project_guidelines>` (AGENTS.md) win over
+with the `skill` tool before acting. `<project_guidelines>` (AGENTS.md) win over
 everything here about style and tests. `<git-status>` is a snapshot: re-run git.
 Use the `# Env` block instead of guessing about the machine.
 

@@ -43,9 +43,9 @@ _TOOL_VERBS = {
     "ls": "Listed",
     "web_search": "Searched the web",
     "web_fetch": "Fetched",
+    "skill": "Loaded skill",
     "subagent": "Ran subagent",
     "task": "Ran subagent",
-    "skill": "Loaded skill",
     "codemode": "Ran code",
     "tool_search": "Found tools",
 }
@@ -62,7 +62,7 @@ _FAILED_VERBS = {
     "ls": "match",
     "web_fetch": "fetch",
     "web_search": "search",
-    "skill": "install",
+    "skill": "load",
 }
 
 #: fx's activity kinds per tool, which decide how a group's header names the
@@ -71,7 +71,7 @@ _TOOL_CATEGORIES = {
     "read": "read",
     "grep": "read",
     "write": "write",
-    "skill": "write",
+    "skill": "read",
     "edit": "edit",
     "apply_patch": "edit",
     "find": "list",

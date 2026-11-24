@@ -2170,9 +2170,11 @@ def _populate_tool_block_args(block: blocks.Block, tool_name: str, args: Any) ->
             # One field carries both jobs: the payload says which mode reads it.
             block.url, block.query = block.query, ""
     elif isinstance(block, blocks.ToolStatus):
-        # Generic fallback
+        # Generic fallback. The target is taken again on the finished call,
+        # because a streamed argument arrives in pieces: the first parse of
+        # {"name": "ctx-tmux-test"} sees "ctx" and would keep it otherwise.
         target = _tool_target(tool_name, args)
-        if target and not block.target:
+        if target:
             block.target = target
 
 

@@ -43,10 +43,6 @@ class ReadTool(BaseTool):
     params = ReadParams
     mutating = False
     parallel_safe = True
-    prompt_guidelines = (
-        "read (not cat/head/tail)",
-        "prefer offset/limit ranges over whole-file reads",
-    )
     description = (
         "Read a file (numbered lines; 2000-line/2000-char caps — use offset/limit "
         "ranges: search first, then read a window, don't dump whole large files) or "

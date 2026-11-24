@@ -158,10 +158,6 @@ class BashTool(BaseTool):
     tool_icon = "$"
     params = BashParams
     mutating = True
-    prompt_guidelines = (
-        "bash for git/builds/tests/scripts and searching (rg, grep, find)",
-        "not for reading or editing files — use read/apply_patch",
-    )
     description = (
         "Run a shell command in the cwd (builds, tests, git, package managers, and "
         "searching with rg/grep/find). "

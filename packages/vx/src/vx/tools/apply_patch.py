@@ -170,7 +170,6 @@ class ApplyPatchTool(BaseTool):
     params = ApplyPatchParams
     mutating = True
     parallel_safe = False
-    prompt_guidelines = ("apply_patch for edits (not bash sed)",)
     description = (
         "Apply precise edits to files. Each op: search+replace (old_str→new_str), "
         "insert at line, or create new file (new_file_content). "
