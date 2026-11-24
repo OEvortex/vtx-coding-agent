@@ -126,7 +126,11 @@ def formatted_agent_mds(agents_files: list[ContextFile]) -> str:
 
     for ctx in agents_files:
         lines.append(f'<file path="{escape_xml(ctx.path)}">')
-        lines.append(escape_xml(ctx.content))
+        # The body is prose and code, not markup. Escaping it turned every
+        # apostrophe into ``&apos;`` and every ``<placeholder>`` into
+        # ``&lt;placeholder&gt;``, so the model read mangled text and mangled
+        # examples. The tags delimit the file; they do not make it XML.
+        lines.append(ctx.content)
         lines.append("</file>")
 
     lines.append("</project_guidelines>")

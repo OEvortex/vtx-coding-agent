@@ -523,8 +523,11 @@ def formatted_skills(skills: list[Skill]) -> str:
     skill_tags: list[str] = []
     for skill in sorted(skills, key=lambda s: s.name):
         skill_tags.append("  <skill>")
-        skill_tags.append(f"    <name>{escape_xml(skill.name)}</name>")
-        skill_tags.append(f"    <description>{escape_xml(skill.description)}</description>")
+        # Name and description are single-line metadata; escaping them made
+        # the catalog read ``&quot;open a website&quot;`` and cost tokens on
+        # every turn. Only the attribute values need protection.
+        skill_tags.append(f"    <name>{skill.name}</name>")
+        skill_tags.append(f"    <description>{skill.description}</description>")
         skill_tags.append("  </skill>")
 
     rules = [

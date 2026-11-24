@@ -118,15 +118,13 @@ def render_removed(previous: tuple[SkillSummary, ...] = ()) -> str:
 
 
 def format_summaries(summaries: tuple[SkillSummary, ...]) -> str:
-    from ctx.agent.context._xml import escape_xml
-
     if not summaries:
         return "No skills are currently available."
     lines = ["<available_skills>"]
     for summary in summaries:
         lines.append("  <skill>")
-        lines.append(f"    <name>{escape_xml(summary.name)}</name>")
-        lines.append(f"    <description>{escape_xml(summary.description)}</description>")
+        lines.append(f"    <name>{summary.name}</name>")
+        lines.append(f"    <description>{summary.description}</description>")
         lines.append("  </skill>")
     lines.append("</available_skills>")
     return "\n".join(lines)
