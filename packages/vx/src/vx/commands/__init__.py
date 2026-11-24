@@ -8,7 +8,7 @@ picker, or the composer used as a one-line prompt.
 - settings.py — /settings, /themes, /permissions, /thinking, /effort,
   /notifications
 - models.py   — /model, /provider
-- sessions.py — /new, /clear, /resume, /tree, /session, /handoff, /compact,
+- sessions.py — /new, /clear, /tree, /session, /handoff, /compact,
   /export, /copy, /undo, /redo, /usage, /recap
 - agents.py   — /agent, /switch
 - auth.py     — /login, /logout
@@ -45,13 +45,12 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
     ("/notifications", "turn notification sounds on or off", "Appearance"),
     ("/new", "start a fresh session", "Session"),
     ("/clear", "clear the transcript, keep the session", "Session"),
-    ("/resume", "open a saved session", "Session"),
     ("/tree", "jump to an earlier point in the conversation", "Session"),
     ("/attach", "attach an image to the next prompt", "Session"),
     ("/compact", "summarise the context window", "Session"),
     ("/undo", "rewind the last turn and its files", "Session"),
     ("/redo", "step forward again", "Session"),
-    ("/session", "show this session's details", "Session"),
+    ("/session", "switch sessions; `all` lists every directory, `info` shows this one", "Session"),
     ("/usage", "token usage for this session and overall", "Session"),
     ("/export", "write the session to an HTML file", "Session"),
     ("/copy", "copy the last answer to the clipboard", "Session"),
@@ -116,7 +115,6 @@ NEEDS_RUNTIME = frozenset(
         "notifications",
         "new",
         "clear",
-        "resume",
         "tree",
         "compact",
         "undo",
@@ -178,7 +176,6 @@ class CommandsMixin(
             "notifications": lambda: self._handle_notifications_command(args),
             "new": self._handle_new_command,
             "clear": self._handle_clear_command,
-            "resume": self._handle_resume_command,
             "tree": self._handle_tree_command,
             "attach": lambda: self._handle_attach_command(args),
             "compact": lambda: self._handle_compact_command(args),

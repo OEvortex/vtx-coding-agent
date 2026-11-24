@@ -1,4 +1,4 @@
-"""Session lifecycle: /new, /clear, /resume, /tree, /session, /handoff,
+"""Session lifecycle: /new, /clear, /tree, /session, /handoff,
 /compact, /export, /copy, /undo, /redo, /usage and /recap."""
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class SessionCommands(CommandSupport):
         self._welcome()
         self._ok("started a new conversation")
 
-    # -- /resume ---------------------------------------------------------
+    # -- /session picker -------------------------------------------------
 
     def _session_age(self, modified: datetime) -> str:
         now = datetime.now(UTC)
@@ -75,7 +75,7 @@ class SessionCommands(CommandSupport):
             value, unit = days // 365, "y"
         return f"{value:>2}{unit}"
 
-    def _resume_items(self) -> list[footer.MenuItem]:
+    def _session_items(self) -> list[footer.MenuItem]:
         sessions = Session.list(self.cwd)
         by_id: dict[str, SessionInfo] = {s.id: s for s in sessions}
         children: dict[str, list[SessionInfo]] = {}
@@ -90,10 +90,12 @@ class SessionCommands(CommandSupport):
             kids.sort(key=lambda s: s.modified, reverse=True)
 
         items: list[footer.MenuItem] = []
+        current = self.runtime.session.id if self.runtime and self.runtime.session else ""
 
         def walk(node: SessionInfo, depth: int) -> None:
             indent = "   " * (depth - 1) + "└ [handoff] " if depth else ""
-            label = " ".join((node.first_message or "(empty session)").split())
+            dot = "● " if node.id == current else ""
+            label = dot + " ".join((node.first_message or "(empty session)").split())
             items.append(
                 footer.MenuItem(
                     label=f"{indent}{label}",
@@ -109,17 +111,23 @@ class SessionCommands(CommandSupport):
             walk(root, 0)
         return items
 
-    def _handle_resume_command(self) -> None:
+    def _show_session_switcher(self) -> None:
+        """List the saved sessions and switch to the one you pick."""
         if not self._require_idle("switch sessions"):
             return
-        items = self._resume_items()
+        items = self._session_items()
         if not items:
             self._warn("no saved sessions found")
             return
-        self._open_menu(items, noun="Sessions", on_select=self._on_resume_pick, filterable=True)
+        self._open_menu(items, noun="Sessions", on_select=self._on_session_pick, filterable=True)
 
-    def _on_resume_pick(self, item: footer.MenuItem) -> None:
-        self._spawn(self._load_session_by_id(item.value or ""))
+    def _on_session_pick(self, item: footer.MenuItem) -> None:
+        session_id = item.value or ""
+        rt = self.runtime
+        if rt is not None and rt.session is not None and rt.session.id == session_id:
+            self._ok("already in that session")
+            return
+        self._spawn(self._load_session_by_id(session_id))
 
     async def _load_session_by_id(self, session_id: str) -> None:
         rt = self.runtime
@@ -253,31 +261,7 @@ class SessionCommands(CommandSupport):
     # -- /session --------------------------------------------------------
 
     def _handle_session_command(self) -> None:
-        rt = self.runtime
-        session = rt.session if rt else None
-        if session is None:
-            self._warn("no active session")
-            return
-        path = session.session_file
-        counts = session.message_counts()
-        totals = session.token_totals()
-        model = " · ".join(part for part in (session.model or ()) if part) or "-"
-        rows = [
-            ("id", session.id),
-            ("file", path.name if path else "(in-memory session)"),
-            ("dir", str(path.parent) if path else "-"),
-            ("model", model),
-            ("messages", f"{counts.total_messages} total"),
-            ("user", str(counts.user_messages)),
-            ("assistant", str(counts.assistant_messages)),
-            ("tool calls", str(counts.tool_calls)),
-            ("tool results", str(counts.tool_results)),
-            ("input", f"{totals.input_tokens:,} tokens"),
-            ("output", f"{totals.output_tokens:,} tokens"),
-            ("cache", f"{totals.cache_read_tokens:,} read · {totals.cache_write_tokens:,} write"),
-            ("context", f"{totals.context_tokens:,} tokens"),
-        ]
-        self._report("Session", [("details", rows)])
+        self._show_session_switcher()
 
     # -- /usage ----------------------------------------------------------
 
