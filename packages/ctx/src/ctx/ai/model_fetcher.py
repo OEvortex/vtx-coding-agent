@@ -483,6 +483,18 @@ def get_fetched_models(provider, *, enrich: bool = True) -> list[Model]:
     return list(models)
 
 
+def _entry_sees_images(provider, entry) -> bool:
+    """Whether this fetched entry accepts image input.
+
+    The provider's own listing is per-model evidence and wins. A provider-wide
+    ``supports_vision`` flag must not: ``devin`` sets it while still listing
+    text-only models, so trusting it marks those models as vision.
+    """
+    if entry.supports_images:
+        return True
+    return bool(provider.vision_models) and provider.sees_images(entry.id)
+
+
 def _build_fetched_models(provider, *, enrich: bool = True) -> list[Model]:
     cached = _read_cache(provider.slug)
     if not cached:
@@ -518,7 +530,7 @@ def _build_fetched_models(provider, *, enrich: bool = True) -> list[Model]:
                     api=provider_api_type(provider),
                     base_url=entry.base_url or provider.base_url or "",
                     max_tokens=entry.max_output_tokens or provider.max_tokens,
-                    supports_images=entry.supports_images or provider.sees_images(entry.id),
+                    supports_images=_entry_sees_images(provider, entry),
                     supports_thinking=entry.supports_thinking or provider.supports_thinking,
                     thinking_level_map=entry.thinking_level_map,
                     context_window=entry.context_length or None,
@@ -540,7 +552,7 @@ def _build_fetched_models(provider, *, enrich: bool = True) -> list[Model]:
         )
 
         max_tokens = entry.max_output_tokens or provider.max_tokens
-        supports_images = entry.supports_images or provider.sees_images(entry.id)
+        supports_images = _entry_sees_images(provider, entry)
         supports_thinking = entry.supports_thinking or provider.supports_thinking
         context_window = entry.context_length or None
 

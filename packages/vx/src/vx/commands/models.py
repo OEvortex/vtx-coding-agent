@@ -178,20 +178,20 @@ class ModelCommands(CommandSupport):
     def _model_item(
         self, model: Model, current_id: str, current_provider: str | None, *, recent: bool = False
     ) -> footer.MenuItem:
+        """One picker row: name, then provider, an eye when it sees images, limits."""
         is_current = model.id == current_id and model.provider == current_provider
         free_suffix = " (free)" if getattr(model, "is_free", False) else ""
         prefix = "↻ " if recent else ""
         label = f"{prefix}{model.id}{free_suffix}{' ✓' if is_current else ''}"
         facts = [model.provider]
-        if not model.supports_images:
-            facts.append("no-vision")
+        if model.supports_images:
+            # An eye, not the word: the column is a legend, and a model without
+            # image input needs no mark at all.
+            facts.append("◉")
         if model.context_window:
             facts.append(f"{model.context_window // 1000}k")
         return footer.MenuItem(
-            label=label,
-            detail="" if model.supports_images else "text only",
-            metadata=" · ".join(facts),
-            value=f"{model.provider}::{model.id}",
+            label=label, metadata=" · ".join(facts), value=f"{model.provider}::{model.id}"
         )
 
     def _on_model_pick(self, item: footer.MenuItem) -> None:
