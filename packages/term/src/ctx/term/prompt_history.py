@@ -1,18 +1,20 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
+import contextlib
+import time
 
-from ctx.core.paths import get_config_dir
+from ctx.core import store
 
 MAX_HISTORY_ENTRIES = 50
 
 
-def _history_path() -> Path:
-    return get_config_dir() / "prompt-history.jsonl"
-
-
 class PromptHistory:
+    """Prompt recall, kept in the shared database.
+
+    The TUI and vx read the same rows, so an up arrow recalls what you asked in
+    either front end, in the order you asked it.
+    """
+
     def __init__(self) -> None:
         self._entries: list[str] = []
         self._index: int = 0
@@ -20,44 +22,11 @@ class PromptHistory:
         self._load()
 
     def _load(self) -> None:
-        path = _history_path()
-        if not path.exists():
-            return
         try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            return
-        lines: list[str] = []
-        for line in text.strip().split("\n"):
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if isinstance(entry, str) and entry:
-                lines.append(entry)
-        self._entries = lines[-MAX_HISTORY_ENTRIES:]
-        if len(lines) > MAX_HISTORY_ENTRIES:
-            self._rewrite()
-
-    def _rewrite(self) -> None:
-        path = _history_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            content = "\n".join(json.dumps(e) for e in self._entries) + "\n"
-            path.write_text(content, encoding="utf-8")
-        except OSError:
-            pass
-
-    def _append_to_file(self, entry: str) -> None:
-        path = _history_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(entry) + "\n")
-        except OSError:
-            pass
+            entries = store.recent_prompts(MAX_HISTORY_ENTRIES)
+        except Exception:
+            entries = []
+        self._entries = list(reversed(entries))
 
     def append(self, text: str) -> None:
         if not text:
@@ -66,12 +35,13 @@ class PromptHistory:
             self._reset_index()
             return
         self._entries.append(text)
-        trimmed = len(self._entries) > MAX_HISTORY_ENTRIES
-        if trimmed:
+        if len(self._entries) > MAX_HISTORY_ENTRIES:
             self._entries = self._entries[-MAX_HISTORY_ENTRIES:]
-            self._rewrite()
+            with contextlib.suppress(Exception):
+                store.replace_prompts(self._entries, MAX_HISTORY_ENTRIES)
         else:
-            self._append_to_file(text)
+            with contextlib.suppress(Exception):
+                store.append_prompt(text, time.time(), MAX_HISTORY_ENTRIES)
         self._reset_index()
 
     @property

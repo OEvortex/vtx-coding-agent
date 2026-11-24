@@ -720,45 +720,30 @@ class AcpServer:
 
     def session_list(self, params: dict[str, Any]) -> dict[str, Any]:
         from ctx.agent.session import Session
-        from ctx.core.paths import get_config_dir
 
-        sessions_dir = get_config_dir() / "sessions"
-        rows: list[dict[str, Any]] = []
-        if sessions_dir.is_dir():
-            for path in sessions_dir.glob("*/*.jsonl"):
-                try:
-                    info = Session.build_session_info(path)
-                except Exception:
-                    continue
-                if info is None:
-                    continue
-                rows.append(
-                    {
-                        "sessionId": info.id,
-                        "cwd": info.cwd,
-                        "title": info.name or info.first_message or "",
-                        "updatedAt": info.modified.isoformat(),
-                    }
-                )
-        rows.sort(key=lambda r: r["updatedAt"], reverse=True)
+        rows = [
+            {
+                "sessionId": info.id,
+                "cwd": info.cwd,
+                "title": info.name or info.first_message or "",
+                "updatedAt": info.modified.isoformat(),
+            }
+            for info in Session.list_all()
+        ]
         return {"sessions": rows}
 
     def session_delete(self, params: dict[str, Any]) -> dict[str, Any]:
         from ctx.agent.session import Session
-        from ctx.core.paths import get_config_dir
+        from ctx.core import store
 
         session_id = params.get("sessionId")
         if isinstance(session_id, str):
-            sessions_dir = get_config_dir() / "sessions"
-            if sessions_dir.is_dir():
-                for path in sessions_dir.glob("*/*.jsonl"):
-                    try:
-                        info = Session.build_session_info(path)
-                    except Exception:
-                        continue
-                    if info is not None and info.id == session_id:
-                        info.path.unlink(missing_ok=True)
-                        break
+            for info in Session.list_all():
+                if info.id != session_id:
+                    continue
+                store.delete_session(str(info.path))
+                info.path.with_name(info.path.name + ".imported").unlink(missing_ok=True)
+                break
         return {}
 
     async def session_set_config_option(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -821,21 +806,10 @@ class AcpServer:
         return {"configOptions": self._config_options(sess)}
 
     def _find_ctx_session(self, session_id: str) -> Any:
-        """Locate a stored ctx session by id across all cwd buckets."""
+        """Locate a stored ctx session by id across all project folders."""
         from ctx.agent.session import Session
-        from ctx.core.paths import get_config_dir
 
-        sessions_dir = get_config_dir() / "sessions"
-        if not sessions_dir.is_dir():
-            return None
-        for path in sessions_dir.glob("*/*.jsonl"):
-            try:
-                info = Session.build_session_info(path)
-            except Exception:
-                continue
-            if info is not None and info.id == session_id:
-                return info
-        return None
+        return next((info for info in Session.list_all() if info.id == session_id), None)
 
     async def _replay_session(self, session_id: str, sess: _Session) -> None:
         """Emit stored history as session/update notifications (ACP replay)."""

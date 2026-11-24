@@ -3,14 +3,14 @@
 Session logs used to be the *only* record of how many tokens Ctx had spent, so
 deleting an old session silently rewrote history: ``/usage``'s lifetime total
 was really "total across the sessions that still exist". Retention (old,
-untouched sessions are pruned at startup) makes that untenable, so usage is now
-also accumulated into ``token_usage.json`` beside the sessions directory.
+untouched sessions are pruned on startup) makes that untenable, so usage is
+also accumulated into the database, keyed by session file.
 
 The ledger is a cache with a memory: every session file it has ever seen keeps
 its per-day buckets even after the file is deleted. A file whose ``(mtime,
 size)`` still matches is not re-parsed, so the ledger also makes ``/usage``
-cheap -- the first run pays for the scan, every later run reads one small JSON
-document plus whatever changed.
+cheap -- the first run pays for the scan, every later run is one grouped SQL
+aggregate plus whatever changed.
 
 Session logs are append-only, so a matching signature means the recorded
 buckets are still exact. A resumed session that rewrites its file changes both
@@ -21,19 +21,11 @@ entries are deliberately *not* read here, or the lifetime total would double.
 
 from __future__ import annotations
 
-import contextlib
 import json
-import os
-import tempfile
-import threading
-from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
 
-#: Written immediately next to the ``sessions/`` tree it summarizes.
-LEDGER_FILENAME = "token_usage.json"
-LEDGER_VERSION = 1
+from ctx.core import store
 
 #: Index layout of a day bucket; shared with ``usage_stats``.
 INPUT = 0
@@ -43,87 +35,6 @@ CACHE_WRITE = 3
 TURNS = 4
 BUCKET_WIDTH = 5
 
-_LOCK = threading.RLock()
-
-
-@dataclass
-class LedgerFile:
-    """One session file's contribution, durable beyond the file itself."""
-
-    mtime: float
-    size: int
-    days: dict[str, list[int]] = field(default_factory=dict)
-
-
-def default_ledger_path(sessions_root: Path) -> Path:
-    """``<config dir>/token_usage.json`` given ``<config dir>/sessions``."""
-    return sessions_root.parent / LEDGER_FILENAME
-
-
-def _load(ledger_path: Path) -> dict[str, LedgerFile]:
-    try:
-        raw = json.loads(ledger_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    files = raw.get("files")
-    if not isinstance(files, dict):
-        return {}
-    parsed: dict[str, LedgerFile] = {}
-    for key, value in files.items():
-        if not isinstance(value, dict):
-            continue
-        days_raw = value.get("days")
-        if not isinstance(days_raw, dict):
-            continue
-        days: dict[str, list[int]] = {}
-        for day, bucket in days_raw.items():
-            if not isinstance(day, str) or not isinstance(bucket, list):
-                continue
-            numbers = []
-            for item in bucket[:BUCKET_WIDTH]:
-                try:
-                    numbers.append(int(item))
-                except (TypeError, ValueError):
-                    numbers.append(0)
-            numbers.extend([0] * (BUCKET_WIDTH - len(numbers)))
-            days[day] = numbers
-        try:
-            mtime = float(value.get("mtime") or 0.0)
-            size = int(value.get("size") or 0)
-        except (TypeError, ValueError):
-            mtime, size = 0.0, 0
-        parsed[str(key)] = LedgerFile(mtime=mtime, size=size, days=days)
-    return parsed
-
-
-def _save(ledger_path: Path, files: dict[str, LedgerFile]) -> bool:
-    """Atomically rewrite the ledger. Returns False when it could not be written."""
-    payload = {
-        "version": LEDGER_VERSION,
-        "files": {
-            key: {"mtime": entry.mtime, "size": entry.size, "days": entry.days}
-            for key, entry in sorted(files.items())
-        },
-    }
-    try:
-        ledger_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f"{ledger_path.name}.", suffix=".tmp", dir=ledger_path.parent
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, separators=(",", ":"))
-            os.replace(tmp_name, ledger_path)
-        except Exception:
-            with contextlib.suppress(OSError):
-                Path(tmp_name).unlink()
-            raise
-    except OSError:
-        return False
-    return True
-
 
 def _key(path: Path, root: Path) -> str:
     try:
@@ -132,7 +43,7 @@ def _key(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
-def _entry_date(entry: Any) -> date | None:
+def _entry_date(entry: object) -> date | None:
     """The calendar day an entry was recorded on.
 
     Prefers the entry's own timestamp and falls back to the session filename,
@@ -196,11 +107,7 @@ def scan_session_file(path: Path, fallback: date | None = None) -> dict[str, lis
 
 
 def sync_usage_ledger(
-    session_paths: list[Path],
-    *,
-    root: Path,
-    ledger_path: Path | None = None,
-    require_persist: bool = False,
+    session_paths: list[Path], *, root: Path, require_persist: bool = False
 ) -> dict[str, list[int]]:
     """Fold ``session_paths`` into the ledger and return all recorded days.
 
@@ -209,37 +116,33 @@ def sync_usage_ledger(
     the sessions that happen to still exist.
 
     ``require_persist`` turns a failed write into an ``OSError``. Retention
-    passes it: deleting a file whose usage never reached disk would lose those
-    tokens for good, so the caller must be able to stop instead.
+    passes it: deleting a file whose usage never reached the database would
+    lose those tokens for good, so the caller must be able to stop instead.
 
     Blocking; call from a worker thread.
     """
-    ledger = ledger_path or default_ledger_path(root)
-    with _LOCK:
-        files = _load(ledger)
-        changed = False
-        for path in session_paths:
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
-            key = _key(path, root)
-            known = files.get(key)
-            if known is not None and known.mtime == stat.st_mtime and known.size == stat.st_size:
-                continue
-            files[key] = LedgerFile(
-                mtime=stat.st_mtime,
-                size=stat.st_size,
-                days=scan_session_file(path, session_date(path)),
-            )
-            changed = True
-        if changed and not _save(ledger, files) and require_persist:
-            raise OSError(f"could not write usage ledger: {ledger}")
+    signatures = store.usage_signatures()
+    pending: list[tuple[str, float, int, dict[str, list[int]]]] = []
+    for path in session_paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        key = _key(path, root)
+        known = signatures.get(key)
+        if known is not None and known[0] == stat.st_mtime and known[1] == stat.st_size:
+            continue
+        pending.append(
+            (key, stat.st_mtime, stat.st_size, scan_session_file(path, session_date(path)))
+        )
 
-        merged: dict[str, list[int]] = {}
-        for entry in files.values():
-            for day, bucket in entry.days.items():
-                target = merged.setdefault(day, [0] * BUCKET_WIDTH)
-                for index, value in enumerate(bucket):
-                    target[index] += value
-        return merged
+    if pending:
+        try:
+            with store.write() as conn:
+                for key, mtime, size, days in pending:
+                    store.put_usage_file(key, mtime, size, days, conn)
+        except Exception as exc:
+            if require_persist:
+                raise OSError(f"could not write usage ledger: {exc}") from exc
+
+    return store.usage_days()

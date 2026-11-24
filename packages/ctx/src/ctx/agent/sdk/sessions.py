@@ -181,17 +181,22 @@ def _input_item_to_message(item: dict[str, Any]) -> Any:
 
 
 class JSONLSession:
-    """A session backed by Ctx's append-only JSONL file store.
+    """A session backed by Ctx's database (``ctx.db``).
 
-    The JSONL file is interoperable with Ctx's TUI/headless mode: a
-    session created by the SDK can be resumed from the TUI, and vice
-    versa.
+    Interoperable with Ctx's TUI/headless mode: a session created by the SDK
+    can be resumed from the TUI, and vice versa. The name is historical; the
+    ``path`` argument is the session's identity, not a file that is read.
     """
 
     def __init__(self, path: str | Path | None = None, *, session_id: str | None = None) -> None:
         self._path: Path | None = Path(path).expanduser() if path else None
         self._session: _CtxSession
-        if self._path is not None and self._path.exists():
+        from ctx.core import store
+
+        known = self._path is not None and (
+            store.session_meta(str(self._path)) is not None or self._path.exists()
+        )
+        if known:
             self._session = _CtxSession.load(self._path)
         elif self._path is not None:
             # New persisted session: create a fresh in-memory session

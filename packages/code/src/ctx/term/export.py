@@ -203,49 +203,32 @@ def _get_sessions_dir(cwd: str) -> Path:
     return get_config_dir() / "sessions" / _safe_cwd(cwd)
 
 
-def _read_session_header(path: Path) -> dict[str, Any] | None:
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            data = json.loads(line)
-            return data if data.get("type") == "header" else None
-    return None
-
-
 def _resolve_session_file(cwd: str, session_id: str) -> Path:
+    """Resolve an id or id prefix to the session's identity path.
+
+    Sessions live in the database now, so this is a lookup rather than a scan
+    of the project's log directory; the returned path is the session's key.
+    """
+    from ctx.agent.session import Session
+
     normalized_id = session_id.strip().lower()
     if not normalized_id:
         raise ValueError("Session ID cannot be empty")
 
-    sessions_dir = _get_sessions_dir(cwd)
-    if not sessions_dir.exists():
+    sessions = Session.list(cwd)
+    if not sessions:
         raise FileNotFoundError(f"No sessions found for cwd: {cwd}")
 
-    exact_matches: list[Path] = []
-    prefix_matches: list[Path] = []
-
-    for path in sessions_dir.glob("*.jsonl"):
-        try:
-            header = _read_session_header(path)
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not header:
-            continue
-        current_id = str(header.get("id", "")).lower()
-        if current_id == normalized_id:
-            exact_matches.append(path)
-        elif current_id.startswith(normalized_id):
-            prefix_matches.append(path)
-
-    if len(exact_matches) == 1:
-        return exact_matches[0]
-    if len(exact_matches) > 1:
+    exact = [info for info in sessions if info.id.lower() == normalized_id]
+    if len(exact) == 1:
+        return exact[0].path
+    if len(exact) > 1:
         raise ValueError(f"Session ID is ambiguous: {session_id}")
-    if len(prefix_matches) == 1:
-        return prefix_matches[0]
-    if len(prefix_matches) > 1:
+
+    prefix = [info for info in sessions if info.id.lower().startswith(normalized_id)]
+    if len(prefix) == 1:
+        return prefix[0].path
+    if len(prefix) > 1:
         raise ValueError(f"Session ID prefix is ambiguous: {session_id}")
     raise FileNotFoundError(f"Session not found: {session_id}")
 
@@ -284,22 +267,16 @@ def _last_model(entries: list[dict[str, Any]]) -> tuple[str, str]:
 
 
 def _load_session_export_data(path: Path) -> SessionExportData:
-    header: dict[str, Any] | None = None
-    entries: list[dict[str, Any]] = []
+    from ctx.agent.session import Session
 
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            data = json.loads(line)
-            if data.get("type") == "header" and header is None:
-                header = data
-            else:
-                entries.append(data)
-
-    if not header:
-        raise ValueError(f"Invalid session file (missing header): {path}")
+    session = Session.load(path)
+    header: dict[str, Any] = {
+        "id": session.id,
+        "timestamp": session.created_at,
+        "system_prompt": session.system_prompt,
+        "tools": session.tools,
+    }
+    entries = [entry.model_dump(mode="json") for entry in session.all_entries]
 
     model_id, provider = _last_model(entries)
     return SessionExportData(

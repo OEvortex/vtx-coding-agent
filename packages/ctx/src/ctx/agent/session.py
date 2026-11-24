@@ -1,20 +1,24 @@
 """
 Session - persistence layer for agent conversations.
 
-Sessions are stored as append-only JSONL files. Each line is a JSON entry
-with a type field. The first line is always the session header.
+Sessions are rows in ``ctx.db`` (see :mod:`ctx.core.store`): one ``session``
+row per conversation (the picker's index) and one ``entry`` row per entry, in
+sequence order. The old append-only JSONL shape still describes an entry:
 
-Structure:
     {"type": "header", "id": "...", "version": 1, "timestamp": "...",
      "cwd": "...", "system_prompt": "...", "tools": ["read", "apply_patch", ...]}
     {"type": "message", "id": "...", "parent_id": "...", "timestamp": "...", "message": {...}}
-    {"type": "message", "id": "...", "parent_id": "...", "timestamp": "...", "message": {...}}
     ...
+
+Each session keeps its historical ``sessions/<slug>/<ts>_<id>.jsonl`` path as
+its identity, so callers that hold a path keep working, but that file is only
+written by the one-way legacy import.
 """
 
 from __future__ import annotations
 
 import builtins
+import contextlib
 import json
 import re
 import uuid
@@ -25,6 +29,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from ctx.core import store
 from ctx.core.paths import get_config_dir
 from ctx.protocol.types import (
     AssistantMessage,
@@ -203,6 +208,95 @@ class SessionTokenTotals:
         )
 
 
+ENTRY_TYPES: dict[str, type[SessionEntry]] = {}
+
+
+def _entry_from_data(data: dict[str, Any]) -> SessionEntry | None:
+    """Build one entry from its stored JSON, or ``None`` for unknown types."""
+    if not ENTRY_TYPES:
+        ENTRY_TYPES.update(
+            {
+                "message": MessageEntry,
+                "thinking_level_change": ThinkingLevelChangeEntry,
+                "model_change": ModelChangeEntry,
+                "compaction": CompactionEntry,
+                "custom_message": CustomMessageEntry,
+                "harness_state": HarnessStateEntry,
+                "session_info": SessionInfoEntry,
+                "leaf": LeafEntry,
+                "runtime_checkpoint": RuntimeCheckpointEntry,
+            }
+        )
+    model = ENTRY_TYPES.get(str(data.get("type")))
+    if model is None:
+        return None
+    try:
+        return model.model_validate(data)
+    except Exception:
+        return None
+
+
+def _parse_session_file(path: Path) -> tuple[SessionHeader | None, builtins.list[SessionEntry]]:
+    """Read a legacy JSONL log.
+
+    Only the one-way import uses this now; it exists so an old install (or a
+    transcript checked into a backup) can still be loaded once.
+    """
+    header: SessionHeader | None = None
+    entries: builtins.list[SessionEntry] = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if data.get("type") == "header":
+                    with contextlib.suppress(Exception):
+                        header = SessionHeader.model_validate(data)
+                    continue
+                entry = _entry_from_data(data)
+                if entry is not None:
+                    entries.append(entry)
+    except OSError:
+        pass
+    return header, entries
+
+
+def _preview(text: str) -> str:
+    return Session._extract_preview_from_user_message(text)[:100]
+
+
+def _message_preview(message: Message) -> str:
+    content = message.content
+    if isinstance(content, str):
+        return _preview(content)
+    if isinstance(content, builtins.list):
+        for part in content:
+            text = getattr(part, "text", None)
+            if isinstance(text, str) and text.strip():
+                return _preview(text)
+    return ""
+
+
+def _entry_name(entry: SessionEntry) -> str | None:
+    if isinstance(entry, SessionInfoEntry) and entry.name:
+        return entry.name
+    return None
+
+
+def _entry_parent(entry: SessionEntry) -> str | None:
+    if isinstance(entry, CustomMessageEntry) and entry.custom_type == "handoff_backlink":
+        details = entry.details or {}
+        value = details.get("target_session_id")
+        if isinstance(value, str):
+            return value
+    return None
+
+
 @dataclass(frozen=True)
 class SessionMessageCounts:
     user_messages: int = 0
@@ -273,9 +367,16 @@ class Session:
         self._initial_model_id = initial_model_id
         self._initial_thinking_level = initial_thinking_level
 
-        # Track disk persistence state
+        # Track persistence state
         self._flushed = False
         self._persisted_entries_count = 0
+
+        # Per-session facts the picker reads, kept in step with appends so
+        # saving one entry does not have to recount the whole transcript.
+        self._message_count = 0
+        self._first_message: str | None = None
+        self._name: str | None = None
+        self._parent_id: str | None = None
 
     @property
     def id(self) -> str:
@@ -338,7 +439,18 @@ class Session:
         self._entries.append(entry)
         self._by_id[entry.id] = entry
         self._leaf_id = entry.target_id if isinstance(entry, LeafEntry) else entry.id
+        self._note_facts(entry)
         self._persist_entry(entry)
+
+    def _note_facts(self, entry: SessionEntry) -> None:
+        if isinstance(entry, MessageEntry):
+            self._message_count += 1
+            if entry.message.role == "user" and not self._first_message:
+                self._first_message = _message_preview(entry.message)
+        elif _entry_name(entry):
+            self._name = _entry_name(entry)
+        elif _entry_parent(entry):
+            self._parent_id = _entry_parent(entry)
 
     def _persist_entry(self, entry: SessionEntry) -> None:
         if not self._persist or not self._session_file:
@@ -376,21 +488,63 @@ class Session:
             self._flushed = True
             self._persisted_entries_count = len(self._entries)
         else:
-            with open(self._session_file, "a", encoding="utf-8") as f:
-                f.write(entry.model_dump_json() + "\n")
+            path = str(self._session_file)
+            with store.write() as conn:
+                store.put_entry(path, len(self._entries) - 1, entry.model_dump(mode="json"), conn)
+                store.touch_session(
+                    path,
+                    modified=_now_iso(),
+                    message_count=self._message_count,
+                    first_message=self._first_message,
+                    name=self._name,
+                    parent_id=self._parent_id,
+                    conn=conn,
+                )
             self._persisted_entries_count += 1
+
+    def _session_meta(self) -> dict[str, Any]:
+        assert self._session_file is not None
+        header = self._header
+        return {
+            "path": str(self._session_file),
+            "id": self._id,
+            "cwd": self._cwd,
+            "slug": self._session_file.parent.name,
+            "created": header.timestamp if header else None,
+            "modified": _now_iso(),
+            "name": self._name,
+            "parent_id": self._parent_id,
+            "first_message": self._first_message,
+            "message_count": self._message_count,
+            "system_prompt": header.system_prompt if header else None,
+            "tools": json.dumps(header.tools) if header and header.tools else None,
+            "initial_thinking_level": header.initial_thinking_level if header else None,
+        }
+
+    def _recount(self) -> None:
+        """Recompute the picker facts from the entries in memory."""
+        self._message_count = 0
+        self._first_message = None
+        self._name = None
+        self._parent_id = None
+        for entry in self._entries:
+            self._note_facts(entry)
 
     def _write_all(self) -> None:
         if not self._session_file:
             return
-
-        self._session_file.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(self._session_file, "w", encoding="utf-8") as f:
-            if self._header:
-                f.write(self._header.model_dump_json() + "\n")
-            for entry in self._entries:
-                f.write(entry.model_dump_json() + "\n")
+        self._recount()
+        path = str(self._session_file)
+        rows = [(seq, entry.model_dump(mode="json")) for seq, entry in enumerate(self._entries)]
+        with store.write() as conn:
+            store.put_session(self._session_meta(), conn)
+            for seq, row in rows:
+                store.put_entry(path, seq, row, conn)
+            # Entries can shrink when a branch is dropped; the rows past the
+            # end would otherwise keep a deleted tail alive.
+            conn.execute(
+                "DELETE FROM entry WHERE session_path = ? AND seq >= ?", (path, len(rows))
+            )
 
     def ensure_persisted(self) -> None:
         if not self._persist or not self._session_file:
@@ -971,54 +1125,30 @@ class Session:
     @classmethod
     def load(cls, path: Path | str) -> Session:
         path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError(f"Session file not found: {path}")
+        meta = store.session_meta(str(path))
+        if meta is None:
+            # Not migrated yet: an old install, a restored backup, or a log
+            # written by a build that predates the database.
+            if not path.exists():
+                raise FileNotFoundError(f"Session not found: {path}")
+            import_session_file(path)
+            meta = store.session_meta(str(path))
+            if meta is None:
+                raise ValueError(f"Invalid session (no header): {path}")
 
-        header: SessionHeader | None = None
+        header = SessionHeader(
+            id=meta["id"],
+            timestamp=meta["created"] or _now_iso(),
+            cwd=meta["cwd"],
+            system_prompt=meta["system_prompt"],
+            tools=json.loads(meta["tools"]) if meta.get("tools") else None,
+            initial_thinking_level=meta.get("initial_thinking_level") or "high",
+        )
         entries: builtins.list[SessionEntry] = []
-
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                entry_type = data.get("type")
-
-                if entry_type == "header":
-                    header = SessionHeader.model_validate(data)
-                elif entry_type == "message":
-                    entries.append(MessageEntry.model_validate(data))
-                elif entry_type == "thinking_level_change":
-                    entries.append(ThinkingLevelChangeEntry.model_validate(data))
-                elif entry_type == "model_change":
-                    entries.append(ModelChangeEntry.model_validate(data))
-                elif entry_type == "compaction":
-                    entries.append(CompactionEntry.model_validate(data))
-                elif entry_type == "custom_message":
-                    entries.append(CustomMessageEntry.model_validate(data))
-                elif entry_type == "harness_state":
-                    entries.append(HarnessStateEntry.model_validate(data))
-                elif entry_type == "session_info":
-                    entries.append(SessionInfoEntry.model_validate(data))
-                elif entry_type == "leaf":
-                    entries.append(LeafEntry.model_validate(data))
-                elif entry_type == "runtime_checkpoint":
-                    # Must be loaded, not skipped: these are written per tool
-                    # batch and sit between a user message and its results, so
-                    # dropping them severs the parent_id chain and
-                    # get_branch() collapses to almost nothing on a resumed
-                    # session. They are display=False and only the newest
-                    # active one is ever read, so keeping them is inert.
-                    entries.append(RuntimeCheckpointEntry.model_validate(data))
-
-        if not header:
-            raise ValueError(f"Invalid session file (no header): {path}")
+        for data in store.session_entries(str(path)):
+            entry = _entry_from_data(data)
+            if entry is not None:
+                entries.append(entry)
 
         session = cls(
             session_id=header.id,
@@ -1033,9 +1163,10 @@ class Session:
         session._leaf_id = None
         for entry in entries:
             session._leaf_id = entry.target_id if isinstance(entry, LeafEntry) else entry.id
-        session._flushed = True  # Already on disk
+        # Already recorded, so the next append only has to write itself.
+        session._flushed = True
         session._persisted_entries_count = len(entries)
-
+        session._recount()
         return session
 
     @classmethod
@@ -1048,9 +1179,9 @@ class Session:
         system_prompt: str | None = None,
     ) -> Session:
         sessions_dir = cls.get_sessions_dir(cwd)
-
-        jsonl_files = list(sessions_dir.glob("*.jsonl"))
-        if not jsonl_files:
+        import_legacy_sessions(sessions_dir)
+        most_recent = store.recent_session(sessions_dir.name)
+        if most_recent is None:
             return cls.create(
                 cwd,
                 provider=provider,
@@ -1058,9 +1189,7 @@ class Session:
                 thinking_level=thinking_level,
                 system_prompt=system_prompt,
             )
-
-        most_recent = max(jsonl_files, key=lambda p: p.stat().st_mtime)
-        return cls.load(most_recent)
+        return cls.load(most_recent["path"])
 
     @classmethod
     def continue_by_id(cls, cwd: str, session_id: str) -> Session:
@@ -1068,15 +1197,12 @@ class Session:
         if not normalized_id:
             raise ValueError("Session ID cannot be empty")
 
-        sessions = cls.list(cwd)
-        exact_matches = [s for s in sessions if s.id.lower() == normalized_id]
-        if len(exact_matches) == 1:
-            return cls.load(exact_matches[0].path)
-
-        prefix_matches = [s for s in sessions if s.id.lower().startswith(normalized_id)]
-        if len(prefix_matches) == 1:
-            return cls.load(prefix_matches[0].path)
-        if len(prefix_matches) > 1:
+        sessions_dir = cls.get_sessions_dir(cwd)
+        import_legacy_sessions(sessions_dir)
+        matches = store.find_sessions_by_id(sessions_dir.name, normalized_id)
+        if len(matches) == 1:
+            return cls.load(matches[0]["path"])
+        if len(matches) > 1:
             raise ValueError(f"Session ID prefix is ambiguous: {session_id}")
 
         raise FileNotFoundError(f"Session not found: {session_id}")
@@ -1084,21 +1210,25 @@ class Session:
     @classmethod
     def list(cls, cwd: str) -> builtins.list[SessionInfo]:
         sessions_dir = cls.get_sessions_dir(cwd)
-        if not sessions_dir.exists():
-            return []
-
+        import_legacy_sessions(sessions_dir)
         sessions: builtins.list[SessionInfo] = []
-
-        for path in sessions_dir.glob("*.jsonl"):
-            try:
-                info = cls.build_session_info(path)
-                if info:
-                    sessions.append(info)
-            except (OSError, json.JSONDecodeError, KeyError, ValueError):
-                continue
-
-        sessions.sort(key=lambda s: s.modified, reverse=True)
+        for row in store.list_sessions(sessions_dir.name):
+            info = _info_from_row(row)
+            if info is not None:
+                sessions.append(info)
         return sessions
+
+    @classmethod
+    def list_all(cls) -> builtins.list[SessionInfo]:
+        """Every session in every project folder, newest first."""
+        root = get_config_dir() / "sessions"
+        if root.is_dir():
+            for bucket in sorted(root.iterdir()):
+                if bucket.is_dir():
+                    with contextlib.suppress(Exception):
+                        import_legacy_sessions(bucket)
+        infos = (_info_from_row(row) for row in store.list_all_sessions())
+        return [info for info in infos if info is not None]
 
     @staticmethod
     def _extract_preview_from_user_message(content: str) -> str:
@@ -1129,59 +1259,14 @@ class Session:
 
     @classmethod
     def build_session_info(cls, path: Path) -> SessionInfo | None:
-        header: SessionHeader | None = None
-        message_count = 0
-        first_message = ""
-        parent_session_id: str | None = None
-
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                entry_type = data.get("type")
-                if entry_type == "header":
-                    header = SessionHeader.model_validate(data)
-                elif entry_type == "message":
-                    message_count += 1
-                    msg = data.get("message", {})
-                    if msg.get("role") == "user" and not first_message:
-                        content = msg.get("content", "")
-                        if isinstance(content, str):
-                            first_message = cls._extract_preview_from_user_message(content)[:100]
-                        elif isinstance(content, list) and content:
-                            first_item = content[0]
-                            if isinstance(first_item, dict) and first_item.get("type") == "text":
-                                first_message = cls._extract_preview_from_user_message(
-                                    first_item.get("text", "")
-                                )[:100]
-                elif (
-                    entry_type == "custom_message"
-                    and data.get("custom_type") == "handoff_backlink"
-                ):
-                    details = data.get("details") or {}
-                    parent_session_id = details.get("target_session_id")
-
-        if not header:
-            return None
-
-        stat = path.stat()
-        return SessionInfo(
-            id=header.id,
-            path=path,
-            cwd=header.cwd,
-            created=datetime.fromisoformat(header.timestamp),
-            modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
-            message_count=message_count,
-            first_message=first_message or "(no messages)",
-            parent_session_id=parent_session_id,
-        )
+        """One session's summary, straight from the row the picker sorts by."""
+        row = store.session_meta(str(path))
+        if row is None:
+            if not Path(path).exists():
+                return None
+            import_session_file(Path(path))
+            row = store.session_meta(str(path))
+        return _info_from_row(row) if row else None
 
     @classmethod
     def in_memory(
@@ -1202,3 +1287,99 @@ class Session:
             system_prompt=system_prompt,
             tools=tools,
         )
+
+
+def _info_from_row(row: dict[str, Any]) -> SessionInfo | None:
+    try:
+        created = datetime.fromisoformat(row["created"]) if row.get("created") else None
+        modified = datetime.fromisoformat(row["modified"]) if row.get("modified") else created
+    except (TypeError, ValueError):
+        return None
+    if created is None or modified is None:
+        return None
+    return SessionInfo(
+        id=row["id"],
+        path=Path(row["path"]),
+        cwd=row["cwd"],
+        name=row.get("name"),
+        created=created,
+        modified=modified,
+        message_count=int(row.get("message_count") or 0),
+        first_message=row.get("first_message") or "(no messages)",
+        parent_session_id=row.get("parent_id"),
+    )
+
+
+def _import_meta(
+    path: Path, header: SessionHeader, entries: builtins.list[SessionEntry]
+) -> dict[str, Any]:
+    message_count = 0
+    first_message: str | None = None
+    name: str | None = None
+    parent_id: str | None = None
+    for entry in entries:
+        if isinstance(entry, MessageEntry):
+            message_count += 1
+            if entry.message.role == "user" and not first_message:
+                first_message = _message_preview(entry.message)
+        name = _entry_name(entry) or name
+        parent_id = _entry_parent(entry) or parent_id
+    modified = entries[-1].timestamp if entries else header.timestamp
+    return {
+        "path": str(path),
+        "id": header.id,
+        "cwd": header.cwd,
+        "slug": path.parent.name,
+        "created": header.timestamp,
+        "modified": modified,
+        "name": name,
+        "parent_id": parent_id,
+        "first_message": first_message,
+        "message_count": message_count,
+        "system_prompt": header.system_prompt,
+        "tools": json.dumps(header.tools) if header.tools else None,
+        "initial_thinking_level": header.initial_thinking_level,
+    }
+
+
+def import_session_file(path: Path) -> bool:
+    """Move one legacy JSONL log into the database, then park the file.
+
+    Returns ``False`` when the log is already known or cannot be parsed. The
+    file is renamed to ``*.imported`` rather than deleted: it is the only copy
+    of a transcript an older build could still read, and renaming costs nothing.
+    """
+    where = str(path)
+    if store.session_meta(where) is not None:
+        return False
+    header, entries = _parse_session_file(path)
+    if header is None:
+        return False
+    meta = _import_meta(path, header, entries)
+    # Live sessions are counted from their entries, so any ledger row this
+    # file already contributed becomes a duplicate the moment it imports.
+    root = path.parent.parent
+    try:
+        ledger_key = path.relative_to(root).as_posix()
+    except ValueError:
+        ledger_key = path.as_posix()
+    with store.write() as conn:
+        store.put_session(meta, conn)
+        for seq, entry in enumerate(entries):
+            store.put_entry(where, seq, entry.model_dump(mode="json"), conn)
+        conn.execute("DELETE FROM usage_day WHERE file_key = ?", (ledger_key,))
+        conn.execute("DELETE FROM usage_file WHERE key = ?", (ledger_key,))
+    with contextlib.suppress(OSError):
+        path.rename(path.with_name(path.name + ".imported"))
+    return True
+
+
+def import_legacy_sessions(sessions_dir: Path) -> None:
+    """Import one project folder's logs the first time anything reads it."""
+    flag = f"sessions_imported:{sessions_dir.name}"
+    if store.get_meta(flag) == "1":
+        return
+    for path in sorted(sessions_dir.glob("*.jsonl")):
+        with contextlib.suppress(Exception):
+            import_session_file(path)
+    store.set_meta(flag, "1")

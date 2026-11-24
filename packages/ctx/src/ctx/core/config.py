@@ -174,7 +174,7 @@ class RecapConfig(BaseModel):
 class SessionRetentionConfig(BaseModel):
     """Automatic cleanup of old session logs.
 
-    Token usage is folded into ``token_usage.json`` before a file is removed,
+    Token usage is folded into the ledger in ``ctx.db`` before a session is removed,
     so pruning never costs you the lifetime figures ``/usage`` reports.
     """
 
@@ -786,7 +786,7 @@ def _migrate_v16_to_v17(data: dict[str, Any]) -> dict[str, Any]:
     """Add the ``session_retention`` block.
 
     Old session logs now get pruned, and their token usage survives in
-    ``token_usage.json``; a pre-v17 config has no opinion on that yet, so it
+    the usage ledger; a pre-v17 config has no opinion on that yet, so it
     gets the documented defaults.
     """
     migrated = dict(data)

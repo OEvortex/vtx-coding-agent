@@ -8,10 +8,10 @@ retention now does on purpose.
 
 So the scan feeds a durable ledger (:mod:`ctx.core.token_usage`) that remembers
 a session file's per-day buckets after the file is gone. ``/usage`` reads the
-ledger, and only parses files whose ``(mtime, size)`` changed since the last
-sync -- the first call on a large history still parses everything (seconds),
-later ones are a small JSON read. Callers must still run this off-thread (see
-``_show_usage``), because that first parse on the event loop is a freeze.
+ledger in ``ctx.db``, and only parses files whose ``(mtime, size)`` changed
+since the last sync -- the first call on a large history still parses every
+changed log, later ones are one SQL aggregate. Callers must still run this
+off-thread (see ``_show_usage``), because that first parse freezes the loop.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from ctx.core.paths import get_config_dir
-from ctx.core.token_usage import default_ledger_path, sync_usage_ledger
+from ctx.core.token_usage import sync_usage_ledger
 
 #: A year gives the activity grid enough history to show long term patterns.
 HEATMAP_DAYS = 365
@@ -63,16 +63,6 @@ def _sessions_root() -> Path:
     return get_config_dir() / "sessions"
 
 
-def _ledger_path() -> Path:
-    """The ledger sits beside the sessions tree it summarizes.
-
-    Deriving it from ``_sessions_root()`` rather than the config dir directly
-    keeps the two together: anything that redirects the sessions directory
-    (tests, an alternate root) redirects the ledger with it.
-    """
-    return default_ledger_path(_sessions_root())
-
-
 def _add(into: DailyUsage, other: DailyUsage) -> None:
     into.input_tokens += other.input_tokens
     into.output_tokens += other.output_tokens
@@ -94,14 +84,13 @@ def _to_daily(bucket: list[int]) -> DailyUsage:
 def aggregate_usage(days: int = HEATMAP_DAYS, *, today: date | None = None) -> UsageReport:
     """Usage for the last ``days``, the last 30 days, and all time.
 
-    Blocking: ~1s for 30 days and ~3s lifetime on a large history the first
-    time; near-instant afterwards because unchanged logs are not re-parsed.
-    Call from a worker thread.
+    Blocking: the first call on a large history parses every changed log;
+    later ones are one grouped SQL aggregate. Call from a worker thread.
     """
     now = today or date.today()
     root = _sessions_root()
     paths = sorted(root.glob("*/*.jsonl")) if root.exists() else []
-    raw = sync_usage_ledger(paths, root=root, ledger_path=_ledger_path())
+    raw = sync_usage_ledger(paths, root=root)
 
     parsed = {date.fromisoformat(k): _to_daily(v) for k, v in raw.items()}
 

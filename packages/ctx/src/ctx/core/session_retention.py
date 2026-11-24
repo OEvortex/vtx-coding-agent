@@ -1,14 +1,14 @@
-"""Retention for old, unused session logs.
+"""Retention for old, unused sessions.
 
 Sessions accumulate forever otherwise: every conversation in every project is
-one append-only JSONL file, and nothing ever removed one. The rule here is
-deliberately conservative -- a file is only deleted when it is both *old*
+a set of rows in ``ctx.db``, and nothing ever removed one. The rule here is
+deliberately conservative -- a session is only deleted when it is both *old*
 (untouched for ``max_age_days``) and *surplus* (not among the ``keep_recent``
-newest files in its project directory).
+newest in its project folder).
 
 Deleting the transcript does not delete the money. Token usage is folded into
-the durable ledger (:mod:`ctx.core.token_usage`) *before* anything is unlinked,
-so ``/usage`` keeps reporting lifetime totals after the files are gone.
+the durable ledger (:mod:`ctx.core.store`) as the rows go, so ``/usage`` keeps
+reporting lifetime totals after the session is gone.
 """
 
 from __future__ import annotations
@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from ctx.core import store
 from ctx.core.bytes_util import format_bytes
 from ctx.core.paths import get_config_dir
-from ctx.core.token_usage import default_ledger_path, sync_usage_ledger
 
 #: Untouched for this long before a session is eligible, whatever the count.
 DEFAULT_MAX_AGE_DAYS = 90
@@ -73,9 +73,9 @@ def prune_old_sessions(
     protect: Iterable[Path] = (),
     now: datetime | None = None,
 ) -> PruneResult:
-    """Delete session files that are old and not among the newest per directory.
+    """Delete sessions that are old and not among the newest per project folder.
 
-    ``protect`` names files that must survive regardless of age -- the session
+    ``protect`` names sessions that must survive regardless of age -- the one
     this process is currently using. Blocking; call from a worker thread.
     """
     policy = policy or policy_from_config()
@@ -88,69 +88,52 @@ def prune_old_sessions(
 
     moment = now or datetime.now(UTC)
     cutoff = moment - timedelta(days=policy.max_age_days) if policy.max_age_days else None
-    protected = {path.resolve() for path in protect}
+    protected = {str(path) for path in protect}
 
-    candidates: list[Path] = []
+    candidates: list[tuple[Path, int]] = []
     kept = 0
-    buckets: list[Path] = []
+
     for bucket in sorted(root.iterdir()):
         if not bucket.is_dir():
             continue
-        buckets.append(bucket)
-        entries: list[tuple[float, Path]] = []
-        for path in bucket.glob("*.jsonl"):
-            try:
-                entries.append((path.stat().st_mtime, path))
-            except OSError:
-                continue
-        entries.sort(key=lambda item: item[0], reverse=True)
-        for index, (mtime, path) in enumerate(entries):
+        from ctx.agent.session import import_legacy_sessions
+
+        with contextlib.suppress(Exception):
+            import_legacy_sessions(bucket)
+        rows = store.list_sessions(bucket.name)
+        conn = store.read()
+        for index, row in enumerate(rows):  # already newest first
+            path = Path(row["path"])
             if index < policy.keep_recent:
                 kept += 1
                 continue
-            if cutoff is not None and datetime.fromtimestamp(mtime, tz=UTC) >= cutoff:
+            try:
+                modified = datetime.fromisoformat(row["modified"])
+            except (TypeError, ValueError):
                 kept += 1
                 continue
-            if path.resolve() in protected:
+            if cutoff is not None and modified >= cutoff:
                 kept += 1
                 continue
-            candidates.append(path)
+            if str(path) in protected:
+                kept += 1
+                continue
+            size_row = conn.execute(
+                "SELECT COALESCE(SUM(length(payload)), 0) AS n FROM entry WHERE session_path = ?",
+                (str(path),),
+            ).fetchone()
+            candidates.append((path, int(size_row["n"]) if size_row else 0))
 
     result = PruneResult(kept=kept)
-    if not candidates:
-        return result
-
-    # Record usage first. A file deleted before its tokens reached the ledger
-    # would vanish from the lifetime total, which is the one thing pruning is
-    # not allowed to do.
-    all_paths = sorted(root.glob("*/*.jsonl"))
-    try:
-        sync_usage_ledger(
-            all_paths, root=root, ledger_path=default_ledger_path(root), require_persist=True
-        )
-    except Exception as exc:
-        result.errors.append(f"usage ledger: {exc}")
-        return result
-
-    for path in candidates:
+    for path, size in candidates:
         try:
-            size = path.stat().st_size
-            path.unlink()
-        except FileNotFoundError:
-            continue
-        except OSError as exc:
+            # Folds the tokens into the ledger and drops the rows together.
+            store.delete_session(str(path))
+        except Exception as exc:
             result.errors.append(f"{path.name}: {exc}")
             continue
         result.deleted.append(path)
         result.freed_bytes += size
-
-    # A project directory that no longer holds any session is dead weight too.
-    for bucket in buckets:
-        try:
-            if not any(bucket.iterdir()):
-                bucket.rmdir()
-        except OSError:
-            pass
 
     return result
 

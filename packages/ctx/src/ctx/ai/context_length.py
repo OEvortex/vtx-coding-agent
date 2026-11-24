@@ -7,12 +7,12 @@ caches them. Provides lookup by model ID with fuzzy matching fallback.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -20,7 +20,8 @@ from urllib.request import Request, urlopen
 logger = logging.getLogger(__name__)
 
 MODELS_DEV_API_URL = "https://models.dev/api.json"
-CACHE_FILE = "models_dev_limits.json"
+#: Where the catalog used to live, kept only so an old install can be met.
+LEGACY_CACHE_FILE = "models_dev_limits.json"
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 # How often a long-lived process re-attempts a refresh after its cache went
 # stale, so a session older than the TTL still picks up new models/efforts.
@@ -44,6 +45,60 @@ class TokenLimits:
     supports_tools: bool = False
     supports_audio: bool = False
     thinking_level_map: dict[str, str | None] | None = None
+
+
+def _rows_from_models_dev(data: dict[str, Any]) -> list[tuple[Any, ...]]:
+    """Flatten a models.dev document into ``model_limit`` rows."""
+    rows: list[tuple[Any, ...]] = []
+    for provider, provider_data in data.items():
+        if not isinstance(provider_data, dict):
+            continue
+        models = provider_data.get("models")
+        if not isinstance(models, dict):
+            continue
+        for model_id, info in models.items():
+            if not isinstance(info, dict):
+                continue
+            limit = info.get("limit") if isinstance(info.get("limit"), dict) else {}
+            modalities = info.get("modalities") if isinstance(info.get("modalities"), dict) else {}
+            inputs = modalities.get("input") or []
+            outputs = modalities.get("output") or []
+            thinking = info.get("reasoning_options")
+            rows.append(
+                (
+                    str(provider).strip().lower(),
+                    str(model_id),
+                    int(limit.get("context") or 0),
+                    int(limit.get("output") or 0),
+                    1 if info.get("reasoning") else 0,
+                    1 if "image" in inputs else 0,
+                    1 if info.get("tool_call") else 0,
+                    1 if ("audio" in inputs or "audio" in outputs) else 0,
+                    json.dumps(thinking) if thinking else None,
+                )
+            )
+    return rows
+
+
+def _models_from_rows(rows: list[tuple[Any, ...]]) -> dict[str, Any]:
+    """Rebuild the models.dev shape ``_parse_limits`` expects."""
+    data: dict[str, Any] = {}
+    for provider, model_id, context, output, reasoning, vision, tools, audio, thinking in rows:
+        models = data.setdefault(provider, {"models": {}})["models"]
+        info: dict[str, Any] = {
+            "limit": {"context": context, "output": output},
+            "reasoning": bool(reasoning),
+            "tool_call": bool(tools),
+            "modalities": {
+                "input": (["image"] if vision else []) + (["audio"] if audio else []),
+                "output": ["audio"] if audio else [],
+            },
+        }
+        if thinking:
+            with contextlib.suppress(TypeError, ValueError):
+                info["reasoning_options"] = json.loads(thinking)
+        models[model_id] = info
+    return data
 
 
 def _normalize(s: str) -> str:
@@ -79,30 +134,31 @@ class ContextLengthManager:
         self._gram_postings: dict[str, Any] = {}
         self._fuzzy_cache: dict[tuple[str, str | None], TokenLimits] = {}
 
-    def _get_cache_path(self) -> Path:
-        from ctx.core.paths import get_config_dir
-
-        return get_config_dir() / CACHE_FILE
-
     def _load_from_cache(self) -> bool:
-        path = self._get_cache_path()
+        """Rebuild the lookup tables from the catalog rows in ``ctx.db``.
+
+        Only the derivation runs here; the 12 MB document is neither shipped
+        nor parsed again, which is the 200 ms this used to cost on startup.
+        """
+        from ctx.core import store
+
         try:
-            if not path.exists():
-                return False
-            data = json.loads(path.read_text(encoding="utf-8"))
-            self._stale = (path.stat().st_mtime + CACHE_TTL_SECONDS) <= time.time()
+            rows, stamp = store.model_limits()
         except Exception:
             return False
-        self._parse_limits(data)
+        if not rows:
+            return False
+        self._stale = (stamp + CACHE_TTL_SECONDS) <= time.time()
+        self._parse_limits(_models_from_rows(rows))
         return True
 
     def _save_to_cache(self, data: dict[str, Any]) -> None:
+        from ctx.core import store
+
         try:
-            path = self._get_cache_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            store.replace_model_limits(_rows_from_models_dev(data), time.time())
         except Exception as exc:
-            logger.debug("Failed to save models.dev cache: %s", exc)
+            logger.debug("Failed to save models.dev catalog: %s", exc)
 
     def _fetch_and_parse(self) -> None:
         self._last_refresh_attempt = time.time()

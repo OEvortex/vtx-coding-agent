@@ -69,11 +69,22 @@ def _cache_path(provider_slug: str) -> Path:
 
 
 def _read_cache(provider_slug: str, *, check_cooldown: bool = False) -> list[FetchedModel] | None:
-    path = _cache_path(provider_slug)
+    from ctx.core import store
+
+    data: dict | None = None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
+        data = store.get_catalog(f"fetch:{provider_slug}")
+    except Exception:
+        data = None
+    if data is None:
+        # One-time migration from the per-provider JSON files this used to
+        # write; the row is the store now and the file is only a fallback.
+        try:
+            data = json.loads(_cache_path(provider_slug).read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return None
+        with suppress(Exception):
+            store.put_catalog(f"fetch:{provider_slug}", data)
 
     if check_cooldown:
         fetched_at = data.get("fetched_at", 0)
@@ -112,18 +123,18 @@ def _read_cache(provider_slug: str, *, check_cooldown: bool = False) -> list[Fet
 
 
 def _write_cache(provider_slug: str, models: list[FetchedModel], cooldown_minutes: int) -> None:
-    path = _cache_path(provider_slug)
+    from ctx.core import store
+
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "fetched_at": time.time(),
-            "cooldown_minutes": cooldown_minutes,
-            "models": [asdict(m) for m in models],
-        }
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        tmp.replace(path)
-    except OSError as exc:
+        store.put_catalog(
+            f"fetch:{provider_slug}",
+            {
+                "fetched_at": time.time(),
+                "cooldown_minutes": cooldown_minutes,
+                "models": [asdict(m) for m in models],
+            },
+        )
+    except Exception as exc:
         logger.warning("Failed to write model cache for %s: %s", provider_slug, exc)
 
 

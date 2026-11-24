@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 import builtins
 import contextlib
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,31 +23,17 @@ def _clip_row(text: str, limit: int = 88) -> str:
 #: How many tree nodes the picker offers; a long session is a deep list.
 TREE_ROWS = 200
 
-#: Bytes of a session file to read back for its name. The naming entry is
-#: appended, so the tail is enough and a huge transcript is never re-read.
-_NAME_TAIL_BYTES = 8192
-
 
 def session_title(path: Path) -> str:
-    """The session's own name, from the last ``session_info`` entry."""
+    """The session's own name, from its row in the database."""
+    from ctx.core import store
+
     try:
-        with path.open("rb") as handle:
-            handle.seek(0, 2)
-            size = handle.tell()
-            handle.seek(max(0, size - _NAME_TAIL_BYTES))
-            tail = handle.read().decode("utf-8", "replace")
-    except OSError:
+        row = store.session_meta(str(path))
+    except Exception:
         return ""
-    for line in reversed(tail.splitlines()):
-        if '"session_info"' not in line:
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        name = entry.get("name")
-        return name.strip() if isinstance(name, str) else ""
-    return ""
+    name = (row or {}).get("name")
+    return name.strip() if isinstance(name, str) else ""
 
 
 class SessionCommands(CommandSupport):

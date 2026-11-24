@@ -7,7 +7,7 @@ notifications for those runs.
 
 Design choices:
 - ``drain_completed`` returns and marks notified — injected at most once.
-- Records are persisted to disk (~/.ctx/tasks/<task_id>.json).
+- Records are persisted to the shared database (``ctx.db``, ``task``).
 - Completion messages carry BACKGROUND_NOTIFICATION_TAG so the model treats
   them as a system event rather than a user instruction.
 """
@@ -19,16 +19,14 @@ import contextlib
 import contextvars
 import json
 import logging
-import os
-import tempfile
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, Literal
 
 from ctx.agent.async_utils import OperationCancelledError
+from ctx.core import store
 from ctx.core.paths import get_config_dir
 
 log = logging.getLogger("agent.background")
@@ -96,11 +94,7 @@ class BackgroundTaskRecord:
 class BackgroundTaskManager:
     """Owns the lifecycle of every background sub-agent."""
 
-    def __init__(self, *, store_dir: Path | None = None) -> None:
-        self._store_dir: Path = store_dir or (get_config_dir() / "tasks")
-        self._store_dir.mkdir(parents=True, exist_ok=True)
-        with contextlib.suppress(OSError):
-            self._store_dir.chmod(0o700)
+    def __init__(self) -> None:
         self._records: dict[str, BackgroundTaskRecord] = {}
         self._seq = 0
         self._lock = asyncio.Lock()
@@ -226,15 +220,10 @@ class BackgroundTaskManager:
         if self._rehydrated:
             return
         self._rehydrated = True
-        if not self._store_dir.exists():
-            return
-        for path in self._store_dir.glob("bg_*.json"):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            task_id = data.get("task_id") or path.stem
-            if task_id in self._records:
+        _import_legacy_tasks()
+        for data in store.task_payloads():
+            task_id = data.get("task_id")
+            if not task_id or task_id in self._records:
                 continue
             try:
                 record = BackgroundTaskRecord(
@@ -256,7 +245,7 @@ class BackgroundTaskManager:
                     result_future=asyncio.get_event_loop().create_future(),
                 )
             except Exception:
-                log.exception("Could not rehydrate background task record %s", path)
+                log.exception("Could not rehydrate background task record %s", task_id)
                 continue
             if record.status != "running" and record.result_future is not None:
                 record.result_future.set_result(record)
@@ -332,31 +321,9 @@ class BackgroundTaskManager:
         return out
 
     async def _persist_record(self, record: BackgroundTaskRecord) -> None:
-        path = self._store_dir / f"{record.task_id}.json"
-        payload = {
-            "task_id": record.task_id,
-            "description": record.description,
-            "prompt": record.prompt,
-            "subagent_type": record.subagent_type,
-            "model": record.model,
-            "parent_session_id": record.parent_session_id,
-            "created_at": _iso(record.created_at),
-            "started_at": _iso(record.started_at) if record.started_at else None,
-            "completed_at": _iso(record.completed_at) if record.completed_at else None,
-            "status": record.status,
-            "result_text": (record.result_text or "")[:MAX_PERSISTED_RESULT_CHARS],
-            "turns": record.turns,
-            "total_tokens": record.total_tokens,
-            "error": record.error,
-            "notified": record.notified,
-        }
-        try:
-            _atomic_write_json(path, payload)
-        except OSError:
-            log.exception("Failed to persist background task record %s", record.task_id)
+        self._persist_record_sync(record)
 
     def _persist_record_sync(self, record: BackgroundTaskRecord) -> None:
-        path = self._store_dir / f"{record.task_id}.json"
         payload = {
             "task_id": record.task_id,
             "description": record.description,
@@ -375,9 +342,31 @@ class BackgroundTaskManager:
             "notified": record.notified,
         }
         try:
-            _atomic_write_json(path, payload)
-        except OSError:
+            store.put_task(record.task_id, payload)
+        except Exception:
             log.exception("Failed to persist background task record %s", record.task_id)
+
+
+def _import_legacy_tasks() -> None:
+    """Fold the old ``~/.ctx/tasks/*.json`` records in once, then park them."""
+    if store.get_meta("legacy_tasks_imported") == "1":
+        return
+    base = get_config_dir()
+    for root in (base / "tasks", base / "tasks.migrated"):
+        if not root.is_dir():
+            continue
+        for path in root.glob("bg_*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            task_id = str(data.get("task_id") or path.stem.removeprefix("bg_"))
+            data.setdefault("task_id", task_id)
+            with contextlib.suppress(Exception):
+                store.put_task(task_id, data)
+    store.set_meta("legacy_tasks_imported", "1")
 
 
 def _now() -> datetime:
@@ -397,20 +386,6 @@ def _parse_iso(value: Any) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = json.dumps(payload, indent=2, sort_keys=True)
-    fd, tmp_path = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(data)
-        os.replace(tmp_path, path)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path)
-        raise
 
 
 __all__ = [

@@ -30,6 +30,7 @@ not need to know the difference.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -311,31 +312,48 @@ def _cache_path(provider: str) -> Path:
     return get_cache_dir() / f"{safe}.json"
 
 
+def _cache_name(provider: str) -> str:
+    return f"dynamic:{provider}"
+
+
 def _read_cache(provider: str) -> CachedCatalog | None:
-    path = _cache_path(provider)
+    from ctx.core import store
+
+    data: dict[str, Any] | None = None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return None
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.debug("Failed to read model cache for %s: %s", provider, exc)
-        return None
+        data = store.get_catalog(_cache_name(provider))
+    except Exception as exc:
+        logger.debug("Failed to read catalog for %s: %s", provider, exc)
+    if data is None:
+        # One-time migration from the per-provider JSON files this used to
+        # write; the row is the store now and the file is only a fallback.
+        data = _read_legacy_cache(provider)
+        if data is None:
+            return None
+        with contextlib.suppress(Exception):
+            store.put_catalog(_cache_name(provider), data)
     try:
         return CachedCatalog.from_dict(data)
     except (TypeError, ValueError) as exc:
-        logger.debug("Discarding corrupt cache for %s: %s", provider, exc)
+        logger.debug("Discarding corrupt catalog for %s: %s", provider, exc)
+        return None
+
+
+def _read_legacy_cache(provider: str) -> dict[str, Any] | None:
+    path = _cache_path(provider)
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
         return None
 
 
 def _write_cache(catalog: CachedCatalog) -> None:
-    path = _cache_path(catalog.provider)
+    from ctx.core import store
+
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(catalog.to_dict(), indent=2), encoding="utf-8")
-        tmp.replace(path)
-    except OSError as exc:
-        logger.warning("Failed to write model cache for %s: %s", catalog.provider, exc)
+        store.put_catalog(_cache_name(catalog.provider), catalog.to_dict())
+    except Exception as exc:
+        logger.warning("Failed to write catalog for %s: %s", catalog.provider, exc)
 
 
 # =================================================================================================
@@ -511,16 +529,21 @@ async def _fetch_models_dev(client: aiohttp.ClientSession | None = None) -> dict
     if _models_dev_mem is not None and (time.time() - _models_dev_mem_at) < 3600:
         return _models_dev_mem
 
-    path = get_cache_dir() / "models_dev.json"
+    from ctx.core import store
+
     try:
-        if path.exists():
-            stat = path.stat()
+        cached = store.get_catalog("modelsdev")
+        if cached is not None:
+            row = (
+                store.read()
+                .execute("SELECT fetched_at FROM catalog WHERE name = 'modelsdev'")
+                .fetchone()
+            )
             # Cache for 24 hours
-            if (time.time() - stat.st_mtime) < (60 * 60 * 24):
-                data = json.loads(path.read_text(encoding="utf-8"))
-                _models_dev_mem = data
+            if row and (time.time() - float(row["fetched_at"])) < (60 * 60 * 24):
+                _models_dev_mem = cached
                 _models_dev_mem_at = time.time()
-                return data
+                return cached
     except Exception as exc:
         logger.debug("Failed to read models.dev cache: %s", exc)
 
@@ -529,8 +552,8 @@ async def _fetch_models_dev(client: aiohttp.ClientSession | None = None) -> dict
             async with c.get(MODELS_DEV_URL, allow_redirects=False) as response:
                 if 200 <= response.status < 400:
                     data = await response.json(content_type=None)
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                    with contextlib.suppress(Exception):
+                        store.put_catalog("modelsdev", data)
                     _models_dev_mem = data
                     _models_dev_mem_at = time.time()
                     return data
@@ -551,14 +574,6 @@ async def _fetch_models_dev(client: aiohttp.ClientSession | None = None) -> dict
         except Exception as exc:
             logger.debug("Failed to fetch models.dev: %s", exc)
 
-    try:
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            _models_dev_mem = data
-            _models_dev_mem_at = time.time()
-            return data
-    except Exception:
-        pass
     if _models_dev_mem is not None:
         return _models_dev_mem
     return {}

@@ -270,7 +270,7 @@ class TaskTool(BaseTool[TaskParams]):
                 f"description: {record.description}\n"
                 f"subagent_type: {spec.name}\n"
                 f"model: {params.model or spec.model or parent_ctx.model}\n"
-                f"record: {manager._store_dir}/{record.task_id}.json"
+                f"record: {record.task_id} (ctx.db)"
             ),
         )
 
