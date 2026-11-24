@@ -14,3 +14,22 @@ class TestMouseReporting:
 
     def test_sgr_mouse_coordinates(self):
         assert "?1006h" in terminal._MOUSE_ON  # SGR 1006 for x;y coords
+
+    def test_signal_cleanup_restores_terminal(self):
+        called = False
+
+        class DummyTerminal(terminal.Terminal):
+            def __init__(self):
+                pass
+
+            def exit(self):
+                nonlocal called
+                called = True
+
+        dummy = DummyTerminal()
+        terminal._ACTIVE_TERMINALS.add(dummy)
+        try:
+            terminal._cleanup_terminals()
+            assert called is True
+        finally:
+            terminal._ACTIVE_TERMINALS.discard(dummy)

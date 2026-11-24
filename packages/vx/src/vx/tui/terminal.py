@@ -5,8 +5,11 @@ Stdlib only (termios/tty/select/ioctl). No third-party imports.
 
 from __future__ import annotations
 
+import atexit
+import contextlib
 import os
 import select
+import signal
 import sys
 import termios
 import tty
@@ -20,6 +23,37 @@ _MOUSE_OFF = "\x1b[?1006l\x1b[?1000l"
 
 _ALTERNATE_SCREEN_ON = "\x1b[?1049h\x1b[?25l\x1b[?2004h" + _MOUSE_ON
 _ALTERNATE_SCREEN_OFF = _MOUSE_OFF + "\x1b[?2004l\x1b[?25h\x1b[?1049l"
+
+_ACTIVE_TERMINALS: set[Terminal] = set()
+_SIGNALS_HOOKED = False
+_OLD_SIGNAL_HANDLERS: dict[int, Any] = {}
+
+
+def _cleanup_terminals() -> None:
+    for term in list(_ACTIVE_TERMINALS):
+        term.exit()
+
+
+def _handle_signal(sig: int, frame: Any) -> None:
+    _cleanup_terminals()
+    old_handler = _OLD_SIGNAL_HANDLERS.get(sig)
+    if callable(old_handler):
+        old_handler(sig, frame)
+    else:
+        # Re-raise or default terminate with proper signal exit code
+        signal.signal(sig, signal.SIG_DFL)
+        os.kill(os.getpid(), sig)
+
+
+def _hook_signals() -> None:
+    global _SIGNALS_HOOKED
+    if _SIGNALS_HOOKED:
+        return
+    _SIGNALS_HOOKED = True
+    atexit.register(_cleanup_terminals)
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        with contextlib.suppress(ValueError, OSError):
+            _OLD_SIGNAL_HANDLERS[sig] = signal.signal(sig, _handle_signal)
 
 
 class Terminal:
@@ -35,10 +69,12 @@ class Terminal:
     # -- lifecycle ---------------------------------------------------------
 
     def enter(self) -> None:
+        _hook_signals()
         self._saved_attrs = termios.tcgetattr(self._fd)
         tty.setraw(self._fd)
         # Keep IUTF8-ish decoding simple: raw mode still delivers UTF-8 bytes.
         self._running = True
+        _ACTIVE_TERMINALS.add(self)
         os.set_blocking(self._fd, False)
         self.write(_ALTERNATE_SCREEN_ON)
         self.write("\x1b[2J\x1b[H")
@@ -47,6 +83,7 @@ class Terminal:
         if not self._running:
             return
         self._running = False
+        _ACTIVE_TERMINALS.discard(self)
         self.write(_ALTERNATE_SCREEN_OFF)
         if self._saved_attrs is not None:
             termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved_attrs)

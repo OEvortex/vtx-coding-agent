@@ -212,11 +212,12 @@ class Assistant(Block):
 
 
 def thinking_line_budget() -> int | None:
-    """How many reasoning lines ctrl+o reveals, from ctx's ``ui.thinking_lines``.
+    """How many rows a finished thought keeps, from ctx's ``ui.thinking_lines``.
 
-    ctx applies this to its collapsed thinking block, so sharing the setting
-    means one number governs both front ends: ``"none"`` shows everything, a
-    digit caps the lines and leaves a `` ... (N more lines)`` tail.
+    The budget counts *rendered* rows, not source lines: providers stream one
+    paragraph, so a line-based budget kept the whole thought and never folded
+    anything. ``"none"`` shows everything, a digit caps the rows and leaves a
+    ``... (N more rows)`` tail.
     """
     from ctx.core.config import config
 
@@ -231,40 +232,62 @@ def thinking_line_budget() -> int | None:
 
 @dataclass
 class Thinking(Block):
-    """Reasoning, live as it streams and folded once it ends.
+    """Reasoning, drawn as a one-call group: ``● Thinking · 4.0s`` and its rows.
 
-    ctx streams the whole thought and collapses it to ``ui.thinking_lines`` at
-    the end; vx does the same, so a running turn shows what the model is
-    actually thinking while the finished turn costs two lines. A resumed
-    session replays with ``streaming=False``, i.e. already folded.
+    Live, the thought streams under a ``│`` spine at full length. Once it ends
+    it keeps ``ui.thinking_lines`` rendered rows under ``├`` and closes with
+    ``└ ... (N more rows)``, so a finished turn has a predictable height and
+    says how much it is not showing. A resumed session arrives already folded.
     """
 
     text: str = ""
     streaming: bool = True
+    elapsed: float | None = None
     kind: str = "thinking"
+
+    def _rows(self, width: int) -> list[str]:
+        body_width = max(1, width - 4)
+        out: list[str] = []
+        for line in self.text.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            with suppress(Exception):
+                # ctx flattens the markup in folded thinking, so vx shows the
+                # same words it does instead of raw ``**emphasis**``.
+                from ctx.term.formatting import strip_markdown_for_collapsed_text
+
+                line = strip_markdown_for_collapsed_text(line)
+            out.extend(ansi.wrap(line, body_width))
+        return out
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
-        out = [f"{t.dim_style}• Thinking{ansi.RESET}"]
-        if not self.text.strip():
-            return out
-        lines = [line.strip() for line in self.text.strip().split("\n")]
-        with suppress(Exception):
-            from ctx.term.formatting import strip_markdown_for_collapsed_text
+        head = f"{t.dim_style}● Thinking{ansi.RESET}"
+        if self.elapsed is not None and not self.streaming:
+            head += f"{t.dim_style} · {_elapsed_label(self.elapsed)}{ansi.RESET}"
+        body = self._rows(width)
+        if not body:
+            return [head]
 
-            # ctx flattens the markup in folded thinking, so vx shows the same
-            # words it does instead of raw ``**emphasis**``.
-            lines = [strip_markdown_for_collapsed_text(line) for line in lines]
-        budget = None if self.streaming else thinking_line_budget()
-        shown = lines if budget is None else lines[:budget]
-        for line in shown:
-            for chunk in ansi.wrap(line, max(1, width - 4)):
-                out.append(f"    {t.dim_style}{chunk}{ansi.RESET}")
-        hidden = len(lines) - len(shown)
-        if hidden > 0:
-            noun = "line" if hidden == 1 else "lines"
-            tail = f"    {t.dim_style}... ({hidden} more {noun}){ansi.RESET}"
-            out.append(ansi.clip_ellipsis(tail, width))
+        if self.streaming:
+            return [head] + [
+                f"{t.dim_style}│{ansi.RESET} {t.dim_style}{row}{ansi.RESET}" for row in body
+            ]
+
+        budget = thinking_line_budget()
+        shown = body if budget is None else body[:budget]
+        hidden = len(body) - len(shown)
+        lead = "├" if hidden else "└"
+        out = [head]
+        for index, row in enumerate(shown):
+            mark = lead if hidden or index < len(shown) - 1 else "└"
+            out.append(f"{t.dim_style}{mark}{ansi.RESET} {t.dim_style}{row}{ansi.RESET}")
+        if hidden:
+            noun = "row" if hidden == 1 else "rows"
+            out.append(
+                ansi.clip_ellipsis(f"{t.dim_style}└ ... ({hidden} more {noun}){ansi.RESET}", width)
+            )
         return out
 
 
@@ -345,8 +368,7 @@ class ToolRow(Block):
     def duration(self) -> str:
         if self.elapsed is None:
             return ""
-        label = f"{self.elapsed:.1f}s" if self.elapsed < 10 else _duration(self.elapsed)
-        return f" {ansi.dim()}· {label}{ansi.RESET}"
+        return f" {ansi.dim()}· {_elapsed_label(self.elapsed)}{ansi.RESET}"
 
     @property
     def category(self) -> str:
@@ -622,6 +644,11 @@ def _duration(seconds: float) -> str:
         return f"{minutes}m {rest}s" if rest else f"{minutes}m"
     hours, rest = divmod(minutes, 60)
     return f"{hours}h {rest}m" if rest else f"{hours}h"
+
+
+def _elapsed_label(seconds: float) -> str:
+    """``1.4s`` under ten seconds, ``2m 5s`` above it, as tool rows read."""
+    return f"{seconds:.1f}s" if seconds < 10 else _duration(seconds)
 
 
 @dataclass

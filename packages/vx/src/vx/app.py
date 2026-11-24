@@ -145,6 +145,7 @@ class VxApp(CommandsMixin):
         self._events: asyncio.Queue[Any] = asyncio.Queue()
         self._live_assistant: blocks.Assistant | None = None
         self._live_thinking: blocks.Thinking | None = None
+        self._thinking_started: float | None = None
         self._tool_blocks: dict[str, blocks.ToolStatusBlock] = {}
         self._tool_started: dict[str, float] = {}
         self._tool_groups: dict[str, blocks.ToolGroup] = {}
@@ -1315,6 +1316,7 @@ class VxApp(CommandsMixin):
         self._cancel_event = asyncio.Event()
         self._live_assistant = None
         self._live_thinking = None
+        self._thinking_started = None
         agent = self.runtime.prepare_for_run() if self.runtime else None
         if agent is None:
             self._notice("agent not initialized", tone="error")
@@ -1401,6 +1403,7 @@ class VxApp(CommandsMixin):
             self._run_label = "thinking"
             if self._live_thinking is None:
                 self._live_thinking = blocks.Thinking(text="")
+                self._thinking_started = time.monotonic()
                 self.viewport.add(self._live_thinking)
             return
         if isinstance(ev, ThinkingDeltaEvent):
@@ -1410,12 +1413,14 @@ class VxApp(CommandsMixin):
             return
         if isinstance(ev, ThinkingEndEvent):
             # The block stays behind as the transcript's record of the reasoning
-            # and folds to `ui.thinking_lines` now the stream is over, the way
-            # ctx collapses a finished thinking block.
+            # and folds to `ui.thinking_lines` rows now the stream is over, the
+            # way ctx collapses a finished thinking block.
             if self._live_thinking is not None:
                 self._live_thinking.streaming = False
+                self._live_thinking.elapsed = self._thinking_elapsed()
                 self.viewport.touch()
             self._live_thinking = None
+            self._thinking_started = None
             return
         if isinstance(ev, TextStartEvent):
             self._break_group()
@@ -1622,6 +1627,12 @@ class VxApp(CommandsMixin):
             )
         )
 
+    def _thinking_elapsed(self) -> float | None:
+        """Seconds the thought ran, for the folded header. None when unknown."""
+        if self._thinking_started is None:
+            return None
+        return max(0.0, time.monotonic() - self._thinking_started)
+
     def _finish_live(self) -> None:
         # A call still running when the turn ends was interrupted: fx marks it
         # cancelled rather than letting it read as done.
@@ -1631,7 +1642,9 @@ class VxApp(CommandsMixin):
         self._live_assistant = None
         if self._live_thinking is not None:
             self._live_thinking.streaming = False
+            self._live_thinking.elapsed = self._thinking_elapsed()
         self._live_thinking = None
+        self._thinking_started = None
         self._live_group = None
         self._tool_blocks.clear()
         self._tool_started.clear()
