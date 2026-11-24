@@ -133,6 +133,11 @@ class TestHintRow:
         )
         assert "new lines" not in plain(row)
 
+    def test_custom_composer_prompt(self):
+        rows, caret_row, caret_col = footer.composer_rows("hi", 2, 20, 1, prompt="⌕ ")
+        assert rows[0].startswith("⌕ ")
+        assert (caret_row, caret_col) == (0, 4)
+
 
 class TestJumpToLatestPill:
     def test_label_and_fill(self):
@@ -140,20 +145,23 @@ class TestJumpToLatestPill:
         assert "↓ Jump to latest message Ctrl+End" in plain(row)
         assert "\x1b[48;" in row
 
-    def test_width_and_indent(self):
+    def test_is_centred(self):
         from vx.tui import ansi
 
         row = footer.jump_to_latest_pill(60)
-        assert ansi.width(row) == 60
-        assert row.startswith("  \x1b[")
+        visible = ansi.strip_ansi(row)
+        start = visible.index("↓")
+        end = start + len("↓ Jump to latest message Ctrl+End")
+        assert abs(start - (60 - end)) <= 1
+
+    def test_is_clickable(self):
+        from vx.tui import ansi
+
+        row = footer.jump_to_latest_pill(80)
+        assert ansi.link_at(row, ansi.width(row) // 2) == footer.JUMP_TO_LATEST_URI
 
     def test_narrow_terminal_clips(self):
         from vx.tui import ansi
 
         row = footer.jump_to_latest_pill(20)
         assert ansi.width(row) == 20
-
-    def test_custom_composer_prompt(self):
-        rows, caret_row, caret_col = footer.composer_rows("hi", 2, 20, 1, prompt="⌕ ")
-        assert rows[0].startswith("⌕ ")
-        assert (caret_row, caret_col) == (0, 4)

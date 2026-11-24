@@ -540,7 +540,10 @@ class VxApp(_CommandBase):
                 x, y = int(parts[2]), int(parts[3])
                 if 1 <= y <= len(self._frame):
                     uri = ansi.link_at(self._frame[y - 1], x - 1)
-                    if uri:
+                    if uri == footer.JUMP_TO_LATEST_URI:
+                        self.viewport.bottom()
+                        self._draw()
+                    elif uri:
                         self._open_link(uri)
 
     @staticmethod

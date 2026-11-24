@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from vx.app import VxApp
-from vx.tui import ansi, blocks
+from vx.tui import ansi, blocks, footer
 
 
 @dataclass
@@ -91,6 +91,22 @@ def test_ctrl_end_jumps_to_latest_and_clears_unseen():
     app._handle_key("ctrl+end")
     assert app.viewport.scroll == 0
     assert app.viewport.follow
+    assert app.viewport.unseen == 0
+
+
+def test_clicking_pill_jumps_to_latest():
+    app = make_app()
+    for i in range(40):
+        app.viewport.add(StubBlock(text=f"row{i}"))
+    app.viewport.visible(80, 24)
+    app.viewport.scroll_by(5, 80, 24)
+    app.viewport.add(StubBlock(text="late"))
+    app.viewport.visible(80, 24)
+    assert app.viewport.unseen > 0
+
+    app._frame = [footer.jump_to_latest_pill(80)]
+    app._mouse_key("mouse:left:40:1")
+    assert app.viewport.scroll == 0
     assert app.viewport.unseen == 0
 
 
