@@ -6,7 +6,7 @@ same split is applied here, so the brand line never leaves the screen.
 
 from __future__ import annotations
 
-from vx.tui import blocks
+from vx.tui import ansi, blocks
 
 
 class Viewport:
@@ -178,8 +178,8 @@ class Viewport:
     def set_search(self, query: str, width: int) -> None:
         self.search = query
         self.search_index = 0
+        self.lines(width)  # a fresh query must see the current rows
         self._recompute_matches()
-        self.touch()
 
     def search_next(self, delta: int, width: int, height: int) -> tuple[int, int, int] | None:
         """Cycle matches (``n``/``N``) and bring the current one into view."""

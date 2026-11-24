@@ -156,7 +156,6 @@ def link_at(text: str, col: int) -> str | None:
     if col < 0:
         return None
     uri: str | None = None
-    start = 0
     cell = 0
     i = 0
     while i < len(text):
@@ -166,9 +165,7 @@ def link_at(text: str, col: int) -> str | None:
                 raw = match.group(0)
                 body = raw[2:-1] if raw.endswith("\x07") else raw[2:-2]
                 if body.startswith("8;;"):
-                    target = body[3:]
-                    uri = target or None
-                    start = cell
+                    uri = body[3:] or None
                 i = match.end()
                 continue
             match = _ANSI_RE.match(text, i)
@@ -176,7 +173,7 @@ def link_at(text: str, col: int) -> str | None:
                 i = match.end()
                 continue
         size = char_width(text[i])
-        if uri is not None and start <= col < start + size:
+        if uri is not None and cell <= col < cell + size:
             return uri
         cell += size
         i += 1
