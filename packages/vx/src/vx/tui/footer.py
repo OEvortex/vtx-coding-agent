@@ -28,12 +28,19 @@ def rule(cols: int) -> str:
     return f"{t.divider_style}{'─' * max(1, cols)}{ansi.RESET}"
 
 
+#: OSC 8 target for the jump pill. VxApp handles this itself; it is not a URL.
+JUMP_TO_LATEST_URI = "vx:latest"
+
+
 def jump_to_latest_pill(cols: int) -> str:
-    """The filled tooltip shown while the reader is behind the live tail."""
+    """The centred, clickable tooltip shown while the reader is behind the tail."""
     t = _theme.current()
-    label = ansi.clip_ellipsis("↓ Jump to latest message Ctrl+End", max(1, cols - 6))
-    pill = f"  {t.tooltip_style} {label} {ansi.RESET}"
-    return ansi.pad(pill, cols)
+    label = ansi.clip_ellipsis("↓ Jump to latest message Ctrl+End", max(1, cols - 2))
+    text = f" {label} "
+    left = max(0, (cols - ansi.width(text)) // 2)
+    right = max(0, cols - ansi.width(text) - left)
+    pill = ansi.osc8(JUMP_TO_LATEST_URI, f"{t.tooltip_style}{text}{ansi.RESET}")
+    return " " * left + pill + " " * right
 
 
 # -- composer ----------------------------------------------------------------
