@@ -224,6 +224,19 @@ class VxApp(CommandsMixin):
         self._draw(force=True)
         self._boot_task = loop.create_task(self._boot())
 
+    def _prune_old_sessions(self) -> None:
+        """Housekeeping in the background: done sessions cost nothing to keep.
+
+        The session this process is using is protected by path, so a run that
+        starts on an old transcript cannot have its own file pulled out from
+        under it.
+        """
+        from ctx.core.session_retention import prune_in_background
+
+        session = getattr(self.runtime, "session", None)
+        path = getattr(session, "session_file", None)
+        prune_in_background(protect=[path] if path is not None else [])
+
     async def _boot(self) -> None:
         try:
             await self._init_runtime()
@@ -232,6 +245,8 @@ class VxApp(CommandsMixin):
         except Exception as exc:
             self._notice(f"startup failed: {exc}", tone="error")
         finally:
+            with suppress(Exception):
+                self._prune_old_sessions()
             self._ready.set()
             self.viewport.touch()
             if self._pending_queue and not self._is_running:

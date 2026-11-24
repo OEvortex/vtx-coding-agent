@@ -50,7 +50,7 @@ class PruneResult:
         detail = format_bytes(self.freed_bytes)
         if policy.max_age_days:
             detail += f", older than {policy.max_age_days} days"
-        return f"Removed {files} unused session file{plural} ({detail}); token usage is kept."
+        return f"Removed {files} unused session{plural} ({detail}); token usage is kept."
 
 
 def policy_from_config() -> RetentionPolicy:
