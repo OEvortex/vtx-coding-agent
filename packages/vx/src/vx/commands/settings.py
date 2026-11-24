@@ -321,11 +321,6 @@ class SettingsCommands(CommandSupport):
             ),
             footer.MenuItem(label="history", detail=prefs.history_label(), value="history"),
             footer.MenuItem(
-                label="mouse-capture",
-                detail="wheel" if prefs.mouse_capture() else "select",
-                value="mouse-capture",
-            ),
-            footer.MenuItem(
                 label="notifications",
                 detail="on" if config.notifications.enabled else "off",
                 value="notifications",
@@ -378,9 +373,6 @@ class SettingsCommands(CommandSupport):
         elif value == "history":
             self._select_history_rows()
             return
-        elif value == "mouse-capture":
-            self._handle_mouse_command("")
-            return
         elif value == "git-context":
             enabled = not config.llm.system_prompt.git_context
             set_git_context(enabled)
@@ -402,20 +394,6 @@ class SettingsCommands(CommandSupport):
             )
             return
         self._show_settings_picker(selected_value=value)
-
-    def _handle_mouse_command(self, args: str = "") -> None:
-        """Wheel scrolling and drag-select are exclusive; this picks one."""
-        want = args.strip().lower()
-        if want not in ("", "on", "off"):
-            self._warn("usage: /mouse [on|off]")
-            return
-        enabled = (not prefs.mouse_capture()) if not want else want == "on"
-        prefs.set_mouse_capture(enabled)
-        self.term.set_mouse(enabled)
-        if enabled:
-            self._ok("wheel scrolls the transcript · shift+drag still selects", topic="mouse")
-        else:
-            self._ok("drag selects text · pgup/pgdn scroll", topic="mouse")
 
     def _select_history_rows(self) -> None:
         """The scrollback limit, offered the way tmux's ``history-limit`` is."""

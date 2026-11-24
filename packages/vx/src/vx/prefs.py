@@ -18,10 +18,6 @@ from typing import Any
 #: Rows of transcript to keep. 0 disables pruning entirely.
 DEFAULT_HISTORY_ROWS = 0
 
-#: Whether the app captures the pointer for wheel scrolling. Off keeps the
-#: terminal's drag-select, which is what a copy out of the transcript needs.
-DEFAULT_MOUSE_CAPTURE = False
-
 #: What ``/settings`` offers, smallest first. 0 reads as "unlimited".
 HISTORY_CHOICES: tuple[int, ...] = (0, 20_000, 10_000, 5_000, 2_000, 500)
 
@@ -73,18 +69,6 @@ def history_rows() -> int:
 def set_history_rows(rows: int) -> None:
     data = _read()
     data["history_rows"] = max(0, int(rows))
-    _write(data)
-
-
-def mouse_capture() -> bool:
-    """Whether the wheel scrolls the transcript, capturing the pointer."""
-    value = _read().get("mouse_capture", DEFAULT_MOUSE_CAPTURE)
-    return bool(value) if isinstance(value, bool) else DEFAULT_MOUSE_CAPTURE
-
-
-def set_mouse_capture(enabled: bool) -> None:
-    data = _read()
-    data["mouse_capture"] = bool(enabled)
     _write(data)
 
 
