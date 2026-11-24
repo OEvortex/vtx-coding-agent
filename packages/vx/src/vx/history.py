@@ -1,9 +1,13 @@
-"""Prompt history that outlives a session.
+"""Prompt history, shared with ctx's own TUI.
 
-fx keeps what you typed between runs, so the up arrow at a fresh prompt
-recalls yesterday's prompts. vx kept its history in memory, which meant a new
-window started blank. This stores it under the ctx config dir, one JSON string
-per line, and keeps the file small by capping it.
+vx began with a private file, which meant the prompts typed in ctx and the
+prompts typed in vx were two separate memories of the same person. ctx already
+keeps ``prompt-history.jsonl`` under its config dir, one JSON string per line,
+so vx reads and writes that file: an up arrow recalls what you asked in either
+front end, in the order you asked it.
+
+The cap matches ctx's for the same reason -- if vx wrote more entries than ctx
+keeps, ctx would trim the file on its next append and the two would fight.
 """
 
 from __future__ import annotations
@@ -11,23 +15,25 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-#: How many prompts to keep, newest last.
-MAX_ENTRIES = 500
+#: How many prompts to keep, newest last. ctx's own limit, so the file agrees.
+MAX_ENTRIES = 50
 
 
 def history_path() -> Path:
-    """Where vx keeps its prompt history."""
+    """The history file ctx's TUI also uses."""
     try:
         from ctx.core.paths import get_config_dir
 
-        return get_config_dir() / "vx-prompt-history.jsonl"
-    except Exception:  # pragma: no cover - config dir is always there in practice
-        return Path.home() / ".config" / "ctx" / "vx-prompt-history.jsonl"
+        return get_config_dir() / "prompt-history.jsonl"
+    except Exception:  # pragma: no cover - the config dir is there in practice
+        return Path.home() / ".config" / "ctx" / "prompt-history.jsonl"
 
 
-def load(limit: int = MAX_ENTRIES) -> list[str]:
-    """The prompts kept from earlier runs, oldest first."""
-    path = history_path()
+def _legacy_path() -> Path:
+    return history_path().with_name("vx-prompt-history.jsonl")
+
+
+def _read(path: Path) -> list[str]:
     if not path.exists():
         return []
     entries: list[str] = []
@@ -44,6 +50,38 @@ def load(limit: int = MAX_ENTRIES) -> list[str]:
                 entries.append(value)
     except OSError:
         return []
+    return entries
+
+
+def _migrate_once() -> None:
+    """Fold in the file vx wrote before it shared ctx's.
+
+    Without this, the prompts from earlier vx sessions would fall off the
+    history the first time the shared file wins.
+    """
+    legacy = _legacy_path()
+    if not legacy.exists():
+        return
+    old = _read(legacy)
+    if old:
+        # The legacy file is the newer one -- it was written last by vx -- so
+        # its prompts go after ctx's and survive the cap.
+        current = _read(history_path())
+        merged = [*current, *(entry for entry in old if entry not in current)]
+        save(merged)
+    try:
+        legacy.rename(legacy.with_suffix(".migrated"))
+    except OSError:
+        return
+
+
+def load(limit: int = MAX_ENTRIES) -> list[str]:
+    """The prompts kept from earlier runs, oldest first."""
+    _migrate_once()
+    entries = _read(history_path())
+    if len(entries) > limit:
+        entries = entries[-limit:]
+        save(entries, limit)
     return entries[-limit:]
 
 
@@ -70,6 +108,17 @@ def append(entry: str, existing: list[str], limit: int = MAX_ENTRIES) -> list[st
     # an older prompt asked again is worth keeping where it was asked.
     if existing and existing[-1] == text:
         return existing
-    entries = [*existing, text][-limit:]
-    save(entries, limit)
+    entries = [*existing, text]
+    if len(entries) > limit:
+        entries = entries[-limit:]
+        save(entries, limit)
+        return entries
+    # Under the cap the file only grows, which is what ctx appends too.
+    path = history_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(text, ensure_ascii=False) + "\n")
+    except OSError:
+        return existing
     return entries
