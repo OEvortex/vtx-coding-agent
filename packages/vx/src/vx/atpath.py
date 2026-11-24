@@ -98,8 +98,13 @@ def expand_paths(text: str, cwd: str) -> str:
                 while end < n and not text[end].isspace():
                     end += 1
             rel = text[start:end]
-            # strip leading ./
-            clean = rel.strip().lstrip("./") if not quoted else rel
+            # strip a leading ./ but keep an absolute path's root
+            if not quoted:
+                clean = rel.strip()
+                if clean.startswith("./"):
+                    clean = clean[2:]
+            else:
+                clean = rel
             full = os.path.join(cwd, clean) if clean and not os.path.isabs(clean) else rel
             # rebuild token
             if quoted:
