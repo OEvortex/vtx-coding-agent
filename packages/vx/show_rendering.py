@@ -1,6 +1,7 @@
 """Visualize how vx renders each block type in compact vs expanded view."""
 
-from vx.tui import blocks, ansi
+from ctx.core.config import config
+from vx.tui import ansi, blocks
 
 WIDTH = 80
 SEPARATOR = f"{ansi.dim()}{'─' * WIDTH}{ansi.RESET}"
@@ -13,19 +14,43 @@ def show(label: str, block: blocks.Block):
         print(row)
 
 
-# --- 1. Thinking block (streaming) ---
-show(
-    "1. THINKING BLOCK (streaming — always same format)",
-    blocks.Thinking(
-        text="I need to find the relevant files for this task. Let me search the codebase for the bash tool implementation and understand how output is rendered."
-    ),
+def show_thinking(label: str, text: str, *, lines: str, streaming: bool):
+    """Render one thinking block under a given ``ui.thinking_lines`` budget."""
+    previous = config.ui.thinking_lines
+    config.ui.thinking_lines = lines
+    state = "streaming, every line" if streaming else f"finished, {lines} lines"
+    show(f"{label}  ({state})", blocks.Thinking(text=text, streaming=streaming))
+    config.ui.thinking_lines = previous
+
+
+# --- 1. Thinking block ---
+THINKING = (
+    "**Reading the transcript** — I should check how ctx folds reasoning.\n"
+    "\n"
+    "ctx streams the whole thought and collapses it when the stream ends, so vx "
+    "shows every line while it arrives.\n"
+    "Then the render splits, wraps and dims each line.\n"
+    "A fifth line exists only to make the overflow count visible."
+)
+
+show_thinking("1a. THINKING — STREAMING (every line, live)", THINKING, lines="2", streaming=True)
+show_thinking("1b. THINKING — FINISHED, ui.thinking_lines=2", THINKING, lines="2", streaming=False)
+show_thinking("1c. THINKING — FINISHED, ui.thinking_lines=5", THINKING, lines="5", streaming=False)
+show_thinking(
+    "1d. THINKING — FINISHED, ui.thinking_lines=none", THINKING, lines="none", streaming=False
 )
 
 # --- 2. Assistant text block (streaming) ---
 show(
     "2. ASSISTANT TEXT BLOCK (streaming markdown reply)",
     blocks.Assistant(
-        text="Here's how the bash tool works:\n\nThe `bash` tool executes shell commands and captures their output. It supports both stdout and stderr streams, and can optionally send the output to the LLM for analysis.\n\n```python\nresult = await run_command('ls -la')\n```\n\nThe output is then displayed in the transcript with proper formatting."
+        text=(
+            "Here's how the bash tool works:\n\n"
+            "The `bash` tool executes shell commands and captures their output. It "
+            "supports both stdout and stderr streams.\n\n"
+            "```python\nresult = await run_command('ls -la')\n```\n\n"
+            "The output is then displayed in the transcript with proper formatting."
+        )
     ),
 )
 
@@ -156,6 +181,11 @@ print("    - Tool output:  4-space indent (no │), ALL lines shown")
 print("    - Diffs:        ALL lines shown (no limit)")
 print("    - Code panels:  up to 200 lines")
 print()
-print(f"  {ansi.BOLD}Thinking & Assistant text:{ansi.RESET}")
-print("    - Same format in both views (not affected by ctrl+o)")
+print(f"  {ansi.BOLD}Thinking:{ansi.RESET}")
+print("    - Streaming:    every line, live, no ctrl+o needed")
+print("    - Finished:     `ui.thinking_lines` lines, then '... (N more lines)'")
+print("    - /settings → thinking lines: 1-5 caps the folded lines, none shows all")
+print()
+print(f"  {ansi.BOLD}Assistant text:{ansi.RESET}")
+print("    - Same markdown format in both views (not affected by ctrl+o)")
 print()

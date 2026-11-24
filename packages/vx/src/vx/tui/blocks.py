@@ -212,26 +212,60 @@ class Assistant(Block):
         return _gutter(rendered, width)
 
 
+def thinking_line_budget() -> int | None:
+    """How many reasoning lines ctrl+o reveals, from ctx's ``ui.thinking_lines``.
+
+    ctx applies this to its collapsed thinking block, so sharing the setting
+    means one number governs both front ends: ``"none"`` shows everything, a
+    digit caps the lines and leaves a `` ... (N more lines)`` tail.
+    """
+    from ctx.core.config import config
+
+    setting = str(config.ui.thinking_lines)
+    if setting == "none":
+        return None
+    try:
+        return max(1, int(setting))
+    except ValueError:
+        return 2
+
+
 @dataclass
 class Thinking(Block):
-    """fx's one-row ``• Thinking`` status; ctrl+o reveals the reasoning.
+    """Reasoning, live as it streams and folded once it ends.
 
-    fx never prints the thinking text in the compact transcript, and vx keeps
-    that. The full-transcript view shows it, the way ctx does, so a resumed
-    session still carries what the model actually thought.
+    ctx streams the whole thought and collapses it to ``ui.thinking_lines`` at
+    the end; vx does the same, so a running turn shows what the model is
+    actually thinking while the finished turn costs two lines. A resumed
+    session replays with ``streaming=False``, i.e. already folded.
     """
 
     text: str = ""
+    streaming: bool = True
     kind: str = "thinking"
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
         out = [f"{t.dim_style}• Thinking{ansi.RESET}"]
-        if not _expanded or not self.text.strip():
+        if not self.text.strip():
             return out
-        for line in self.text.strip().split("\n"):
-            for chunk in ansi.wrap(line.rstrip(), max(1, width - 4)):
+        lines = [line.strip() for line in self.text.strip().split("\n")]
+        with suppress(Exception):
+            from ctx.term.formatting import strip_markdown_for_collapsed_text
+
+            # ctx flattens the markup in folded thinking, so vx shows the same
+            # words it does instead of raw ``**emphasis**``.
+            lines = [strip_markdown_for_collapsed_text(line) for line in lines]
+        budget = None if self.streaming else thinking_line_budget()
+        shown = lines if budget is None else lines[:budget]
+        for line in shown:
+            for chunk in ansi.wrap(line, max(1, width - 4)):
                 out.append(f"    {t.dim_style}{chunk}{ansi.RESET}")
+        hidden = len(lines) - len(shown)
+        if hidden > 0:
+            noun = "line" if hidden == 1 else "lines"
+            tail = f"    {t.dim_style}... ({hidden} more {noun}){ansi.RESET}"
+            out.append(ansi.clip_ellipsis(tail, width))
         return out
 
 

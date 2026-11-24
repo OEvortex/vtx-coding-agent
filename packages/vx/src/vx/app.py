@@ -361,7 +361,8 @@ class VxApp(CommandsMixin):
                 # resumed session still carries the reasoning, not just the
                 # answer (ctrl+o prints it).
                 if thinking.strip():
-                    self.viewport.add(blocks.Thinking(text=thinking))
+                    # Replayed reasoning is already finished, so it arrives folded.
+                    self.viewport.add(blocks.Thinking(text=thinking, streaming=False))
                     group = None
                 if text.strip():
                     self.viewport.add(blocks.Assistant(text=text))
@@ -1393,9 +1394,12 @@ class VxApp(CommandsMixin):
                 self.viewport.touch()
             return
         if isinstance(ev, ThinkingEndEvent):
-            # The row stays behind as the transcript's record of the reasoning,
-            # the way ctx keeps a thinking block; ctrl+o prints it. Dropping it
-            # left a finished turn with no trace of what was thought.
+            # The block stays behind as the transcript's record of the reasoning
+            # and folds to `ui.thinking_lines` now the stream is over, the way
+            # ctx collapses a finished thinking block.
+            if self._live_thinking is not None:
+                self._live_thinking.streaming = False
+                self.viewport.touch()
             self._live_thinking = None
             return
         if isinstance(ev, TextStartEvent):
@@ -1622,6 +1626,8 @@ class VxApp(CommandsMixin):
             if block.status == "running":
                 block.status = "cancelled"
         self._live_assistant = None
+        if self._live_thinking is not None:
+            self._live_thinking.streaming = False
         self._live_thinking = None
         self._live_group = None
         self._tool_blocks.clear()
