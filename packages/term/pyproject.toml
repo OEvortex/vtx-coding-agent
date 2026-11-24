@@ -4,14 +4,19 @@ version = "0.1.0"
 description = "Terminal UI building blocks for ctx: Textual widgets, block renderers, formatting, and input primitives. Ships the ctx.term package; the coding-agent app lives in ctx-code."
 requires-python = ">=3.12"
 keywords = ["tui", "terminal", "textual", "ctx"]
+license = "Apache-2.0"
+authors = [
+    { name = "OEvortex" },
+]
+readme = "README.md"
+homepage = "https://github.com/OEvortex/ctx-coding-agent"
+repository = "https://github.com/OEvortex/ctx-coding-agent"
 dependencies = [
-    "ctx",
+    "ctx-sdk>=0.1.0",
     "textual>=8.0.0",
     "rich>=13.0.0",
 ]
 
-[tool.uv.sources]
-ctx = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

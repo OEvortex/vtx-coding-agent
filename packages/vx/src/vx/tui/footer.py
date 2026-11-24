@@ -66,19 +66,46 @@ def cursor_visual(text: str, cursor: int, cols: int) -> tuple[int, int]:
     return len(rows) - 1, 2 + ansi.width(text[last_start:cursor])
 
 
+def composer_window(text: str, cursor: int, cols: int, max_rows: int) -> tuple[int, int, int]:
+    """``(total rows, caret row, first row that keeps the caret visible)``.
+
+    The composer can hold more lines than it shows, so paging inside it needs
+    the same numbers the drawing code uses.
+    """
+    rows = wrap_input(text, cols)
+    caret_row, _ = cursor_visual(text, cursor, cols)
+    visible = max(1, max_rows)
+    total = len(rows)
+    if total <= visible:
+        return total, caret_row, 0
+    return total, caret_row, max(0, min(caret_row - visible + 1, total - visible))
+
+
 def composer_rows(
-    text: str, cursor: int, cols: int, max_rows: int, *, secret: bool = False
+    text: str,
+    cursor: int,
+    cols: int,
+    max_rows: int,
+    *,
+    secret: bool = False,
+    scroll: int | None = None,
 ) -> tuple[list[str], int, int]:
-    """Styled composer rows plus the caret's (row, column) inside them."""
+    """Styled composer rows plus the caret's (row, column) inside them.
+
+    ``scroll`` pins the first visible row; ``None`` follows the caret. When the
+    pinned window does not contain the caret its row comes back negative, which
+    the caller reads as "hide the cursor".
+    """
     if secret:
         # A pasted API key must not echo; the caret still sits after the mask.
         text = "•" * len(text)
-    rows = wrap_input(text, cols)
-    cur_row, cur_col = cursor_visual(text, cursor, cols)
     visible = max(1, max_rows)
-    first = 0
-    if len(rows) > visible:
-        first = max(0, min(cur_row - visible + 1, len(rows) - visible))
+    total, cur_row, follow = composer_window(text, cursor, cols, max_rows)
+    _, cur_col = cursor_visual(text, cursor, cols)
+    first = follow
+    if scroll is not None and total > visible:
+        first = max(0, min(scroll, total - visible))
+    rows = wrap_input(text, cols)
     window = rows[first : first + visible]
     out: list[str] = []
     for index, (start, end) in enumerate(window):

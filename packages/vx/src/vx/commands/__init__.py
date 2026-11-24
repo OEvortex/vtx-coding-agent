@@ -80,7 +80,7 @@ KEY_BINDINGS: list[tuple[str, str]] = [
     ("alt+y", "cycle the kill ring"),
     ("shift+enter", "new line without sending"),
     ("ctrl+o", "expand tool output"),
-    ("pgup / pgdn", "scroll the transcript"),
+    ("pgup / pgdn", "scroll the transcript, or the composer when it fills"),
     ("wheel", "scroll the transcript"),
     ("esc", "interrupt the turn, or clear the composer"),
     ("ctrl+c twice", "exit"),

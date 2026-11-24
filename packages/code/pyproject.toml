@@ -13,20 +13,24 @@ exclude = [
 artifacts = []
 
 [project]
-name = "ctx-code"
+name = "ctx-agent"
 version = "0.1.0"
 description = "Coding agent product built on the ctx harness: Textual TUI, headless CLI, session management, and the ctx console script."
 requires-python = ">=3.12"
 keywords = ["coding-agent", "tui", "cli", "llm"]
+license = "Apache-2.0"
+authors = [
+    { name = "OEvortex" },
+]
+readme = "README.md"
+homepage = "https://github.com/OEvortex/ctx-coding-agent"
+repository = "https://github.com/OEvortex/ctx-coding-agent"
 dependencies = [
-    "ctx",
-    "ctx-term",
+    "ctx-sdk>=0.1.0",
+    "ctx-term>=0.1.0",
     "textual>=8.0.0",
 ]
 
 [project.scripts]
 ctx = "ctx.code.cli:main"
 
-[tool.uv.sources]
-ctx = { workspace = true }
-ctx-term = { workspace = true }

@@ -162,6 +162,9 @@ class VxApp(CommandsMixin):
         self._turn_usage = {"in": 0, "out": 0}
         #: Rows the last frame gave the transcript, which bounds scrolling.
         self._body_rows = 0
+        #: (first visible row, cursor it was paged for). The cursor travelling
+        #: away means the window follows it again, so typing never pages you.
+        self._input_scroll: tuple[int, int] | None = None
         self._last_ctrl_c = 0.0
         self._usage = {"in": 0, "out": 0}
         self._context_total: int | None = None
@@ -476,11 +479,14 @@ class VxApp(CommandsMixin):
             blocks.set_expanded(not blocks.expanded())
             self.viewport.touch()
             return
-        if key == "pageup":
-            self.viewport.page(1, *self._size())
+        if key in ("pageup", "ctrl+up"):
+            # A composer taller than its window takes the page keys first.
+            if not self._page_input(-1):
+                self.viewport.page(1, *self._size())
             return
-        if key == "pagedown":
-            self.viewport.page(-1, *self._size())
+        if key in ("pagedown", "ctrl+down"):
+            if not self._page_input(1):
+                self.viewport.page(-1, *self._size())
             return
         if key == "end":
             self.viewport.scroll = 0
@@ -562,6 +568,11 @@ class VxApp(CommandsMixin):
             self._open_history_search()
             return
         if key == "up":
+            # Inside a multi-line prompt the arrows move between its lines; the
+            # prompt history sits one row above the first line and one below the
+            # last, so a half-written message is never replaced mid-way.
+            if self._move_input_line(-1):
+                return
             if self._input:
                 self._history_move(-1)
             elif self._is_running and self._pending_queue:
@@ -570,6 +581,8 @@ class VxApp(CommandsMixin):
                 self.viewport.page(1, *self._size())
             return
         if key == "down":
+            if self._move_input_line(1):
+                return
             if self._history_idx is not None:
                 self._history_move(1)
             else:
@@ -619,6 +632,55 @@ class VxApp(CommandsMixin):
             self._undo_push()
             self._input = self._input[: self._cursor] + self._input[self._cursor + 1 :]
         self._refresh_slash_menu()
+
+    def _input_window(self) -> tuple[int, int, int] | None:
+        """``(first row, visible rows, total rows)`` when the composer overflows."""
+        _, cols = self.term.size()
+        total, _, follow = footer.composer_window(self._input, self._cursor, cols, MAX_INPUT_LINES)
+        if total <= MAX_INPUT_LINES:
+            return None
+        pinned = self._input_scroll
+        first = pinned[0] if pinned is not None and pinned[1] == self._cursor else follow
+        first = max(0, min(first, total - MAX_INPUT_LINES))
+        return first, MAX_INPUT_LINES, total
+
+    def _move_input_line(self, delta: int) -> bool:
+        """Move the caret a visual line inside the composer.
+
+        Returns ``False`` at the first or last line, where the arrow keys go
+        back to meaning history and transcript scrolling.
+        """
+        if "\n" not in self._input:
+            return False
+        _, cols = self.term.size()
+        rows = footer.wrap_input(self._input, cols)
+        row, col = footer.cursor_visual(self._input, self._cursor, cols)
+        target = row + delta
+        if target < 0 or target >= len(rows):
+            return False
+        start, end = rows[target]
+        self._cursor = start + min(col, end - start)
+        self._input_scroll = None
+        return True
+
+    def _page_input(self, direction: int) -> bool:
+        """Page the composer when it holds more lines than it shows.
+
+        Returns ``False`` when it fits, so the page keys fall through to the
+        transcript and keep their usual meaning.
+        """
+        rows, cols = self.term.size()
+        del rows
+        total, _, follow = footer.composer_window(self._input, self._cursor, cols, MAX_INPUT_LINES)
+        visible = max(1, min(MAX_INPUT_LINES, total))
+        if total <= visible:
+            return False
+        pinned = self._input_scroll
+        first = pinned[0] if pinned is not None and pinned[1] == self._cursor else follow
+        step = max(1, visible - 1)
+        last = total - visible
+        self._input_scroll = (max(0, min(last, first + direction * step)), self._cursor)
+        return True
 
     def _recall_queued(self) -> None:
         """up on an empty composer takes back the last queued prompt.
@@ -1136,6 +1198,7 @@ class VxApp(CommandsMixin):
         if not text:
             return
         self._history = prompt_history.append(text, self._history)
+        self._input_scroll = None
         self._history_idx = None
         if text.startswith("/"):
             # fx never echoes a command as a prompt; it acts on it.
@@ -1781,8 +1844,10 @@ class VxApp(CommandsMixin):
 
         prompt = self._prompt
         input_rows = max(1, min(MAX_INPUT_LINES, len(footer.wrap_input(self._input, cols))))
+        pinned = self._input_scroll
+        scroll = pinned[0] if pinned is not None and pinned[1] == self._cursor else None
         composer, caret_row, caret_col = footer.composer_rows(
-            self._input, self._cursor, cols, input_rows, secret=prompt is not None
+            self._input, self._cursor, cols, input_rows, secret=prompt is not None, scroll=scroll
         )
         rows: list[str] = []
         if prompt is not None:
@@ -1795,7 +1860,13 @@ class VxApp(CommandsMixin):
             rows.append(footer.attachment_row(self._attachments, cols))
             composer_at += 1
         rows.extend(composer)
-        caret: tuple[int, int] | None = (composer_at + caret_row, caret_col)
+        # A paged window can leave the caret outside it; drawing it there would
+        # put the cursor on the hint row or past the terminal.
+        caret: tuple[int, int] | None = (
+            None
+            if caret_row < 0 or caret_row >= len(composer)
+            else (composer_at + caret_row, caret_col)
+        )
 
         if prompt is not None:
             rows.append(footer.rule(cols))
@@ -1875,6 +1946,12 @@ class VxApp(CommandsMixin):
         if self.viewport.scroll and not self._is_running:
             behind = self.viewport.scroll
             right = f"↑ {behind} line{'s' if behind != 1 else ''} · pgdn or wheel down"
+        window = self._input_window()
+        if window is not None:
+            first, visible, total = window
+            right = f"composer {first + 1}-{first + visible} of {total} \u00b7 pgup/pgdn"
+            if self._is_running:
+                right = f"{right} \u00b7 esc to interrupt"
         workspace = os.path.abspath(self.cwd)
         # Use vx's own permission mode for the hint row
         perm_mode = self._permission_runtime.mode
