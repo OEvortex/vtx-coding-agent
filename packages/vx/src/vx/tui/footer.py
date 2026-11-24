@@ -28,6 +28,14 @@ def rule(cols: int) -> str:
     return f"{t.divider_style}{'─' * max(1, cols)}{ansi.RESET}"
 
 
+def jump_to_latest_pill(cols: int) -> str:
+    """The filled tooltip shown while the reader is behind the live tail."""
+    t = _theme.current()
+    label = ansi.clip_ellipsis("↓ Jump to latest message Ctrl+End", max(1, cols - 6))
+    pill = f"  {t.tooltip_style} {label} {ansi.RESET}"
+    return ansi.pad(pill, cols)
+
+
 # -- composer ----------------------------------------------------------------
 
 
@@ -153,16 +161,9 @@ def hint_row(
     workspace: str,
     branch: str | None = None,
     right: str = "",
-    unseen: int = 0,
 ) -> str:
     t = _theme.current()
     segments: list[str] = []
-    if unseen > 0:
-        note = f"{t.selected_completion_style}↓ {unseen} new lines · end{ansi.RESET}"
-        if right:
-            segments.append(note)
-        else:
-            right = note
     if permission:
         segments.append(permission_label(permission))
     if model:

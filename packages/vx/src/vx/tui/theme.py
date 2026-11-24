@@ -46,6 +46,7 @@ class Theme:
     diff_removed_marker_style: str
     approval_button_active_style: str
     approval_button_inactive_style: str
+    tooltip_style: str
     selected_completion_style: str
     permission_auto_style: str
     user_card_marker_style: str
@@ -80,6 +81,7 @@ FX_DARK = Theme(
     diff_removed_marker_style="\x1b[38;5;167m",
     approval_button_active_style="\x1b[48;5;255m\x1b[38;5;235m\x1b[1m",
     approval_button_inactive_style="\x1b[48;5;239m\x1b[38;5;255m",
+    tooltip_style="\x1b[48;5;24m\x1b[38;5;255m",
     selected_completion_style="\x1b[1;38;5;255m",
     permission_auto_style="\x1b[38;5;252m",
     user_card_marker_style="\x1b[38;5;255m",
@@ -122,6 +124,7 @@ FX_LIGHT = Theme(
     diff_removed_marker_style="\x1b[38;5;1m",
     approval_button_active_style="\x1b[48;5;236m\x1b[38;5;255m\x1b[1m",
     approval_button_inactive_style="\x1b[48;5;251m\x1b[38;5;237m",
+    tooltip_style="\x1b[48;5;194m\x1b[38;5;235m",
     selected_completion_style="\x1b[1;38;5;235m",
     permission_auto_style="\x1b[38;5;238m",
     user_card_marker_style="\x1b[38;5;235m",
@@ -179,6 +182,14 @@ def _luminance(hex_color: str) -> float:
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
+def _filled(color: str) -> str:
+    """A background fill with readable text, on either side of the brightness line."""
+    background = _bg(color)
+    if not background:
+        return ""
+    return background + (_fg("#101010") if _luminance(color) > 0.5 else _fg("#ffffff"))
+
+
 def from_ctx_theme(theme_id: str) -> Theme | None:
     """Build an fx theme from one of ctx's themes, or ``None`` if unknown.
 
@@ -234,6 +245,7 @@ def from_ctx_theme(theme_id: str) -> Theme | None:
         diff_removed_marker_style=_fg(role("diff_removed", "#ff1744")),
         approval_button_active_style=_bg(fg) + _fg(role("bg", "#000000")) + "\x1b[1m",
         approval_button_inactive_style=_bg(border) + _fg(fg),
+        tooltip_style=_filled(accent),
         selected_completion_style=_fg(role("selected", accent), bold=True),
         permission_auto_style=_fg(success),
         user_card_marker_style=_fg(accent),

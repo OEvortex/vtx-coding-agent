@@ -637,7 +637,7 @@ class VxApp(_CommandBase):
             if not self._page_input(step):
                 self.viewport.page(-step, *self._size())
             return
-        if key == "end":
+        if key in ("end", "ctrl+end", "shift+end"):
             self.viewport.bottom()
             return
         if key == "enter":
@@ -780,6 +780,10 @@ class VxApp(_CommandBase):
         if key in ("ctrl+n", "ctrl+p"):
             step = 1 if key == "ctrl+n" else -1
             self.viewport.search_next(step, *self._size())
+            self._draw()
+            return
+        if key in ("ctrl+end", "shift+end"):
+            self.viewport.bottom()
             self._draw()
             return
         if key in ("pageup", "pagedown", "ctrl+up", "ctrl+down"):
@@ -2242,8 +2246,7 @@ class VxApp(_CommandBase):
             right = self._activity
         elif self._last_ctrl_c and time.monotonic() - self._last_ctrl_c < 2.0:
             right = "press ctrl+c again to exit"
-        unseen = self.viewport.unseen
-        if self.viewport.scroll and not self._is_running and not unseen:
+        if self.viewport.scroll and not self._is_running and not self.viewport.unseen:
             behind = self.viewport.scroll
             right = f"↑ {behind} line{'s' if behind != 1 else ''} · pgdn or wheel down"
         window = self._input_window()
@@ -2265,7 +2268,6 @@ class VxApp(_CommandBase):
             workspace=workspace,
             branch=_git_branch(self.cwd),
             right=right,
-            unseen=unseen,
         )
 
     def _draw(self, *, force: bool = False) -> None:
@@ -2276,6 +2278,10 @@ class VxApp(_CommandBase):
         self._body_rows = area
         transcript = self.viewport.visible(cols, area)
         transcript = self.viewport.highlight(transcript)
+        if self.viewport.unseen:
+            # The gap above the footer is the natural place for the tooltip:
+            # it points at the tail without covering the reader's transcript.
+            transcript[-1] = footer.jump_to_latest_pill(cols)
         frame = transcript + foot
         frame = frame[:rows] if len(frame) > rows else frame + [""] * (rows - len(frame))
         self._frame = frame

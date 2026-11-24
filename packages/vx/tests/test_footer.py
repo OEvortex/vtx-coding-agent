@@ -121,7 +121,7 @@ class TestHintRow:
 
         assert ansi.width(row) == 60
 
-    def test_unseen_new_lines_hint(self):
+    def test_hint_has_no_unseen_text(self):
         row = footer.hint_row(
             cols=100,
             permission="auto",
@@ -130,24 +130,28 @@ class TestHintRow:
             context_used=0,
             context_total=None,
             workspace="",
-            unseen=12,
         )
-        assert "↓ 12 new lines · end" in plain(row)
+        assert "new lines" not in plain(row)
 
-    def test_unseen_hint_does_not_break_width(self):
-        row = footer.hint_row(
-            cols=60,
-            permission="auto",
-            model="m",
-            effort="",
-            context_used=0,
-            context_total=None,
-            workspace="/w",
-            unseen=7,
-        )
+
+class TestJumpToLatestPill:
+    def test_label_and_fill(self):
+        row = footer.jump_to_latest_pill(80)
+        assert "↓ Jump to latest message Ctrl+End" in plain(row)
+        assert "\x1b[48;" in row
+
+    def test_width_and_indent(self):
         from vx.tui import ansi
 
+        row = footer.jump_to_latest_pill(60)
         assert ansi.width(row) == 60
+        assert row.startswith("  \x1b[")
+
+    def test_narrow_terminal_clips(self):
+        from vx.tui import ansi
+
+        row = footer.jump_to_latest_pill(20)
+        assert ansi.width(row) == 20
 
     def test_custom_composer_prompt(self):
         rows, caret_row, caret_col = footer.composer_rows("hi", 2, 20, 1, prompt="⌕ ")

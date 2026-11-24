@@ -71,6 +71,7 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
 KEY_BINDINGS: list[tuple[str, str]] = [
     ("ctrl+f", "search the transcript"),
     ("n / N", "next / previous search match"),
+    ("ctrl+end", "jump to the latest message"),
     ("ctrl+r", "search prompt history"),
     ("ctrl+v", "attach a clipboard image, or paste text"),
     ("ctrl+x", "drop the attached images"),

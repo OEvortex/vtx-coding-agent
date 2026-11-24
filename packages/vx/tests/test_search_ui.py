@@ -19,11 +19,14 @@ class StubBlock(blocks.Block):
 class StubTerminal:
     _fd = -1
 
+    def __init__(self) -> None:
+        self.writes: list[str] = []
+
     def size(self) -> tuple[int, int]:
         return 24, 80
 
     def write(self, data: str) -> None:
-        pass
+        self.writes.append(data)
 
     def enter(self) -> None:
         pass
@@ -73,6 +76,37 @@ def test_navigation_keys_still_scroll_while_searching():
     app._handle_key("ctrl+f")
     app._handle_key("pageup")
     assert app.viewport.scroll > 0
+
+
+def test_ctrl_end_jumps_to_latest_and_clears_unseen():
+    app = make_app()
+    for i in range(40):
+        app.viewport.add(StubBlock(text=f"row{i}"))
+    app.viewport.visible(80, 24)
+    app.viewport.scroll_by(5, 80, 24)
+    app.viewport.add(StubBlock(text="late"))
+    app.viewport.visible(80, 24)
+    assert app.viewport.unseen > 0
+
+    app._handle_key("ctrl+end")
+    assert app.viewport.scroll == 0
+    assert app.viewport.follow
+    assert app.viewport.unseen == 0
+
+
+def test_pill_is_painted_when_behind_the_tail():
+    app = VxApp(cwd="/tmp", terminal=StubTerminal())
+    app._ready = asyncio.Event()
+    app._ready.set()
+    for i in range(40):
+        app.viewport.add(StubBlock(text=f"row{i}"))
+    app.viewport.visible(80, 24)
+    app.viewport.scroll_by(5, 80, 24)
+    app.viewport.add(StubBlock(text="late"))
+    app.viewport.visible(80, 24)
+
+    app._draw()
+    assert "Jump to latest message Ctrl+End" in "".join(app.term.writes)
 
 
 def test_click_opens_link_under_pointer():
