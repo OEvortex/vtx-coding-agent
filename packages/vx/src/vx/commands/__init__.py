@@ -50,7 +50,7 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
     ("/compact", "summarise the context window", "Session"),
     ("/undo", "rewind the last turn and its files", "Session"),
     ("/redo", "step forward again", "Session"),
-    ("/session", "switch sessions; `all` lists every directory, `info` shows this one", "Session"),
+    ("/session", "switch to another session", "Session"),
     ("/usage", "token usage for this session and overall", "Session"),
     ("/export", "write the session to an HTML file", "Session"),
     ("/copy", "copy the last answer to the clipboard", "Session"),

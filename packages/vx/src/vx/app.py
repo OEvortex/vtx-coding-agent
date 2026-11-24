@@ -63,7 +63,7 @@ from ctx.term.fuzzy import fuzzy_filter
 import vx.tools
 from vx import attachments as attach
 from vx import history as prompt_history
-from vx import prefs
+from vx import prefs, titles
 from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
 from vx.commands import SLASH_COMMANDS, CommandsMixin
@@ -176,6 +176,9 @@ class VxApp(CommandsMixin):
 
         self._exiting = False
         self._ticker_task: asyncio.Task | None = None
+        #: Session ids already asked for a title, and the call that is running.
+        self._titled: set[str] = set()
+        self._title_task: asyncio.Task | None = None
         self._boot_task: asyncio.Task | None = None
         self._ready = asyncio.Event()
 
@@ -195,6 +198,8 @@ class VxApp(CommandsMixin):
         finally:
             if self._ticker_task:
                 self._ticker_task.cancel()
+            if self._title_task is not None:
+                self._title_task.cancel()
             if self._boot_task is not None:
                 self._boot_task.cancel()
             if self.runtime is not None:
@@ -1547,7 +1552,39 @@ class VxApp(CommandsMixin):
         if isinstance(ev, AgentEndEvent):
             self._finish_live()
             self._add_turn_summary()
+            self._schedule_title()
             return
+
+    def _schedule_title(self) -> None:
+        """Name the session once, after a turn, without making anyone wait.
+
+        The call goes out in the background and the title is applied when it
+        arrives; an unanswered title simply leaves the first prompt in place,
+        which is what the picker showed before.
+        """
+        rt = self.runtime
+        session = rt.session if rt is not None else None
+        provider = rt.provider if rt is not None else None
+        if session is None or provider is None:
+            return
+        if not titles.needs_title(session, self._titled):
+            return
+        self._titled.add(session.id)
+        self._title_task = asyncio.create_task(self._title_session(provider, session))
+
+    async def _title_session(self, provider: Any, session: Any) -> None:
+        title = await titles.title_session(provider, session)
+        if not title:
+            return
+        # A title that lands mid-turn would append to a session the turn is
+        # writing to, so it waits for the transcript to go quiet.
+        while self._is_running:
+            await asyncio.sleep(0.5)
+        if self.runtime is None or self.runtime.session is not session:
+            return
+        with suppress(Exception):
+            self.runtime.set_session_name(title)
+            self.viewport.touch()
 
     def _place_detail(self, tool_call_id: str, detail: blocks.Block) -> None:
         """Put a call's detail under its group, or after the call when alone."""
