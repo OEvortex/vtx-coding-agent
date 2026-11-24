@@ -250,14 +250,19 @@ def _wrap_paragraph(paragraph: str, limit: int) -> list[str]:
             cur = list(active)
             cur_w = 0
             if cur_w + word_w > limit:
-                # A single unbreakable word wider than the row.
-                for ch in word:
-                    cw = char_width(ch)
+                # A single unbreakable word wider than the row.  The word may
+                # already hold escape sequences, which have no width and must
+                # not be measured as characters.
+                for piece in word:
+                    if piece.startswith("\x1b"):
+                        cur.append(piece)
+                        continue
+                    cw = char_width(piece)
                     if cw and cur_w + cw > limit:
                         rows.append("".join(cur))
                         cur = list(active)
                         cur_w = 0
-                    cur.append(ch)
+                    cur.append(piece)
                     cur_w += cw
                 word.clear()
                 word_w = 0

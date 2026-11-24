@@ -21,3 +21,7 @@ class TestRegister:
     def test_base_prompt_content(self):
         assert "You are vx" in prompts.VX_BASE
         assert "apply_patch" in prompts.VX_BASE
+
+    def test_laziness_is_scoped_to_implementation(self):
+        assert "Laziness governs what you write, never how you read" in prompts.VX_BASE
+        assert "Laziness is for the diff, not the investigation." in prompts.VX_BASE

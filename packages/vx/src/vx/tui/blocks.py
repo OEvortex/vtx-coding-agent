@@ -278,10 +278,10 @@ class Thinking(Block):
         budget = thinking_line_budget()
         shown = body if budget is None else body[:budget]
         hidden = len(body) - len(shown)
-        lead = "├" if hidden else "└"
         out = [head]
         for index, row in enumerate(shown):
-            mark = lead if hidden or index < len(shown) - 1 else "└"
+            # ``├`` while another row follows (or the tail will), ``└`` last.
+            mark = "├" if hidden or index < len(shown) - 1 else "└"
             out.append(f"{t.dim_style}{mark}{ansi.RESET} {t.dim_style}{row}{ansi.RESET}")
         if hidden:
             noun = "row" if hidden == 1 else "rows"
@@ -665,7 +665,10 @@ class ShellRun(Block):
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
         prefix = "!!" if self.send_to_llm else "!"
-        out = [f"{t.dim_style}{prefix}{ansi.RESET} {ansi.BOLD}{self.command}{ansi.RESET}"]
+        # The echo is one row by contract: a command longer than the terminal
+        # must elide, never wrap the frame under the composer.
+        echo = ansi.clip_ellipsis(self.command, max(1, width - ansi.width(prefix) - 1))
+        out = [f"{t.dim_style}{prefix}{ansi.RESET} {ansi.BOLD}{echo}{ansi.RESET}"]
         if not self.done:
             return out
         lines = [ln for ln in self.output.replace("\r", "").split("\n") if ln.strip()]
@@ -683,7 +686,8 @@ class ShellRun(Block):
             hidden = len(lines) - len(shown)
             if hidden > 0:
                 noun = "line" if hidden == 1 else "lines"
-                out.append(f"{t.dim_style}│ … {hidden} {noun} more (ctrl+o to view){ansi.RESET}")
+                fold = f"│ … {hidden} {noun} more (ctrl+o to view)"
+                out.append(f"{t.dim_style}{ansi.clip(fold, width)}{ansi.RESET}")
         if not self.success:
             suffix = "    exit failure" if _expanded else "│ exit failure"
             out.append(f"{t.dim_style}{suffix}{ansi.RESET}")
@@ -1072,7 +1076,8 @@ class DiffOutput(Block):
         t = _theme.current()
         out: list[str] = []
         if self.path:
-            out.append(f"  {t.dim_style}± {_display_path(self.path)}{ansi.RESET}")
+            path = f"  {t.dim_style}± {_display_path(self.path)}{ansi.RESET}"
+            out.append(ansi.clip_ellipsis(path, width))
         # A diff with nothing removed (a new file) would leave half the split
         # empty, so it keeps the full width and the one-column ruler.
         split = width >= DIFF_SPLIT_MIN_WIDTH and any(op == "-" for op, _ln, _x in self.lines)
@@ -1085,8 +1090,10 @@ class DiffOutput(Block):
     def _unified(self, lines: list[tuple[str, str, str]], width: int, t: Any) -> list[str]:
         """One column: ``  206 │- text``, wrapped under the code's own indent."""
         gw = _number_width(lines)
-        lead = 2 + gw + 3
-        cw = max(width - lead, 8)
+        # Two spaces, the number, " │" and the sign+space: the gutter is six
+        # cells wider than the number, and a row one cell past `width` would
+        # wrap the terminal and shift every row below it.
+        cw = max(width - (gw + 6), 8)
         out: list[str] = []
         for op, ln, text in lines:
             if op == "~":
@@ -1172,12 +1179,22 @@ def _split_half(line: tuple[str, str, str] | None, gw: int, cw: int, t: Any) -> 
 
 
 def _code_chunks(text: str, cw: int) -> list[str]:
-    """Wrap code at ``cw``, hanging continuation rows under its own indent."""
+    """Wrap code at ``cw``, hanging continuation rows under its own indent.
+
+    Every row it returns fits in ``cw`` cells: an indent that ate the whole
+    column, or a floor on the wrap width, would push the row past the terminal
+    and wrap the frame itself.
+    """
     body = text.lstrip(" ")
-    indent = min(len(text) - len(body), max(cw // 2, 0))
+    indent = min(len(text) - len(body), max(cw // 2, 0), max(cw - 1, 0))
     if not body:
         return [""]
-    chunks = ansi.wrap(body, max(cw - indent, 8))
+    budget = max(cw - indent, 1)
+    chunks: list[str] = []
+    for chunk in ansi.wrap(body, budget):
+        # wrap() never splits a word that starts the row, so a long identifier
+        # can still come back wider than the column; a diff row may not be.
+        chunks.extend(ansi.hard_wrap(chunk, budget) if ansi.width(chunk) > budget else [chunk])
     hang = " " * indent
     return [hang + chunks[0], *(hang + chunk for chunk in chunks[1:])]
 

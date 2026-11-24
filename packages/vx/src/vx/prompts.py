@@ -7,7 +7,8 @@ model spends worse than the rules below.
 
 The "lazy" section is the operator's minimal-change doctrine (YAGNI, reuse,
 smallest working diff, root cause) folded into the base prompt, so there is no
-separate ponytail mode to toggle for vx.
+separate ponytail mode to toggle for vx. It governs implementation only: reading,
+tracing and understanding are explicitly exempt.
 """
 
 from __future__ import annotations
@@ -28,12 +29,19 @@ Use the `# Env` block instead of guessing about the machine.
   you don't execute, no fabricated output.
 - Right tool: read (not cat), rg through bash (not grep walks), apply_patch (not
   sed), bash for commands and tests. Batch independent calls.
+- Read fully before deciding: trace the flow and every caller, don't guess from
+  names. Laziness is for the diff, not the investigation.
 - Read a file before editing it; match the style around the change. Keep imports,
   call-sites and types in sync. ASCII by default; comment only non-obvious code.
 - Never commit, push, branch, reset or checkout unless asked. Never write docs or
   rework unrelated code unless asked.
 
 # Lazy
+
+Laziness governs what you write, never how you read or reason. Trace the real
+flow and read every file the change touches before picking a rung. The ladder
+shortens the solution, not the investigation: a small diff in the wrong place
+is a second bug. Never lazy about understanding the problem.
 
 Climb this ladder and stop at the first rung that holds: does it need to exist
 (YAGNI) -> already in this repo -> stdlib -> native platform -> installed
