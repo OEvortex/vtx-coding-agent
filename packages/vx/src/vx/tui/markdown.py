@@ -18,6 +18,10 @@ _QUOTE_RE = re.compile(r"^ {0,3}>[ ]?(.*)$")
 _BULLET_RE = re.compile(r"^([ \t]*)([-*+•])[ \t]+(.*)$")
 _ORDERED_RE = re.compile(r"^([ \t]*)(\d{1,3})[.)][ \t]+(.*)$")
 _TABLE_SEP_RE = re.compile(r"^[ \t]*\|?[ \t]*:?-{2,}:?[ \t]*(\|[ \t]*:?-{2,}:?[ \t]*)*\|?[ \t]*$")
+_TASK_RE = re.compile(r"^\[(?P<mark>[ xX])\][ \t]+(?P<body>.*)$")
+_BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_HR_HTML_RE = re.compile(r"^<hr\s*/?>$", re.IGNORECASE)
+_BR_LINE = "\x00br\x00"
 
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 _BOLD_RE = re.compile(r"\*\*(?!\s)(.+?)(?<!\s)\*\*")
@@ -26,42 +30,106 @@ _ITALIC_RE = re.compile(r"(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?![*\w])")
 _UNDER_ITALIC_RE = re.compile(r"(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])")
 _STRIKE_RE = re.compile(r"~~(?!\s)(.+?)(?<!\s)~~")
 _LINK_RE = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
-_AUTOLINK_RE = re.compile(r"(?<![\w(\[])(https?://[^\s<>()\[\]]+)")
+
+
+def _link_destination(text: str, start: int) -> tuple[str, int] | None:
+    """Parse a markdown link destination that may be angle-bracketed."""
+    n = len(text)
+    if start >= n:
+        return None
+    if text[start] == "<":
+        end = text.find(">", start + 1)
+        if end == -1:
+            return None
+        return text[start + 1 : end], end + 1
+    j = start
+    depth = 0
+    while j < n:
+        ch = text[j]
+        if ch in " \t\n":
+            break
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        j += 1
+    if j == start:
+        return None
+    return text[start:j], j
+
+
+def _link_label(text: str, start: int) -> int | None:
+    """Return index of matching ']' for a label starting at ``start``."""
+    depth = 0
+    i = start
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
 
 
 def _inline(text: str) -> str:
-    """Inline markdown to ANSI, fx styles (white code, bold, italic, links).
-
-    A single left-to-right scan, so generated escapes are never re-matched by
-    a later rule (which is what makes naive repeated substitution mangle SGR).
-    """
+    """Inline markdown to ANSI (code, links/images, emphasis, autolinks)."""
     t = _theme.current()
     out: list[str] = []
     i = 0
     n = len(text)
     while i < n:
         ch = text[i]
-        if ch == "\\" and i + 1 < n:
+        if ch == "\\" and i + 1 < n and text[i + 1] in "\\`*_{}[]()#+-.!|>~":
             out.append(text[i + 1])
             i += 2
             continue
         if ch == "`":
-            end = text.find("`", i + 1)
-            if end > i + 1:
-                out.append(f"{t.inline_code_open}{text[i + 1 : end]}{t.inline_code_close}")
-                i = end + 1
+            # Multi-backtick code span.
+            tick_end = i
+            while tick_end < n and text[tick_end] == "`":
+                tick_end += 1
+            ticks = text[i:tick_end]
+            end = text.find(ticks, tick_end)
+            if end != -1:
+                code = text[tick_end:end]
+                if len(code) >= 2 and code[0] == " " and code[-1] == " ":
+                    code = code[1:-1]
+                out.append(f"{t.inline_code_open}{code}{t.inline_code_close}")
+                i = end + len(ticks)
                 continue
+        if ch == "!" and i + 1 < n and text[i + 1] == "[":
+            close = _link_label(text, i + 1)
+            if close is not None and close + 1 < n and text[close + 1] == "(":
+                dest = _link_destination(text, close + 2)
+                if dest is not None:
+                    url, after = dest
+                    if after < n and text[after] == ")":
+                        alt = text[i + 2 : close].strip() or "image"
+                        out.append(f"{t.dim_style}image: {alt}{ansi.RESET}")
+                        i = after + 1
+                        continue
         if ch == "[":
-            close = text.find("]", i + 1)
-            if close != -1 and text.startswith("(", close + 1):
-                end = text.find(")", close + 2)
-                if end != -1:
-                    label = text[i + 1 : close]
-                    out.append(
-                        f"{t.link_style}{ansi.UNDERLINE}{label}{ansi.UNDERLINE_OFF}\x1b[39m"
-                    )
-                    i = end + 1
-                    continue
+            close = _link_label(text, i)
+            if close is not None and close + 1 < n and text[close + 1] == "(":
+                dest = _link_destination(text, close + 2)
+                if dest is not None:
+                    _, after = dest
+                    if after < n and text[after] == ")":
+                        label = _inline(text[i + 1 : close])
+                        out.append(
+                            f"{t.link_style}{ansi.UNDERLINE}{label}{ansi.UNDERLINE_OFF}\x1b[39m"
+                        )
+                        i = after + 1
+                        continue
         if text.startswith("**", i) or text.startswith("__", i):
             mark = text[i : i + 2]
             end = text.find(mark, i + 2)
@@ -72,28 +140,52 @@ def _inline(text: str) -> str:
         if text.startswith("~~", i):
             end = text.find("~~", i + 2)
             if end > i + 2:
-                out.append(f"\x1b[9m{text[i + 2 : end]}\x1b[29m")
+                out.append(f"\x1b[9m{_inline(text[i + 2 : end])}\x1b[29m")
                 i = end + 2
                 continue
-        if (
-            (ch == "*" or ch == "_")
-            and i + 1 < n
-            and text[i + 1] != ch
-            and (i == 0 or not text[i - 1].isalnum() or ch == "*")
-        ):
-            end = text.find(ch, i + 1)
-            if end > i + 1 and not text[i + 1].isspace():
-                out.append(f"{ansi.ITALIC}{_inline(text[i + 1 : end])}{ansi.ITALIC_OFF}")
-                i = end + 1
+        if (ch == "*" or ch == "_") and i + 1 < n and text[i + 1] not in " \t":
+            # Basic delimiter rule: avoid mid-word _ for snake_case.
+            if ch == "_" and i > 0 and (text[i - 1].isalnum() or text[i - 1] == "_"):
+                out.append(ch)
+                i += 1
                 continue
-        if ch in "h" and text.startswith("http", i) and (i == 0 or not text[i - 1].isalnum()):
+            end = i + 1
+            found = -1
+            while end < n:
+                if text[end] == ch and not text[end - 1].isspace():
+                    if (
+                        ch == "_"
+                        and end + 1 < n
+                        and (text[end + 1].isalnum() or text[end + 1] == "_")
+                    ):
+                        end += 1
+                        continue
+                    found = end
+                    break
+                end += 1
+            if found > i + 1:
+                out.append(f"{ansi.ITALIC}{_inline(text[i + 1 : found])}{ansi.ITALIC_OFF}")
+                i = found + 1
+                continue
+        if (text.startswith("http://", i) or text.startswith("https://", i)) and (
+            i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "_[(")
+        ):
             j = i
-            while j < n and text[j] not in " \t\n<>()[]":
+            while j < n and text[j] not in " \t\n<>\"'":
                 j += 1
-            url = text[i:j].rstrip(".,;:")
+            url = text[i:j]
+            trail = ""
+            while url and url[-1] in ".,;:!?)]}":
+                # Keep balanced parens in URLs like Wikipedia links.
+                if url[-1] == ")" and url.count("(") >= url.count(")"):
+                    break
+                trail = url[-1] + trail
+                url = url[:-1]
             if len(url) > 8:
                 out.append(f"{t.link_style}{ansi.UNDERLINE}{url}{ansi.UNDERLINE_OFF}\x1b[39m")
-                i += len(url)
+                if trail:
+                    out.append(trail)
+                i += len(url) + len(trail)
                 continue
         out.append(ch)
         i += 1
@@ -104,10 +196,20 @@ def _row(text: str, cols: int) -> str:
     return ansi.clip_ellipsis(text, cols) if ansi.width(text) > cols else text
 
 
+def _task_prefix(body: str) -> tuple[str | None, str]:
+    m = _TASK_RE.match(body)
+    if not m:
+        return None, body
+    mark = "x" if m.group("mark").lower() == "x" else " "
+    return f"[{mark}]", m.group("body")
+
+
 def _bullet(indent: int, body: str, cols: int) -> list[str]:
     lead = " " * indent
-    marker = f"{ansi.dim()}• {ansi.DIM_OFF}"
-    prefix_w = indent + 2
+    task, body = _task_prefix(body)
+    marker_text = f"{task} " if task else "• "
+    marker = f"{ansi.dim()}{marker_text}{ansi.RESET}"
+    prefix_w = indent + ansi.width(marker_text)
     rows = ansi.wrap(body, max(1, cols - prefix_w))
     out = []
     for i, r in enumerate(rows):
@@ -123,7 +225,7 @@ def _ordered(indent: int, number: str, body: str, cols: int) -> list[str]:
     marker_text = f"{number})"
     field = max(4, len(marker_text))
     pad = " " * (field - len(marker_text))
-    marker = f"{pad}{ansi.dim()}{marker_text}{ansi.DIM_OFF}"
+    marker = f"{pad}{ansi.dim()}{marker_text}{ansi.RESET}"
     prefix_w = indent + field + 1
     rows = ansi.wrap(body, max(1, cols - prefix_w))
     out = []
@@ -135,20 +237,14 @@ def _ordered(indent: int, number: str, body: str, cols: int) -> list[str]:
     return out
 
 
-def _quote_row(body: str, cols: int) -> list[str]:
-    """fx draws a quote as a dim rail with the quoted row beside it."""
-    rail = f"{ansi.dim()}│ {ansi.DIM_OFF}"
+def _quote_block(lines_in: list[str], cols: int) -> list[str]:
+    """Render quoted content with a dim rail, supporting nested markdown."""
+    rail = f"{ansi.dim()}│ {ansi.RESET}"
     inner_width = max(1, cols - 2)
-    bm = _BULLET_RE.match(body)
-    if bm:
-        inner = _bullet(0, _inline(bm.group(3)), max(1, inner_width - 2))
-    else:
-        om = _ORDERED_RE.match(body)
-        if om:
-            inner = _ordered(0, om.group(2), _inline(om.group(3)), max(1, inner_width - 3))
-        else:
-            inner = ansi.wrap(_inline(body), inner_width)
-    return [f"{rail}{r}" for r in inner]
+    inner = render("\n".join(lines_in), inner_width)
+    if not inner:
+        return [rail.rstrip()]
+    return [f"{rail}{r}" if r else rail.rstrip() for r in inner]
 
 
 #: fx draws a horizontal rule narrower than the transcript
@@ -158,19 +254,41 @@ RULE_WIDTH = 60
 
 def _rule(cols: int) -> str:
     width = min(max(1, cols), RULE_WIDTH)
-    return f"{ansi.dim()}{'─' * width}{ansi.DIM_OFF}"
+    return f"{ansi.dim()}{'─' * width}{ansi.RESET}"
 
 
-def _render_table(rows: list[list[str]], cols: int) -> list[str]:
-    """fx's table: cells split by ``│`` with rules, and no outer box.
+def _table_alignments(sep_line: str, columns: int) -> list[str]:
+    cells = [c.strip() for c in _split_row(sep_line)]
+    aligns: list[str] = []
+    for i in range(columns):
+        cell = cells[i] if i < len(cells) else ""
+        left = cell.startswith(":")
+        right = cell.endswith(":")
+        if left and right:
+            aligns.append("center")
+        elif right:
+            aligns.append("right")
+        else:
+            aligns.append("left")
+    return aligns
 
-    fx draws a table as ``name │ count`` over ``─────┼──────``, so a table
-    reads like a list rather than a box (ansi.table_column_sep and
-    ansi.table_junction).
-    """
+
+def _align_cell(text: str, width: int, align: str) -> str:
+    pad = max(0, width - ansi.width(text))
+    if align == "right":
+        return " " * pad + text
+    if align == "center":
+        left = pad // 2
+        return " " * left + text + " " * (pad - left)
+    return text + " " * pad
+
+
+def _render_table(rows: list[list[str]], sep_line: str | None, cols: int) -> list[str]:
+    """Render a markdown table with alignment and width-aware shrinking."""
     if not rows:
         return []
     columns = max(len(r) for r in rows)
+    aligns = _table_alignments(sep_line or "", columns)
     cells = [[_inline(c.strip()) for c in r] + [""] * (columns - len(r)) for r in rows]
     widths = [0] * columns
     for r in cells:
@@ -179,7 +297,6 @@ def _render_table(rows: list[list[str]], cols: int) -> list[str]:
     sep = f" {ansi.dim()}│{ansi.RESET} "
     total = sum(widths) + ansi.width(sep) * (columns - 1)
     if total > cols:
-        # Shrink the widest column until the table fits.
         while total > cols and max(widths) > 3:
             widest = widths.index(max(widths))
             widths[widest] -= 1
@@ -188,13 +305,14 @@ def _render_table(rows: list[list[str]], cols: int) -> list[str]:
     for index, r in enumerate(cells):
         parts = []
         for i, c in enumerate(r):
-            cell = ansi.pad(c, widths[i])
+            cell = ansi.clip_ellipsis(c, widths[i]) if ansi.width(c) > widths[i] else c
+            cell = _align_cell(cell, widths[i], aligns[i] if i < len(aligns) else "left")
             if index == 0:
                 cell = f"{ansi.BOLD}{cell}{ansi.DIM_OFF}"
-            parts.append(cell.rstrip())
+            parts.append(cell)
         out.append(sep.join(parts))
         if index == 0:
-            rule = f"{ansi.dim()}─┼─{ansi.DIM_OFF}".join("─" * w for w in widths)
+            rule = f"{ansi.dim()}─┼─{ansi.RESET}".join("─" * w for w in widths)
             out.append(rule)
     return out
 
@@ -208,10 +326,64 @@ def _split_row(line: str) -> list[str]:
     return body.split("|")
 
 
+def _replace_html_breaks(line: str) -> str:
+    """Replace safe <br> tags outside code spans with a hard-break sentinel."""
+    if "<" not in line or not _BR_RE.search(line):
+        return line
+    out: list[str] = []
+    i = 0
+    n = len(line)
+    while i < n:
+        ch = line[i]
+        if ch == "`":
+            tick_end = i
+            while tick_end < n and line[tick_end] == "`":
+                tick_end += 1
+            ticks = line[i:tick_end]
+            end = line.find(ticks, tick_end)
+            if end != -1:
+                end += len(ticks)
+                out.append(line[i:end])
+                i = end
+                continue
+        if ch == "<":
+            m = _BR_RE.match(line, i)
+            if m:
+                out.append(_BR_LINE)
+                i = m.end()
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def render(text: str, cols: int) -> list[str]:
     """Render markdown to styled rows (no gutter, no trailing blanks)."""
     rows: list[str] = []
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    raw_lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for raw in raw_lines:
+        fm = _FENCE_RE.match(raw)
+        if in_fence:
+            lines.append(raw)
+            if (
+                fm
+                and fm.group("marker")[0] == fence_char
+                and len(fm.group("marker")) >= fence_len
+                and not fm.group("info").strip()
+            ):
+                in_fence = False
+            continue
+        if fm:
+            in_fence = True
+            fence_char = fm.group("marker")[0]
+            fence_len = len(fm.group("marker"))
+            lines.append(raw)
+            continue
+        lines.append(_replace_html_breaks(raw))
 
     i = 0
     n = len(lines)
@@ -226,14 +398,21 @@ def render(text: str, cols: int) -> list[str]:
             return
         joined = " ".join(x.strip() for x in paragraph)
         paragraph = []
-        rows.extend(ansi.wrap(_inline(joined), cols) or [""])
+        for chunk in joined.split(_BR_LINE):
+            chunk = chunk.strip()
+            if not chunk:
+                if rows and rows[-1] != "":
+                    rows.append("")
+                continue
+            rows.extend(ansi.wrap(_inline(chunk), cols) or [""])
 
     def flush_table() -> None:
         nonlocal table_rows
         if not table_rows:
             return
+        sep_line = next((r for r in table_rows if _TABLE_SEP_RE.match(r)), None)
         body = [r for r in table_rows if not _TABLE_SEP_RE.match(r)]
-        rows.extend(_render_table([_split_row(r) for r in body], cols))
+        rows.extend(_render_table([_split_row(r) for r in body], sep_line, cols))
         table_rows = []
 
     while i < n:
@@ -246,16 +425,34 @@ def render(text: str, cols: int) -> list[str]:
                 m
                 and m.group("marker")[0] == fence_marker[0]
                 and len(m.group("marker")) >= len(fence_marker)
+                and not m.group("info").strip()
             ):
                 fence_marker = None
+                rows.extend(_render_code(fence_rows, cols))
+                fence_rows = []
                 continue
             fence_rows.append(line)
             continue
-
-        if line.strip() and _TABLE_SEP_RE.match(line) and table_rows:
-            table_rows.append(line)
+        if line.strip() == _BR_LINE:
+            flush_paragraph()
+            if rows and rows[-1] != "":
+                rows.append("")
             continue
-        if line.strip().startswith("|") and line.count("|") >= 2:
+
+        stripped = line.strip()
+        is_table_sep = bool(stripped and _TABLE_SEP_RE.match(line))
+        is_table_row = "|" in line and (
+            stripped.startswith("|")
+            or is_table_sep
+            or bool(table_rows)
+            or (i < n and _TABLE_SEP_RE.match(lines[i]))
+        )
+        if is_table_row and not _FENCE_RE.match(line):
+            if is_table_sep and not table_rows:
+                # Orphan separator without a header row; render as plain text.
+                flush_paragraph()
+                rows.extend(ansi.wrap(_inline(stripped), cols) or [""])
+                continue
             flush_paragraph()
             table_rows.append(line)
             continue
@@ -267,28 +464,16 @@ def render(text: str, cols: int) -> list[str]:
             fence_marker = m.group("marker")
             lang = m.group("info").strip().split(" ")[0] if m.group("info").strip() else ""
             fence_rows = [f"\x00lang:{lang}"] if lang else []
-            # Collect the body in one go so the code block stays literal.
-            while i < n:
-                inner = lines[i]
-                close = _FENCE_RE.match(inner)
-                if (
-                    close
-                    and close.group("marker")[0] == fence_marker[0]
-                    and len(close.group("marker")) >= len(fence_marker)
-                ):
-                    i += 1
-                    break
-                fence_rows.append(inner)
-                i += 1
-            fence_marker = None
-            rows.extend(_render_code(fence_rows, cols))
-            fence_rows = []
             continue
 
         if not line.strip():
             flush_paragraph()
             if rows and rows[-1] != "":
                 rows.append("")
+            continue
+        if line.strip() == _BR_LINE:
+            flush_paragraph()
+            rows.append("")
             continue
 
         hm = _HEADING_RE.match(line)
@@ -303,7 +488,7 @@ def render(text: str, cols: int) -> list[str]:
             rows.extend(ansi.wrap(styled, cols))
             continue
 
-        if _RULE_RE.match(line):
+        if _RULE_RE.match(line) or _HR_HTML_RE.match(line.strip()):
             flush_paragraph()
             rows.append(_rule(cols))
             continue
@@ -311,10 +496,28 @@ def render(text: str, cols: int) -> list[str]:
         qm = _QUOTE_RE.match(line)
         if qm:
             flush_paragraph()
-            rows.extend(_quote_row(qm.group(1), cols))
+            quote_lines = [qm.group(1)]
+            while i < n:
+                nxt = lines[i]
+                if not nxt.strip():
+                    break
+                if _FENCE_RE.match(nxt) or _HEADING_RE.match(nxt) or _RULE_RE.match(nxt):
+                    break
+                if _BULLET_RE.match(nxt) or _ORDERED_RE.match(nxt):
+                    break
+                qn = _QUOTE_RE.match(nxt)
+                if qn:
+                    quote_lines.append(qn.group(1))
+                    i += 1
+                    continue
+                # Lazy continuation line.
+                quote_lines.append(nxt.strip())
+                i += 1
+            rows.extend(_quote_block(quote_lines, cols))
             continue
 
         bm = _BULLET_RE.match(line)
+
         if bm and (len(bm.group(1)) < 4 or True):
             flush_paragraph()
             indent = min(len(bm.group(1)), 8)
@@ -341,6 +544,8 @@ def render(text: str, cols: int) -> list[str]:
 
     flush_paragraph()
     flush_table()
+    if fence_marker is not None:
+        rows.extend(_render_code(fence_rows, cols))
 
     while rows and rows[-1] == "":
         rows.pop()
@@ -364,7 +569,7 @@ def code_panel(body: list[str], language: str, cols: int) -> list[str]:
     for line in code or [""]:
         for chunk in ansi.hard_wrap(line.expandtabs(4), max(1, cols - 2)) if line else [""]:
             rows.append(_highlight(chunk, _theme.current()))
-    rows.append(f"{ansi.dim()}{'─' * panel}{ansi.DIM_OFF}")
+    rows.append(f"{ansi.dim()}{'─' * panel}{ansi.RESET}")
     return rows
 
 
@@ -373,9 +578,9 @@ def _panel_header(language: str, panel: int) -> str:
     if language and not label:
         label = "?"
     if not label:
-        return f"{ansi.dim()}{'─' * panel}{ansi.DIM_OFF}"
+        return f"{ansi.dim()}{'─' * panel}{ansi.RESET}"
     fill = max(0, panel - 3 - ansi.width(label))
-    return f"{ansi.dim()}─ {label} {'─' * fill}{ansi.DIM_OFF}"
+    return f"{ansi.dim()}─ {label} {'─' * fill}{ansi.RESET}"
 
 
 def _render_code(body: list[str], cols: int) -> list[str]:

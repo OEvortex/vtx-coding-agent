@@ -716,6 +716,9 @@ class VxApp(CommandsMixin):
                 self._permissions_panel_scroll = max(0, self._permissions_panel_scroll - 1)
             elif key == "down":
                 self._permissions_panel_scroll += 1
+            elif key == "ctrl+o":
+                blocks.set_expanded(not blocks.expanded())
+                self.viewport.touch()
             return
         if key == "up":
             menu["selected"] = (menu["selected"] - 1) % max(1, len(self._menu_view()))
@@ -741,6 +744,9 @@ class VxApp(CommandsMixin):
                 if view:
                     menu["selected"] = (menu["selected"] + 1) % len(view.modes)
                 return
+            if key == "ctrl+o":
+                blocks.set_expanded(not blocks.expanded())
+                self.viewport.touch()
             return
         if key in ("enter", "right"):
             self._menu_choose()
@@ -778,8 +784,12 @@ class VxApp(CommandsMixin):
                 self._insert(key[6:])
             elif len(key) == 1 and ord(key) >= 32:
                 self._insert(key)
-            self._refresh_slash_menu()
-            self._refresh_atpath_menu()
+            elif key == "ctrl+o":
+                blocks.set_expanded(not blocks.expanded())
+                self.viewport.touch()
+            else:
+                self._refresh_slash_menu()
+                self._refresh_atpath_menu()
             return
         if menu.get("filterable") and (len(key) == 1 and ord(key) >= 32):
             menu["query"] = str(menu.get("query") or "") + key
@@ -1107,6 +1117,7 @@ class VxApp(CommandsMixin):
         if isinstance(ev, ThinkingDeltaEvent):
             if self._live_thinking is not None:
                 self._live_thinking.text += ev.delta
+                self.viewport.touch()
             return
         if isinstance(ev, ThinkingEndEvent):
             if self._live_thinking is not None and not self._live_thinking.text.strip():
@@ -1122,6 +1133,7 @@ class VxApp(CommandsMixin):
             block = self._assistant_block()
             block.text += ev.delta
             self._run_label = "responding"
+            self.viewport.touch()
             return
         if isinstance(ev, TextEndEvent):
             block = self._assistant_block()
@@ -1156,6 +1168,7 @@ class VxApp(CommandsMixin):
                     _populate_tool_block_args(
                         block, getattr(ev, "tool_name", "") or block.name, snapshot
                     )
+                    self.viewport.touch()
             return
         if isinstance(ev, ToolEndEvent):
             block = self._tool_blocks.get(ev.tool_call_id)
@@ -1186,6 +1199,7 @@ class VxApp(CommandsMixin):
                     lines.pop()
                 output.lines = [_markup_line(x) for x in lines[-blocks.OUTPUT_PREVIEW_ROWS :]]
                 output.hidden = max(0, len(lines) - blocks.OUTPUT_PREVIEW_ROWS)
+                self.viewport.touch()
             return
         if isinstance(ev, ToolResultEvent):
             block = self._tool_blocks.get(ev.tool_call_id)
@@ -1390,6 +1404,10 @@ class VxApp(CommandsMixin):
         if key == "enter":
             self._resolve_approval()
             return
+        if key == "ctrl+o":
+            blocks.set_expanded(not blocks.expanded())
+            self.viewport.touch()
+            return
         if key in ("esc", "n"):
             ap["future"].set_result(ApprovalResponse.DENY)
             self._approval = None
@@ -1463,6 +1481,10 @@ class VxApp(CommandsMixin):
                 self._answer_question(ask["draft"].strip(), custom=True)
             elif count and ask["selected"] < count:
                 self._answer_question(question.options[ask["selected"]].label)
+            return
+        if key == "ctrl+o":
+            blocks.set_expanded(not blocks.expanded())
+            self.viewport.touch()
             return
         if key == "backspace":
             ask["draft"] = ask["draft"][:-1]

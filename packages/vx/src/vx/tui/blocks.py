@@ -113,6 +113,10 @@ HEADER_MAX_PARTS = 3
 #: Row budget for a tool's folded output, mirroring fx's compact transcript.
 OUTPUT_PREVIEW_ROWS = 5
 OUTPUT_EXPANDED_ROWS = 60
+#: Row budget for diff preview in the compact transcript.
+DIFF_PREVIEW_ROWS = 10
+#: Row budget for diff preview in the expanded transcript.
+DIFF_EXPANDED_ROWS = 60
 
 _expanded = False
 
@@ -205,18 +209,19 @@ class Assistant(Block):
 
 @dataclass
 class Thinking(Block):
+    """Single-line thinking activity status, matching fx's ``• Thinking`` row.
+
+    Fx never renders the thinking text content in the transcript — only a
+    one-row status with a blinking bullet marker.  The ``text`` field is
+    kept for protocol compatibility but intentionally ignored during render.
+    """
+
     text: str = ""
-    kind: str = "assistant"
+    kind: str = "thinking"
 
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
-        body_width = max(1, width - GUTTER)
-        rendered = ansi.wrap(self.text.strip(), body_width)[:12]
-        out = [f"  {t.dim_style}{ansi.ITALIC}thinking{ansi.ITALIC_OFF}{ansi.RESET}"]
-        out.extend(
-            f"  {t.dim_style}{ansi.ITALIC}{r}{ansi.ITALIC_OFF}{ansi.RESET}" for r in rendered
-        )
-        return out
+        return [f"{t.dim_style}• Thinking{ansi.RESET}"]
 
 
 @dataclass
@@ -607,15 +612,24 @@ class ToolOutput(Block):
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
         out: list[str] = []
-        limit = OUTPUT_EXPANDED_ROWS if _expanded else OUTPUT_PREVIEW_ROWS
-        shown = self.lines[:limit]
-        for line in shown:
-            chunk = ansi.clip(line.rstrip(), max(1, width - 2))
-            out.append(f"  {t.tool_stdout_style}{chunk.rstrip()}{ansi.RESET}")
-        hidden = self.hidden + max(0, len(self.lines) - limit)
+        if _expanded:
+            # Expanded: all lines with 4-space indent, no rail (matching fx)
+            for line in self.lines:
+                chunk = ansi.clip(line.rstrip(), max(1, width - 4))
+                out.append(f"    {t.tool_stdout_style}{chunk.rstrip()}{ansi.RESET}")
+        else:
+            # Compact: up to OUTPUT_PREVIEW_ROWS with 2-space indent
+            shown = self.lines[:OUTPUT_PREVIEW_ROWS]
+            for line in shown:
+                chunk = ansi.clip(line.rstrip(), max(1, width - 2))
+                out.append(f"  {t.tool_stdout_style}{chunk.rstrip()}{ansi.RESET}")
+        hidden = self.hidden + max(
+            0, len(self.lines) - (OUTPUT_PREVIEW_ROWS if not _expanded else len(self.lines))
+        )
         if hidden > 0:
-            hint = "ctrl+o to collapse" if _expanded else "ctrl+o to view"
-            out.append(f"  {t.dim_style}… {hidden} more lines ({hint}){ansi.RESET}")
+            noun = "line" if hidden == 1 else "lines"
+            indent = "    " if _expanded else "  "
+            out.append(f"{indent}{t.dim_style}… {hidden} {noun} more (ctrl+o to view){ansi.RESET}")
         return out
 
 
@@ -653,8 +667,8 @@ class ToolResult(Block):
         hidden = len(self.lines) - len(shown)
         body = list(shown)
         if hidden > 0:
-            hint = "ctrl+o to collapse" if _expanded else "ctrl+o to view"
-            body.append(f"… {hidden} more lines ({hint})")
+            noun = "line" if hidden == 1 else "lines"
+            body.append(f"… {hidden} {noun} more (ctrl+o to view)")
         for row in markdown.code_panel(body, self.language, max(4, width - 2)):
             out.append(f"  {row}")
         return out
@@ -707,18 +721,27 @@ class ShellRun(Block):
         t = _theme.current()
         prefix = "!!" if self.send_to_llm else "!"
         out = [f"{t.dim_style}{prefix}{ansi.RESET} {ansi.BOLD}{self.command}{ansi.RESET}"]
-        if self.done:
-            lines = [ln for ln in self.output.replace("\r", "").split("\n") if ln.strip()]
-            limit = OUTPUT_EXPANDED_ROWS if _expanded else OUTPUT_PREVIEW_ROWS
-            for line in lines[:limit]:
+        if not self.done:
+            return out
+        lines = [ln for ln in self.output.replace("\r", "").split("\n") if ln.strip()]
+        if _expanded:
+            # Expanded: all lines with 4-space indent, no rail (matching fx)
+            for line in lines:
+                body = ansi.clip(line, max(1, width - 4))
+                out.append(f"    {t.tool_stdout_style}{body}{ansi.RESET}")
+        else:
+            # Compact: up to OUTPUT_PREVIEW_ROWS with │ prefix, then fold hint
+            shown = lines[:OUTPUT_PREVIEW_ROWS]
+            for line in shown:
                 body = ansi.clip(line, max(1, width - 2))
                 out.append(f"{t.tool_stdout_style}│ {body}{ansi.RESET}")
-            hidden = len(lines) - limit
+            hidden = len(lines) - len(shown)
             if hidden > 0:
-                hint = "ctrl+o to collapse" if _expanded else "ctrl+o to view"
-                out.append(f"{t.dim_style}│ … {hidden} more lines ({hint}){ansi.RESET}")
-            if not self.success:
-                out.append(f"{t.dim_style}│ exit failure{ansi.RESET}")
+                noun = "line" if hidden == 1 else "lines"
+                out.append(f"{t.dim_style}│ … {hidden} {noun} more (ctrl+o to view){ansi.RESET}")
+        if not self.success:
+            suffix = "    exit failure" if _expanded else "│ exit failure"
+            out.append(f"{t.dim_style}{suffix}{ansi.RESET}")
         return out
 
 
@@ -1072,17 +1095,19 @@ class DiffOutput(Block):
     kind: str = "tool"
 
     def rows(self, width: int) -> list[str]:
-        if not self.lines or not _expanded:
+        if not self.lines:
             return []
         t = _theme.current()
+        shown = self.lines if _expanded else self.lines[:DIFF_PREVIEW_ROWS]
+        hidden = len(self.lines) - len(shown)
         # Calculate gutter width from max line number
         max_ln = 0
-        for _op, ln, _text in self.lines:
+        for _op, ln, _text in shown:
             if ln:
                 max_ln = max(max_ln, len(ln))
         gw = max(max_ln, 1)
         out: list[str] = []
-        for op, ln, text in self.lines:
+        for op, ln, text in shown:
             # Build the gutter: "  │ " + line number padded + " "
             gutter = f"  │ {ln.rjust(gw)} " if ln else f"  │ {' ' * gw} "
             # Choose style based on op — use marker style for the +/- character,
@@ -1105,6 +1130,9 @@ class DiffOutput(Block):
                 f"{bg}{line_style}{_escape_text(text)}{ansi.RESET}"
             )
             out.append(ansi.clip_ellipsis(line, width))
+        if hidden > 0:
+            noun = "line" if hidden == 1 else "lines"
+            out.append(f"  {t.dim_style}… {hidden} {noun} more (ctrl+o to view){ansi.RESET}")
         return out
 
 
