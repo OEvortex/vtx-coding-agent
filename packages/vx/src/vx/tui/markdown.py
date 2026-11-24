@@ -151,12 +151,23 @@ def _quote_row(body: str, cols: int) -> list[str]:
     return [f"{rail}{r}" for r in inner]
 
 
+#: fx draws a horizontal rule narrower than the transcript
+#: (ansi.horizontal_rule_width), so it reads as a break, not a divider.
+RULE_WIDTH = 60
+
+
 def _rule(cols: int) -> str:
-    return f"{ansi.dim()}{'─' * max(1, cols)}{ansi.DIM_OFF}"
+    width = min(max(1, cols), RULE_WIDTH)
+    return f"{ansi.dim()}{'─' * width}{ansi.DIM_OFF}"
 
 
 def _render_table(rows: list[list[str]], cols: int) -> list[str]:
-    t = _theme.current()
+    """fx's table: cells split by ``│`` with rules, and no outer box.
+
+    fx draws a table as ``name │ count`` over ``─────┼──────``, so a table
+    reads like a list rather than a box (ansi.table_column_sep and
+    ansi.table_junction).
+    """
     if not rows:
         return []
     columns = max(len(r) for r in rows)
@@ -165,29 +176,26 @@ def _render_table(rows: list[list[str]], cols: int) -> list[str]:
     for r in cells:
         for i, c in enumerate(r):
             widths[i] = max(widths[i], ansi.width(c))
-    total = sum(widths) + 3 * columns + 1
+    sep = f" {ansi.dim()}│{ansi.RESET} "
+    total = sum(widths) + ansi.width(sep) * (columns - 1)
     if total > cols:
-        # Shrink the widest column until the box fits.
+        # Shrink the widest column until the table fits.
         while total > cols and max(widths) > 3:
             widest = widths.index(max(widths))
             widths[widest] -= 1
             total -= 1
-    top = "┌" + "┬".join("─" * (w + 2) for w in widths) + "┐"
-    mid = "├" + "┼".join("─" * (w + 2) for w in widths) + "┤"
-    bottom = "└" + "┴".join("─" * (w + 2) for w in widths) + "┘"
-    out = [f"{ansi.dim()}{top}{ansi.DIM_OFF}"]
+    out: list[str] = []
     for index, r in enumerate(cells):
         parts = []
         for i, c in enumerate(r):
-            parts.append(" " + ansi.pad(c, widths[i]).rstrip() + " ")
-        out.append(
-            f"{t.divider_style}│{ansi.RESET}"
-            + f"{t.divider_style}│{ansi.RESET}".join(parts)
-            + f"{t.divider_style}│{ansi.RESET}"
-        )
+            cell = ansi.pad(c, widths[i])
+            if index == 0:
+                cell = f"{ansi.BOLD}{cell}{ansi.DIM_OFF}"
+            parts.append(cell.rstrip())
+        out.append(sep.join(parts))
         if index == 0:
-            out.append(f"{ansi.dim()}{mid}{ansi.DIM_OFF}")
-    out.append(f"{ansi.dim()}{bottom}{ansi.DIM_OFF}")
+            rule = f"{ansi.dim()}─┼─{ansi.DIM_OFF}".join("─" * w for w in widths)
+            out.append(rule)
     return out
 
 
@@ -339,17 +347,42 @@ def render(text: str, cols: int) -> list[str]:
     return rows
 
 
-def _render_code(body: list[str], cols: int) -> list[str]:
-    t = _theme.current()
-    rail = f"{ansi.dim()}│ {ansi.DIM_OFF}"
-    width = max(1, cols - 2)
-    rows: list[str] = []
-    for line in body:
-        if line.startswith("\x00lang:"):
-            continue
-        for chunk in ansi.hard_wrap(line.expandtabs(4), width) if line else [""]:
-            rows.append(rail + _highlight(chunk, t))
+def code_panel(body: list[str], language: str, cols: int) -> list[str]:
+    """fx's transcript code panel: ``─ zig ─`` over the code and a rule below.
+
+    Mirrors ``renderCodeBlockForTranscript`` in
+    src/ui/render_engine/transcript_blocks.zig: dim rules, no side rails, and
+    a panel as wide as the code or its label, whichever is wider.
+    """
+    code = [line for line in body if not line.startswith("\x00lang:")]
+    max_code = max((ansi.width(line) for line in code), default=0)
+    label_width = min(ansi.width(language), max(0, cols - 4)) if language else 0
+    panel = min(cols, max(6, max_code, label_width + 4))
+    if panel <= 0:
+        return []
+    rows: list[str] = [_panel_header(language, panel)]
+    for line in code or [""]:
+        for chunk in ansi.hard_wrap(line.expandtabs(4), max(1, cols - 2)) if line else [""]:
+            rows.append(_highlight(chunk, _theme.current()))
+    rows.append(f"{ansi.dim()}{'─' * panel}{ansi.DIM_OFF}")
     return rows
+
+
+def _panel_header(language: str, panel: int) -> str:
+    label = ansi.clip(language, panel - 4) if language else ""
+    if language and not label:
+        label = "?"
+    if not label:
+        return f"{ansi.dim()}{'─' * panel}{ansi.DIM_OFF}"
+    fill = max(0, panel - 3 - ansi.width(label))
+    return f"{ansi.dim()}─ {label} {'─' * fill}{ansi.DIM_OFF}"
+
+
+def _render_code(body: list[str], cols: int) -> list[str]:
+    language = ""
+    if body and body[0].startswith("\x00lang:"):
+        language = body[0][len("\x00lang:") :]
+    return code_panel(body, language, cols)
 
 
 _KEYWORDS = {

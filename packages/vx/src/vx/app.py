@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import signal
 import time
 from collections import deque
@@ -137,6 +138,10 @@ class VxApp(CommandsMixin):
         #: The group the running turn is still adding calls to. fx groups a
         #: run of calls, so anything else in the transcript ends it.
         self._live_group: blocks.ToolGroup | None = None
+        #: The calls the running turn ran and finished, which its recap sums up.
+        self._turn_calls: list[blocks.ToolStatusBlock] = []
+        self._finished = 0
+        self._turn_usage = {"in": 0, "out": 0}
         self._last_ctrl_c = 0.0
         self._usage = {"in": 0, "out": 0}
         self._context_total: int | None = None
@@ -299,37 +304,66 @@ class VxApp(CommandsMixin):
         if len(msgs) > HISTORY_LIMIT:
             msgs = msgs[-HISTORY_LIMIT:]
             self._notice(f"showing the last {HISTORY_LIMIT} messages")
+        self._render_history_messages(msgs)
+
+    def _render_history_messages(self, msgs: list[Any]) -> None:
+        """Replay a session's messages as the live transcript would draw them.
+
+        fx projects a whole session through the same grouping it uses while
+        running, so an old turn reads like a new one: a run of calls shares a
+        header and its results, instead of each call standing alone.
+        """
+        group: blocks.ToolGroup | None = None
+        by_call_id: dict[str, blocks.ToolStatusBlock] = {}
+        outputs: dict[str, blocks.ToolOutput] = {}
+
         for msg in msgs:
-            self._render_history_message(msg)
+            if isinstance(msg, UserMessage):
+                group = None
+                content = msg.content
+                if isinstance(content, str):
+                    text = content
+                else:
+                    text = " ".join(p.text for p in content if isinstance(p, TextContent))
+                if text.strip():
+                    self.viewport.add(blocks.UserTurn(text=text))
+                continue
+            if isinstance(msg, AssistantMessage):
+                thinking = "".join(
+                    p.thinking for p in msg.content if isinstance(p, ThinkingContent)
+                )
+                text = "".join(p.text for p in msg.content if isinstance(p, TextContent))
+                if text.strip():
+                    self.viewport.add(blocks.Assistant(text=text))
+                    group = None
+                elif thinking.strip():
+                    self.viewport.add(blocks.Thinking(text=thinking))
+                    group = None
+                for call in (p for p in msg.content if isinstance(p, ToolCall)):
+                    block = _make_tool_status_block(call.name)
+                    _populate_tool_block_args(block, call.name, call.arguments)
+                    if group is None:
+                        group = blocks.ToolGroup()
+                        self.viewport.add(group)
+                    group.calls.append(block)
+                    by_call_id[call.id] = block
+                continue
+            if isinstance(msg, ToolResultMessage):
+                block = by_call_id.get(msg.tool_call_id)
+                if block is None:
+                    continue
+                block.status = "error" if msg.is_error else "ok"
+                block.finished = len(by_call_id)
+                if isinstance(block, blocks.BashToolStatus):
+                    _apply_exit_status(block, msg)
+                output = blocks.ToolOutput(lines=[])
+                panel = _result_panel(block, output, msg)
+                if panel is not None and group is not None:
+                    group.details.append(panel)
+                outputs[msg.tool_call_id] = output
 
     def _render_history_message(self, msg: Any) -> None:
-        if isinstance(msg, UserMessage):
-            content = msg.content
-            if isinstance(content, str):
-                text = content
-            else:
-                text = " ".join(p.text for p in content if isinstance(p, TextContent))
-            if text.strip():
-                self.viewport.add(blocks.UserTurn(text=text))
-        elif isinstance(msg, AssistantMessage):
-            thinking = "".join(p.thinking for p in msg.content if isinstance(p, ThinkingContent))
-            text = "".join(p.text for p in msg.content if isinstance(p, TextContent))
-            calls = [p for p in msg.content if isinstance(p, ToolCall)]
-            if text.strip():
-                self.viewport.add(blocks.Assistant(text=text))
-            elif thinking.strip():
-                self.viewport.add(blocks.Thinking(text=thinking))
-            for call in calls:
-                target = _short(str(call.arguments), 70)
-                self.viewport.add(blocks.ToolStatus(name=call.name, target=target, status="ok"))
-        elif isinstance(msg, ToolResultMessage):
-            detail = msg.ui_details_full or msg.ui_details
-            if detail:
-                lines = [x for x in str(detail).split("\n") if x.strip()]
-                if lines:
-                    self.viewport.add(
-                        blocks.ToolOutput(lines=[_markup_line(x) for x in lines[:5]])
-                    )
+        self._render_history_messages([msg])
 
     # ==================================================================
     # input
@@ -1161,40 +1195,45 @@ class VxApp(CommandsMixin):
                 ok = not result.is_error
             if block is not None:
                 block.status = "ok" if ok else "error"
+                # The mark speaks for the command that returned last, and
+                # calls that ran together may not return in the order they
+                # started.
+                self._finished += 1
+                block.finished = self._finished
+                self._turn_calls.append(block)
                 # For apply_patch, populate diff stats from file_changes
                 if ev.file_changes and isinstance(block, blocks.ApplyPatchToolStatus):
                     block.added = sum(f.added for f in ev.file_changes)
                     block.removed = sum(f.removed for f in ev.file_changes)
-            # For apply_patch, show fx-style diff preview
+                if isinstance(block, blocks.BashToolStatus):
+                    _apply_exit_status(block, result)
+            output = self._tool_outputs.get(ev.tool_call_id)
+            # fx prints what a call returned as a titled panel, so the live
+            # stream gives way to the finished result in the same place.
+            panel = _result_panel(block, output, result)
+            if panel is not None:
+                self._place_detail(ev.tool_call_id, panel, replace=output)
+                self._tool_outputs.pop(ev.tool_call_id, None)
+            elif output is not None and not output.lines:
+                self._drop_detail(ev.tool_call_id, output)
+            # fx keeps a diff out of the compact transcript and shows it in the
+            # full one, so the patch's diff rides along unless it is unfolded.
             if (
                 block is not None
                 and block.name == "apply_patch"
                 and ok
-                and ev.result
-                and ev.result.ui_data
+                and result
+                and result.ui_data
             ):
-                diff_lines_raw = ev.result.ui_data.get("diff_lines")
-                if diff_lines_raw:
-                    diff_lines = [
+                rows = result.ui_data.get("diff_lines")
+                if rows:
+                    lines = [
                         (row[0], row[1], row[2])
-                        for row in diff_lines_raw
+                        for row in rows
                         if isinstance(row, (list, tuple)) and len(row) == 3
                     ]
-                    if diff_lines:
-                        diff = blocks.DiffOutput(lines=diff_lines)
-                        group = self._tool_groups.get(ev.tool_call_id)
-                        if group is not None:
-                            group.details.append(diff)
-                        else:
-                            self.viewport.add(diff)
-            output = self._tool_outputs.get(ev.tool_call_id)
-            if output is not None and not output.lines:
-                with suppress(Exception):
-                    group = self._tool_groups.get(ev.tool_call_id)
-                    if group is not None:
-                        group.details.remove(output)
-                    else:
-                        self.viewport.blocks.remove(output)
+                    if lines:
+                        self._place_detail(ev.tool_call_id, blocks.DiffOutput(lines=lines))
             return
         if isinstance(ev, ToolApprovalEvent):
             self._request_approval(ev)
@@ -1239,10 +1278,50 @@ class VxApp(CommandsMixin):
                 usage = ev.assistant_message.usage
                 self._usage["in"] += usage.input_tokens
                 self._usage["out"] += usage.output_tokens
+                self._turn_usage["in"] += usage.input_tokens
+                self._turn_usage["out"] += usage.output_tokens
             return
         if isinstance(ev, AgentEndEvent):
             self._finish_live()
+            self._add_turn_summary()
             return
+
+    def _place_detail(
+        self, tool_call_id: str, detail: blocks.Block, replace: blocks.Block | None = None
+    ) -> None:
+        """Put a call's detail under its group, or after the call when alone."""
+        group = self._tool_groups.get(tool_call_id)
+        if group is not None:
+            if replace is not None and replace in group.details:
+                group.details[group.details.index(replace)] = detail
+            else:
+                group.details.append(detail)
+        else:
+            self.viewport.add(detail)
+        self.viewport.touch()
+
+    def _drop_detail(self, tool_call_id: str, detail: blocks.Block) -> None:
+        group = self._tool_groups.get(tool_call_id)
+        with suppress(Exception):
+            if group is not None:
+                group.details.remove(detail)
+            else:
+                self.viewport.blocks.remove(detail)
+
+    def _add_turn_summary(self) -> None:
+        """fx's recap under a turn: what it did, how long it took, its tokens."""
+        recap = _turn_recap(self._turn_calls)
+        seconds = max(0.0, time.monotonic() - self._run_started) if self._run_started else 0.0
+        usage = self._turn_usage
+        self._turn_calls = []
+        self._turn_usage = {"in": 0, "out": 0}
+        if not recap:
+            return
+        self.viewport.add(
+            blocks.TurnSummary(
+                recap=recap, seconds=seconds, tokens_in=usage["in"], tokens_out=usage["out"]
+            )
+        )
 
     def _finish_live(self) -> None:
         # A call still running when the turn ends was interrupted: fx marks it
@@ -1615,6 +1694,90 @@ def _make_tool_status_block(tool_name: str) -> blocks.ToolStatusBlock:
         return blocks.WebToolStatus(name=tool_name, status="running")
     # Fallback to generic block for unknown tools
     return blocks.ToolStatus(name=tool_name, status="running")
+
+
+def _apply_exit_status(block: blocks.BashToolStatus, result: Any) -> None:
+    """Pull a command's exit code and failure reason out of its result.
+
+    ctx reports the code in ``ui_summary`` ("Exit code 2") and the reason is
+    what the program wrote, which fx puts after a middle dot on the row.
+    """
+    if result is None:
+        return
+    summary = _strip_markup(result.ui_summary or "")
+    match = re.search(r"exit code (-?\d+)", summary, re.IGNORECASE)
+    if match:
+        block.exit_code = int(match.group(1))
+    elif not result.is_error:
+        # fx says how every command ended, so a command that passed says 0.
+        block.exit_code = 0
+    if not result.is_error:
+        return
+    for line in _result_lines(result, None):
+        failure = line.strip()
+        if failure and failure not in _OUTPUT_MARKERS:
+            block.reason = _short(failure, 60)
+            break
+
+
+#: ctx labels a command's stderr stream; that label is not output.
+_OUTPUT_MARKERS = {"[stderr]", "[stdout]"}
+
+
+def _result_lines(result: Any, output: blocks.ToolOutput | None) -> list[str]:
+    """A finished call's output lines, from its live stream or its result."""
+    if output is not None and output.buffer:
+        return output.buffer.replace("\r", "").rstrip("\n").split("\n")
+    lines: list[str] = []
+    for content in getattr(result, "content", None) or []:
+        text = getattr(content, "text", None)
+        if text:
+            lines.extend(str(text).replace("\r", "").rstrip("\n").split("\n"))
+    return [line for line in lines if line.strip()]
+
+
+def _result_panel(
+    block: blocks.ToolStatusBlock | None, output: blocks.ToolOutput | None, result: Any
+) -> blocks.Block | None:
+    """fx's framed result panel: the target, then ``─ text ─`` and the lines."""
+    if block is None or result is None:
+        return None
+    lines = _result_lines(result, output)
+    if not lines:
+        return None
+    lines = [_strip_markup(line) for line in lines]
+    label = getattr(block, "command", "") or getattr(block, "path", "") or ""
+    exit_code = getattr(block, "exit_code", None)
+    if label and exit_code is not None:
+        # fx says how each command ended beside what it printed.
+        label = f"{label} (exit {exit_code})"
+    if isinstance(block, blocks.ReadToolStatus) or block.name == "read":
+        return None  # a read shows its content in the editor, not the transcript
+    return blocks.ToolResult(label=str(label), lines=lines)
+
+
+def _turn_recap(calls: list[blocks.ToolStatusBlock]) -> str:
+    """fx's recap of a turn: files changed, then the commands it ran."""
+    edits = [call for call in calls if call.category in ("edit", "write")]
+    commands = [call for call in calls if call.category == "command"]
+    parts: list[str] = []
+    if edits:
+        added = sum(getattr(call, "added", 0) for call in edits)
+        removed = sum(getattr(call, "removed", 0) for call in edits)
+        text = f"{len(edits)} file{'s' if len(edits) > 1 else ''} changed"
+        if added or removed:
+            text += f" +{added} -{removed}"
+        parts.append(text)
+    if commands:
+        parts.append(f"ran {len(commands)} command{'s' if len(commands) > 1 else ''}")
+    if not parts:
+        reads = [call for call in calls if call.category == "read"]
+        if reads:
+            parts.append(f"explored {len(reads)} file{'s' if len(reads) > 1 else ''}")
+    if not parts:
+        return ""
+    recap = " · ".join(parts)
+    return recap[:1].upper() + recap[1:]
 
 
 def _parse_args(args: Any) -> dict:
