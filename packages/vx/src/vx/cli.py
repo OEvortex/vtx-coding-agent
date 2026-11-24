@@ -226,11 +226,15 @@ def _run_tui(args: argparse.Namespace) -> int:
     cwd = os.getcwd()
 
     # Paint the shell before ctx loads, so the terminal is never blank.
+    from vx import prefs
     from vx.tui import splash
     from vx.tui.terminal import Terminal
 
     term = Terminal()
     term.enter()
+    # The tty is entered here, before the app exists, so the pointer preference
+    # is applied here too: off keeps the terminal's drag-select.
+    term.set_mouse(prefs.mouse_capture())
     try:
         painter = splash.paint(term, cwd=cwd)
         _boot(args, cwd=cwd)

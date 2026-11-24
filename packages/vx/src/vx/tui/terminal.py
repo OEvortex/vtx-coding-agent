@@ -12,12 +12,13 @@ import termios
 import tty
 from typing import Any
 
-#: Button events (clicks and the wheel) plus SGR coordinates. Drag reporting
-#: stays off so a terminal still owns text selection.
+#: Button events (clicks and the wheel) plus SGR coordinates. Reporting the
+#: pointer is what turns off the terminal's own drag-select, so it is off
+#: unless wheel scrolling was asked for.
 _MOUSE_ON = "\x1b[?1000h\x1b[?1006h"
 _MOUSE_OFF = "\x1b[?1006l\x1b[?1000l"
 
-_ALTERNATE_SCREEN_ON = "\x1b[?1049h\x1b[?25l\x1b[?2004h" + _MOUSE_ON
+_ALTERNATE_SCREEN_ON = "\x1b[?1049h\x1b[?25l\x1b[?2004h"
 _ALTERNATE_SCREEN_OFF = _MOUSE_OFF + "\x1b[?2004l\x1b[?25h\x1b[?1049l"
 
 
@@ -30,6 +31,7 @@ class Terminal:
         self._fd = self.stdin.fileno()
         self._saved_attrs: Any = None
         self._running = False
+        self._mouse = False
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -41,6 +43,20 @@ class Terminal:
         os.set_blocking(self._fd, False)
         self.write(_ALTERNATE_SCREEN_ON)
         self.write("\x1b[2J\x1b[H")
+
+    def set_mouse(self, enabled: bool) -> None:
+        """Hand the pointer to the app (wheel scrolling) or back to the terminal.
+
+        With reporting on, the terminal sends clicks and wheel turns here and
+        stops doing its own drag-select; shift+drag is the terminal's own
+        escape hatch. With reporting off, drag selects text and copies as
+        usual, and the transcript scrolls with the page keys.
+        """
+        if enabled == self._mouse:
+            return
+        self._mouse = enabled
+        if self._running:
+            self.write(_MOUSE_ON if enabled else _MOUSE_OFF)
 
     def exit(self) -> None:
         if not self._running:

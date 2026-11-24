@@ -206,6 +206,9 @@ class VxApp(CommandsMixin):
     async def _startup(self) -> None:
         if not self._term_ready:
             self.term.enter()
+            # Off by default: a terminal that keeps the pointer is one where
+            # dragging over the transcript selects text.
+            self.term.set_mouse(prefs.mouse_capture())
         self.painter.reset()
         loop = asyncio.get_running_loop()
         loop.add_reader(self.term._fd, self._on_stdin)

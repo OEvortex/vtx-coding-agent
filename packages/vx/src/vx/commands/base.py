@@ -15,6 +15,7 @@ from typing import Any
 from ctx.agent.runtime import ConversationRuntime
 
 from vx.tui import blocks, footer
+from vx.tui.terminal import Terminal
 from vx.tui.viewport import Viewport
 
 
@@ -23,6 +24,7 @@ class CommandSupport:
 
     cwd: str
     runtime: ConversationRuntime | None
+    term: Terminal
     viewport: Viewport
     _menu: dict[str, Any] | None
     _prompt: dict[str, Any] | None
