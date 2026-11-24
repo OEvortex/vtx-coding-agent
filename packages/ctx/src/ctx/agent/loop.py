@@ -23,7 +23,14 @@ from ctx.agent.session import CompactionEntry, MessageEntry, Session
 from ctx.agent.skills_refresh import SkillsCatalogState
 from ctx.agent.tools import BaseTool
 from ctx.ai import BaseProvider
-from ctx.core.compaction import SummaryProgress, generate_summary, is_overflow
+from ctx.core.compaction import (
+    SummaryProgress,
+    estimate_messages_tokens,
+    generate_summary,
+    is_overflow,
+    prepare_summary_messages,
+    rough_token_count,
+)
 from ctx.core.events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -615,13 +622,24 @@ class Agent:
             )
 
         try:
-            # Use all_messages (uncompacted) for summarization so LLM sees full history
+            all_messages = list(self.session.all_messages)
+            preserved_from, preserved, preserved_tokens = self.session.select_preservation_tail(
+                min_tokens=harness_cfg.compaction_keep_recent_tokens,
+                max_tokens=harness_cfg.compaction_keep_max_tokens,
+                min_text_messages=harness_cfg.compaction_min_text_messages,
+            )
+            summary_input = prepare_summary_messages(
+                all_messages,
+                prune_tool_results=harness_cfg.compaction_prune_tool_results,
+                tool_results_to_keep=harness_cfg.compaction_tool_results_to_keep,
+            )
             summary_task = asyncio.create_task(
                 generate_summary(
-                    list(self.session.all_messages),
+                    summary_input,
                     self.provider,
                     system_prompt,
                     on_delta=_on_progress,
+                    max_tokens=harness_cfg.compaction_summary_max_tokens,
                 )
             )
             # Poll the summary task so queued progress reaches the UI between
@@ -636,23 +654,24 @@ class Agent:
                     break
             summary = summary_task.result()
 
-            # Everything before is summarized, nothing "kept"
             first_kept_id = self.session.leaf_id or ""
-
-            # Estimate tokens of the compacted context
-            summary_text = summary
 
             user_msg = (
                 "[Context compacted — conversation history summarized above."
                 " Continue working on the task.]"
             )
-            tokens_after = (len(summary_text) + len(user_msg)) // 4
+            # The next request carries the fixed system prompt, the summary,
+            # the preserved recent tail and the framing message.
+            tokens_after = estimate_messages_tokens(preserved) + rough_token_count(summary)
+            tokens_after += rough_token_count(user_msg) + rough_token_count(system_prompt)
 
             self.session.append_compaction(
                 summary=summary,
                 first_kept_entry_id=first_kept_id,
                 tokens_before=tokens_before,
                 tokens_after=tokens_after,
+                preserved_from_id=preserved_from,
+                preserved_tokens=preserved_tokens,
             )
 
             # In continue mode, inject synthetic continue message that

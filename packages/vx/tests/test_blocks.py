@@ -89,3 +89,51 @@ class TestWidthContract:
         for width in range(20, 60):
             for row in note.rows(width):
                 assert ansi.width(row) <= width, (width, ansi.strip_ansi(row))
+
+
+class TestSpacing:
+    """Blocks are separated by one blank row, tool groups included.
+
+    A tool group welded to the reply above it reads as part of that sentence,
+    and two groups in a row read as one; a blank row is what keeps each block
+    its own thought.
+    """
+
+    def test_every_kind_gets_a_gap_after_the_first(self):
+        kinds = ("welcome", "user", "thinking", "assistant", "tool", "notice", "usage")
+        for kind in kinds:
+            assert blocks.spacing("assistant", kind) == 1
+            assert blocks.spacing("tool", kind) == 1
+
+    def test_nothing_precedes_the_first_block(self):
+        assert blocks.spacing(None, "tool") == 0
+
+    def test_a_tool_group_is_flanked_by_blank_rows(self):
+        from vx.tui.viewport import Viewport
+
+        class Stub(blocks.Block):
+            kind = "tool"
+
+            def __init__(self, kind: str, lines: list[str]) -> None:
+                self.kind = kind
+                self._lines = lines
+
+            def rows(self, width: int) -> list[str]:
+                return self._lines
+
+        viewport = Viewport()
+        viewport.add(Stub("assistant", ["reply"]))
+        viewport.add(Stub("tool", ["● Ran ls"]))
+        viewport.add(Stub("notice", ["done"]))
+        rows = [ansi.strip_ansi(row) for row in viewport.lines(40)]
+        assert rows == ["reply", "", "● Ran ls", "", "done"]
+
+    def test_a_patch_diff_stays_welded_under_its_row(self):
+        from vx.tui.viewport import Viewport
+
+        viewport = Viewport()
+        viewport.add(blocks.ApplyPatchToolStatus(path="a.py", added=1, status="ok"))
+        viewport.add(blocks.DiffOutput(lines=[("+", "1", "x = 1")], path="a.py"))
+        rows = [ansi.strip_ansi(row) for row in viewport.lines(80)]
+        assert rows[0].startswith("● Edited a.py")
+        assert rows[1].startswith("  ± a.py")  # no blank row between them

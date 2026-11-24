@@ -22,12 +22,14 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import signal
 import sys
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
+from vx.atpath import list_candidates, parse_at
 from vx.tui import ansi, blocks, footer, theme
 from vx.tui.canvas import Painter
 from vx.tui.keys import KeyDecoder
@@ -247,6 +249,32 @@ def shell_run_failed() -> blocks.Block:
     )
 
 
+def shell_run_llm() -> blocks.Block:
+    """``!!cmd``: the same echo, marked as also sent to the model."""
+    return blocks.ShellRun(
+        command="git log --oneline -3",
+        output="a1b2c3d fix: hold the viewport anchor\n"
+        "d4e5f60 feat: split diff past 110 columns\n"
+        "7f8a9bc docs: say what ctrl+o expands",
+        done=True,
+        success=True,
+        send_to_llm=True,
+    )
+
+
+#: Extensions vx sends as image attachments rather than as text.
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def describe_chips(chips: list[Chip]) -> str:
+    """The user row's chip text: what the turn carried, or nothing."""
+    if not chips:
+        return ""
+    if len(chips) == 1:
+        return chips[0].label
+    return f"{len(chips)} images"
+
+
 def notices() -> list[blocks.Block]:
     return [
         blocks.Notice(
@@ -401,28 +429,46 @@ class Command:
     action: str
 
 
+@dataclass
+class Chip:
+    """An attachment chip above the composer, as fx shows a pending image."""
+
+    label: str = "screenshot.png"
+    size_label: str = "212 KB"
+
+
 COMMANDS: list[Command] = [
     Command("/run", "simulate a turn: a streaming thought, then a tool call", "Demo", "run"),
+    Command("/tour", "append one of everything, in the order a turn builds it", "Demo", "tour"),
     Command("/diff", "append an apply_patch diff, split or one column", "Demo", "diff"),
     Command("/tools", "append a mixed tool group: failure, edit, search", "Demo", "tools"),
     Command("/usage", "append the /usage report over a year", "Demo", "usage"),
     Command("/notices", "append one notice of every tone", "Demo", "notices"),
     Command("/sections", "append a titled report", "Demo", "sections"),
-    Command("/shell", "append a !command echo", "Demo", "shell"),
+    Command("/shell", "append a !command echo, and the !! variant", "Demo", "shell"),
+    Command("/search", "open transcript search (ctrl+f)", "Read", "search"),
+    Command("/history", "open the prompt history picker", "Read", "history"),
+    Command("/attach", "put an image chip above the composer", "Composer", "attach"),
+    Command("/approve", "show the tool approval panel", "Composer", "approve"),
+    Command("/ask", "show a multiple-choice question panel", "Composer", "ask"),
+    Command("/mode", "open the permission mode picker", "Composer", "mode"),
+    Command("/perms", "open the permissions panel", "Composer", "perms"),
     Command("/theme", "switch between fx dark and fx light", "View", "theme"),
-    Command("/narrow", "resize the layout to 60 columns", "View", "narrow"),
-    Command("/wide", "resize the layout to 120 columns", "View", "wide"),
+    Command("/narrow", "cap the layout at 60 columns", "View", "narrow"),
+    Command("/wide", "cap the layout at 120 columns", "View", "wide"),
     Command("/clear", "drop the transcript back to the banner", "Session", "clear"),
     Command("/keys", "print the keymap into the transcript", "Session", "keys"),
     Command("/quit", "leave the harness", "Session", "quit"),
 ]
 
 
-def menu_items(matches: list[Command]) -> list[footer.MenuItem]:
-    return [
-        footer.MenuItem(label=cmd.label, detail=cmd.detail, metadata=cmd.metadata)
-        for cmd in matches
-    ]
+#: What the up arrow shows on an empty composer, as vx recalls its own history.
+PROMPT_HISTORY: tuple[str, ...] = (
+    "refactor the viewport so the anchor survives a growing tail",
+    "run just the viewport and keys tests",
+    "why does the diff wrap at 110 columns",
+    "show me the usage report for this month",
+)
 
 
 def keymap() -> blocks.Block:
@@ -430,18 +476,38 @@ def keymap() -> blocks.Block:
         title="Keys",
         sections=[
             (
+                "Composer",
+                [
+                    ("@", "pick a workspace file, tab fills it in"),
+                    ("/", "pick a harness command"),
+                    ("up", "recall a prompt on an empty composer"),
+                    ("ctrl+x", "drop the last attachment chip"),
+                ],
+            ),
+            (
+                "Panels",
+                [
+                    ("1-3 / ↑↓", "answer an approval or a question"),
+                    ("enter / esc", "confirm or dismiss"),
+                ],
+            ),
+            (
                 "Scroll",
                 [
                     ("pgup / pgdn", "a screen at a time"),
-                    ("up / down", "a row at a time"),
+                    ("↑ / ↓", "a row at a time"),
                     ("home / end", "the top, or back to the tail"),
                 ],
             ),
             (
                 "Read",
-                [("ctrl+o", "expand tool output and thoughts"), ("ctrl+l", "repaint every row")],
+                [
+                    ("ctrl+o", "expand tool output and thoughts"),
+                    ("ctrl+f", "search the transcript"),
+                    ("ctrl+l", "repaint every row"),
+                ],
             ),
-            ("Leave", [("ctrl+c", "quit now"), ("ctrl+d", "quit when the composer is empty")]),
+            ("Leave", [("ctrl+c", "quit now"), ("ctrl+d", "quit on an empty composer")]),
         ],
         detail="the transcript is a record: these only change what is on screen",
     )
@@ -491,7 +557,12 @@ class LiveTurn:
 
 class Harness:
     def __init__(
-        self, term: Terminal, *, width: int | None = None, history: int | None = None
+        self,
+        term: Terminal,
+        *,
+        cap_width: int | None = None,
+        cap_height: int | None = None,
+        history: int | None = None,
     ) -> None:
         self.term = term
         self.painter = Painter()
@@ -499,12 +570,24 @@ class Harness:
         self.decoder = KeyDecoder()
         self.text = ""
         self.cursor = 0
-        self.menu_open = False
-        self.menu_selected = 0
+        self.attachments: list[Chip] = []
+        #: The overlay the composer is showing, exactly one at a time, in vx's
+        #: precedence: menu (slash / @path / history / mode / permissions),
+        #: approval, question, then search.
+        self.menu: dict[str, Any] | None = None
+        self.approval: footer.ApprovalView | None = None
+        self.ask: footer.QuestionView | None = None
+        self.searching = False
+        self.search = ""
+        self.search_cursor = 0
+        self.prompt_history: list[str] = list(PROMPT_HISTORY)
         self.live: LiveTurn | None = None
         self.queued = 0
         self.started = time.monotonic()
-        self._fixed_width = width
+        # ``-w``/``-H`` are a ceiling on the frame, never a fake terminal: the
+        # real size still drives the layout whenever it is the smaller of the two.
+        self._cap_width = cap_width
+        self._cap_height = cap_height
         self._resized = False
         self._running = True
         self.permission = "auto"
@@ -523,12 +606,16 @@ class Harness:
     # -- sizing ------------------------------------------------------------
 
     def size(self) -> tuple[int, int]:
+        """The frame's (rows, cols): the terminal's, capped by ``-w``/``-H``."""
         rows, cols = self.term.size()
-        if self._fixed_width:
-            cols = self._fixed_width
+        if self._cap_width:
+            cols = min(cols, self._cap_width)
+        if self._cap_height:
+            rows = min(rows, self._cap_height)
         return max(MIN_HEIGHT, rows), max(20, cols)
 
-    def resized(self) -> None:
+    def resized(self, *_args: Any) -> None:
+        """SIGWINCH: the next frame is a full repaint, as the shell does it."""
         self._resized = True
 
     # -- transcript --------------------------------------------------------
@@ -607,18 +694,28 @@ class Harness:
         if key in ("ctrl+c",):
             self._running = False
             return
-        if key.startswith("paste:"):
+        if key.startswith("paste:") and self.menu is None:
             self.insert(key[len("paste:") :].replace("\n", " "))
             return
+        # One overlay at a time, in the same order vx checks them.
+        if self.menu is not None:
+            self.menu_key(key)
+            return
+        if self.approval is not None:
+            self.approval_key(key)
+            return
+        if self.ask is not None:
+            self.ask_key(key)
+            return
+        if self.searching:
+            self.search_key(key)
+            return
         if key == "esc":
-            if self.menu_open:
-                self.menu_open = False
+            if self.text:
                 self.text = ""
                 self.cursor = 0
             elif self.live is not None:
                 self.cancel_turn()
-            return
-        if self.menu_open and self.menu_key(key):
             return
         if key == "ctrl+o":
             blocks.set_expanded(not blocks.expanded())
@@ -627,7 +724,16 @@ class Harness:
         if key == "ctrl+l":
             self.painter.reset()
             return
+        if key == "ctrl+f":
+            self.open_search()
+            return
+        if key == "ctrl+x":
+            self.drop_attachment()
+            return
         if key in ("pageup", "pagedown", "up", "down", "home", "end", "ctrl+u", "ctrl+f"):
+            if key == "up" and not self.text and self.prompt_history:
+                self.open_history()
+                return
             self.scroll_key(key)
             return
         if key == "enter":
@@ -639,7 +745,7 @@ class Harness:
             if self.cursor:
                 self.text = self.text[: self.cursor - 1] + self.text[self.cursor :]
                 self.cursor -= 1
-                self.sync_menu()
+                self.after_edit()
             return
         if key == "left":
             self.cursor = max(0, self.cursor - 1)
@@ -661,7 +767,7 @@ class Harness:
             cut = head.rfind(" ") + 1
             self.text = self.text[:cut] + self.text[self.cursor :]
             self.cursor = cut
-            self.sync_menu()
+            self.after_edit()
             return
         if key == "ctrl+d":
             if not self.text:
@@ -673,7 +779,7 @@ class Harness:
     def insert(self, text: str) -> None:
         self.text = self.text[: self.cursor] + text + self.text[self.cursor :]
         self.cursor += len(text)
-        self.sync_menu()
+        self.after_edit()
 
     def scroll_key(self, key: str) -> None:
         """Scrolling is offset-based: a bigger offset is further back in time.
@@ -696,50 +802,335 @@ class Harness:
         elif key == "end":
             self.viewport.bottom()
 
-    # -- the / menu --------------------------------------------------------
+    # -- composer overlays -------------------------------------------------
 
-    def matches(self) -> list[Command]:
-        if not self.text.startswith("/"):
-            return []
-        typed = self.text.lower()
-        return [cmd for cmd in COMMANDS if cmd.label.startswith(typed)] or COMMANDS
+    def after_edit(self) -> None:
+        """Recompute the picker from the composer, the way vx does per edit.
 
-    def sync_menu(self) -> None:
-        self.menu_open = self.text.startswith("/")
-        if self.menu_open:
-            self.menu_selected = min(self.menu_selected, max(0, len(self.matches()) - 1))
+        A leading ``/`` is a command picker, an ``@`` token anywhere is the file
+        picker, and either one owns the keys until it closes or completes.
+        """
+        self.menu = None
+        if self.text.startswith("/") and " " not in self.text:
+            prefix = self.text[1:].lower()
+            items = [
+                footer.MenuItem(cmd.label, cmd.detail, cmd.metadata, cmd.action)
+                for cmd in COMMANDS
+                if cmd.label[1:].startswith(prefix) or prefix in cmd.detail.lower()
+            ]
+            if items:
+                self.menu = {
+                    "kind": "slash",
+                    "items": items,
+                    "selected": 0,
+                    "noun": "Commands",
+                    "type_hint": self.text == "/",
+                }
+            return
+        parsed = parse_at(self.text, self.cursor)
+        if parsed is None:
+            return
+        at_offset, replace_end, query = parsed
+        items = [
+            footer.MenuItem(
+                label=candidate,
+                metadata=(
+                    "dir" if os.path.isdir(os.path.join(self.workspace, candidate)) else "file"
+                ),
+            )
+            for candidate in list_candidates(self.workspace, query)
+        ]
+        if items:
+            self.menu = {
+                "kind": "atpath",
+                "items": items,
+                "selected": 0,
+                "noun": "Files",
+                "type_hint": False,
+                "at_offset": at_offset,
+                "replace_end": replace_end,
+                "query": query,
+            }
 
-    def menu_key(self, key: str) -> bool:
-        matches = self.matches()
+    def menu_key(self, key: str) -> None:
+        menu = self.menu
+        if menu is None:
+            return
+        kind = menu["kind"]
+        view = menu.get("view")
+        if kind in ("mode", "permissions"):
+            count = len(getattr(view, "modes", []) or [])
+            if key == "esc":
+                self.menu = None
+            elif key == "up" and count:
+                menu["selected"] = (menu["selected"] - 1) % count
+            elif key == "down" and count:
+                menu["selected"] = (menu["selected"] + 1) % count
+            elif key in ("enter", "right") and kind == "mode":
+                self.choose_mode()
+            return
+        if key == "esc":
+            # The @ token and the command live in the composer, so closing the
+            # picker without choosing drops what opened it.
+            if kind in ("slash", "atpath"):
+                self.text = ""
+                self.cursor = 0
+            self.menu = None
+            return
+        items = menu["items"]
         if key == "up":
-            self.menu_selected = max(0, self.menu_selected - 1)
-            return True
+            menu["selected"] = (menu["selected"] - 1) % max(1, len(items))
+            return
         if key == "down":
-            self.menu_selected = min(len(matches) - 1, self.menu_selected + 1)
-            return True
-        if key == "tab" and matches:
-            self.text = matches[self.menu_selected].label
+            menu["selected"] = (menu["selected"] + 1) % max(1, len(items))
+            return
+        if key in ("enter", "right"):
+            self.choose_menu_item()
+            return
+        if key == "tab":
+            if kind == "history":
+                self.choose_menu_item()
+            else:
+                self.complete()
+            return
+        if kind == "history":
+            self.menu = None
+            self.key(key)
+            return
+        # A slash or @path picker follows the composer as it is edited.
+        if key.startswith("paste:"):
+            self.insert(key[len("paste:") :].replace("\n", " "))
+        elif key == "backspace":
+            if self.cursor:
+                self.text = self.text[: self.cursor - 1] + self.text[self.cursor :]
+                self.cursor -= 1
+                self.after_edit()
+        elif key in ("left", "right"):
+            step = -1 if key == "left" else 1
+            self.cursor = max(0, min(len(self.text), self.cursor + step))
+            self.after_edit()
+        elif len(key) == 1 and key >= " ":
+            self.insert(key)
+        else:
+            self.menu = None
+            self.key(key)
+
+    def complete(self) -> None:
+        """Tab on a picker: put its row into the composer and close it."""
+        menu = self.menu
+        if menu is None:
+            return
+        item = menu["items"][menu["selected"]]
+        if menu["kind"] == "atpath":
+            at_offset = menu["at_offset"]
+            replace_end = menu["replace_end"]
+            chosen = item.label
+            self.text = self.text[:at_offset] + "@" + chosen + " " + self.text[replace_end:]
+            self.cursor = at_offset + 1 + len(chosen) + 1
+            self.menu = None
+        elif menu["kind"] == "slash":
+            self.text = item.label + " "
             self.cursor = len(self.text)
-            return True
-        return False
+            self.menu = None
+
+    def choose_menu_item(self) -> None:
+        menu = self.menu
+        if menu is None:
+            return
+        item = menu["items"][menu["selected"]]
+        kind = menu["kind"]
+        if kind == "atpath":
+            self.complete()
+            return
+        if kind == "slash":
+            self.menu = None
+            self.text = ""
+            self.cursor = 0
+            self.command(item.label)
+            return
+        if kind == "history":
+            self.text = item.label
+            self.cursor = len(self.text)
+            self.menu = None
+            self.after_edit()
+
+    def open_history(self) -> None:
+        items = [footer.MenuItem(prompt, "", "prompt") for prompt in self.prompt_history]
+        self.menu = {"kind": "history", "items": items, "selected": 0, "noun": "History"}
+
+    def open_mode(self) -> None:
+        view = footer.ModePickerView(
+            modes=[
+                footer.MenuItem("Ask", "Confirm each action before it runs", "mode", value="ask"),
+                footer.MenuItem(
+                    "Auto", "Bypass all checks — everything runs freely", "mode", value="auto"
+                ),
+            ],
+            selected=0,
+            current_mode=self.permission,
+        )
+        self.menu = {"kind": "mode", "items": [], "selected": 0, "view": view}
+
+    def choose_mode(self) -> None:
+        menu = self.menu or {}
+        view = menu.get("view")
+        if view is None:
+            return
+        chosen = view.modes[menu.get("selected", 0)]
+        self.permission = chosen.value or chosen.label.lower()
+        self.menu = None
+        self.add(blocks.Notice(topic="mode", body=self.permission, tone="success"))
+
+    def open_perms(self) -> None:
+        view = footer.PermissionsView(
+            mode_name="Auto",
+            description="Bypass all checks — everything runs freely",
+            grants=["bash · uv run python -m pytest", "apply_patch · packages/vx/src"],
+            rules=["deny write outside the workspace", "allow read **"],
+        )
+        self.menu = {"kind": "permissions", "items": [], "selected": 0, "view": view}
+
+    # -- attachments -------------------------------------------------------
+
+    def add_chip(self, label: str, size: str) -> None:
+        self.attachments.append(Chip(label=label, size_label=size))
+
+    def drop_attachment(self) -> None:
+        if not self.attachments:
+            self.add(blocks.Notice(topic="attach", body="nothing to drop", tone="warning"))
+            return
+        gone = self.attachments.pop()
+        self.add(blocks.Notice(topic="attach", body=f"dropped {gone.label}", tone="cancelled"))
+
+    # -- transcript search -------------------------------------------------
+
+    def open_search(self) -> None:
+        self.searching = True
+        self.search_cursor = len(self.search)
+        cols, area = self.size()[1], max(1, self.size()[0] - 3)
+        self.viewport.set_search(self.search, cols)
+        if self.viewport.search_matches:
+            self.viewport.search_next(0, cols, area)
+
+    def set_search(self, text: str) -> None:
+        self.search = text
+        self.search_cursor = len(text)
+        cols = self.size()[1]
+        self.viewport.set_search(text, cols)
+
+    def search_key(self, key: str) -> None:
+        rows, cols = self.size()
+        area = max(1, rows - 3)
+        if key in ("esc", "ctrl+f"):
+            self.searching = False
+            self.viewport.set_search("", cols)
+            return
+        if key == "enter":
+            if self.viewport.search_matches:
+                self.viewport.search_next(0, cols, area)
+            self.searching = False
+            return
+        if key in ("ctrl+n", "ctrl+p"):
+            self.viewport.search_next(1 if key == "ctrl+n" else -1, cols, area)
+            return
+        if key in ("pageup", "pagedown"):
+            self.viewport.page(1 if key == "pageup" else -1, cols, area)
+            return
+        if key == "backspace":
+            self.set_search(self.search[: max(0, self.search_cursor - 1)])
+            return
+        if key == "left":
+            self.search_cursor = max(0, self.search_cursor - 1)
+            return
+        if key == "right":
+            self.search_cursor = min(len(self.search), self.search_cursor + 1)
+            return
+        if len(key) == 1 and key >= " ":
+            self.set_search(
+                self.search[: self.search_cursor] + key + self.search[self.search_cursor :]
+            )
+
+    # -- approval and question panels --------------------------------------
+
+    def open_approval(self) -> None:
+        self.approval = footer.ApprovalView(
+            label="bash",
+            target="uv run python -m pytest packages/vx/tests -q",
+            reason="runs commands in this workspace",
+            choices=["1. Yes", "2. Yes, and don't ask again", "3. No"],
+            selected=0,
+        )
+
+    def approval_key(self, key: str) -> None:
+        view = self.approval
+        if view is None:
+            return
+        if key == "esc":
+            self.approval = None
+            self.add(blocks.Notice(topic="bash", body="declined", tone="cancelled"))
+            return
+        if key in ("up", "down"):
+            step = -1 if key == "up" else 1
+            view.selected = max(0, min(len(view.choices) - 1, view.selected + step))
+            return
+        if key in ("1", "2", "3"):
+            view.selected = int(key) - 1
+        elif key != "enter":
+            return
+        allowed = view.selected < 2
+        self.approval = None
+        self.add(
+            blocks.ToolGroup(
+                calls=[
+                    blocks.BashToolStatus(
+                        command=view.target,
+                        status="ok" if allowed else "cancelled",
+                        exit_code=0 if allowed else None,
+                        elapsed=0.0 if allowed else None,
+                    )
+                ]
+            )
+        )
+
+    def open_ask(self) -> None:
+        self.ask = footer.QuestionView(
+            question="Which scrollback size should the transcript keep?",
+            options=[
+                footer.QuestionOption("Keep everything", "no limit, rows only leave when deleted"),
+                footer.QuestionOption("Keep 2,000 rows", "a fold marker says what was dropped"),
+                footer.QuestionOption("Keep 500 rows", "small, fast, and lossy"),
+            ],
+            selected=0,
+            index=0,
+            total=1,
+        )
+
+    def ask_key(self, key: str) -> None:
+        view = self.ask
+        if view is None:
+            return
+        if key == "esc":
+            self.ask = None
+            self.add(blocks.Notice(topic="question", body="skipped", tone="cancelled"))
+            return
+        if key in ("up", "down"):
+            step = -1 if key == "up" else 1
+            view.selected = max(0, min(len(view.options) - 1, view.selected + step))
+            return
+        if key in ("1", "2", "3"):
+            view.selected = int(key) - 1
+        elif key != "enter":
+            return
+        self.ask = None
+        chosen = view.options[view.selected]
+        self.add(blocks.Notice(topic="answer", body=chosen.label, tone="success"))
 
     def submit(self) -> None:
-        typed = self.text.strip()
-        chosen = None
-        if self.menu_open:
-            # Enter in a filtered picker takes the row the caret is on, the way
-            # vx's own menus do, not the fragment that was typed.
-            matches = self.matches()
-            if typed.startswith("/") and matches:
-                chosen = matches[self.menu_selected].label
-        text = typed
+        text = self.text.strip()
         self.text = ""
         self.cursor = 0
-        self.menu_open = False
+        self.menu = None
         if not text:
-            return
-        if chosen is not None:
-            self.command(chosen)
             return
         if text.startswith("/"):
             self.command(text.split()[0].lower())
@@ -748,7 +1139,14 @@ class Harness:
             self.queued += 1
             self.add(blocks.Notice(topic="queued", body=text, detail="sent when the turn ends"))
             return
-        self.add(user_turn(text))
+        # An @path that named an image rides along as a chip, as vx does; the
+        # token stays in the prompt so the transcript reads like what was typed.
+        for word in text.split():
+            if word.startswith("@") and os.path.splitext(word)[1].lower() in IMAGE_SUFFIXES:
+                self.add_chip(os.path.basename(word[1:]), "from @")
+        chip = describe_chips(self.attachments)
+        self.attachments = []
+        self.add(user_turn(text, chip))
         # A prompt is a request to see the answer, so it returns to the tail.
         self.viewport.bottom()
         self.start_turn()
@@ -763,6 +1161,17 @@ class Harness:
         action = found.action
         if action == "run":
             self.start_turn()
+        elif action == "tour":
+            for block in opening():
+                self.add(block)
+            self.add(tools_mixed_group())
+            self.add(*apply_patch(long_line=True))
+            self.add(shell_run(), shell_run_llm())
+            self.add(*notices())
+            self.add(sections(), summary())
+            drawn = usage()
+            if drawn is not None:
+                self.add(drawn)
         elif action == "diff":
             self.add(*apply_patch(long_line=len(DIFF_LINES) % 2 == 0))
         elif action == "tools":
@@ -778,18 +1187,33 @@ class Harness:
         elif action == "sections":
             self.add(sections())
         elif action == "shell":
-            self.add(shell_run())
+            self.add(shell_run(), shell_run_llm())
+        elif action == "search":
+            self.open_search()
+        elif action == "history":
+            self.open_history()
+        elif action == "attach":
+            self.add_chip("screenshot.png", "212 KB")
+            self.add_chip("diagram.png", "44 KB")
+        elif action == "approve":
+            self.open_approval()
+        elif action == "ask":
+            self.open_ask()
+        elif action == "mode":
+            self.open_mode()
+        elif action == "perms":
+            self.open_perms()
         elif action == "theme":
             wanted = "fx-light" if theme.current().name != "fx-light" else "fx-dark"
             theme.apply_named(wanted)
             self.painter.reset()
             self.add(blocks.Notice(topic="theme", body=theme.current().name, tone="success"))
         elif action == "narrow":
-            self._fixed_width = 60
-            self.painter.reset()
+            self._cap_width = 60
+            self._resized = True
         elif action == "wide":
-            self._fixed_width = 120
-            self.painter.reset()
+            self._cap_width = 120
+            self._resized = True
         elif action == "clear":
             self.viewport.clear()
             self.add(welcome())
@@ -801,21 +1225,70 @@ class Harness:
     # -- painting ----------------------------------------------------------
 
     def footer(self, cols: int, height: int) -> tuple[list[str], tuple[int, int] | None]:
-        if self.menu_open:
-            matches = self.matches()
-            rows = [footer.rule(cols)]
-            composer, _row, _col = footer.composer_rows(
-                self.text, self.cursor, cols, self.input_rows(cols)
+        """The rows under the transcript, in vx's own precedence order."""
+        if self.approval is not None:
+            view = self.approval
+            return [footer.rule(cols), *view.panel(cols)[:7], view.hint(cols)], None
+
+        if self.ask is not None:
+            view = self.ask
+            return [
+                footer.rule(cols),
+                "",
+                *view.panel(cols),
+                footer.rule(cols),
+                view.hint(cols),
+            ], None
+
+        if self.searching:
+            search_rows, caret_row, caret_col = footer.composer_rows(
+                self.search, self.search_cursor, cols, 1, prompt=footer.SEARCH_PROMPT
             )
-            rows.extend(composer)
+            caret = (1 + caret_row, caret_col) if 0 <= caret_row < len(search_rows) else None
+            return [
+                footer.rule(cols),
+                *search_rows,
+                footer.rule(cols),
+                footer.search_hint(
+                    cols=cols,
+                    index=self.viewport.search_index,
+                    count=len(self.viewport.search_matches),
+                ),
+            ], caret
+
+        rows = [footer.rule(cols)]
+        composer_start = len(rows)
+        composer, caret_row, caret_col = footer.composer_rows(
+            self.text, self.cursor, cols, self.input_rows(cols)
+        )
+        if self.attachments:
+            rows.append(footer.attachment_row(self.attachments, cols))
+            composer_start += 1
+        rows.extend(composer)
+
+        menu = self.menu
+        if menu is not None:
             rows.append(footer.rule(cols))
+            if menu["kind"] in ("mode", "permissions"):
+                view = menu["view"]
+                room = max(6, height - 8)
+                rows.extend(view.panel(cols) if menu["kind"] == "mode" else view.panel(cols, room))
+                rows.append(footer.rule(cols))
+                if menu["kind"] == "mode":
+                    view.selected = menu.get("selected", 0)
+                rows.append(view.hint(cols))
+                return rows, None
             window = max(1, min(footer.MENU_MAX_ROWS, height - 10 - len(composer)))
+            noun = menu.get("noun", "Commands")
+            if menu["kind"] == "slash":
+                noun = f"Commands · {self.text}"
             rows.extend(
                 footer.menu_rows(
                     cols=cols,
-                    items=menu_items(matches),
-                    selected=self.menu_selected,
-                    noun=f"Commands · {self.text}",
+                    items=menu["items"],
+                    selected=menu["selected"],
+                    noun=noun,
+                    type_hint=bool(menu.get("type_hint")),
                     max_rows=window,
                 )
             )
@@ -823,12 +1296,6 @@ class Harness:
             rows.append(footer.menu_hint(cols=cols))
             return rows, None
 
-        rows = [footer.rule(cols)]
-        composer_start = len(rows)
-        composer, caret_row, caret_col = footer.composer_rows(
-            self.text, self.cursor, cols, self.input_rows(cols)
-        )
-        rows.extend(composer)
         rows.append(footer.rule(cols))
         right = ""
         if self.live is not None:
@@ -858,16 +1325,25 @@ class Harness:
         return max(1, min(MAX_INPUT_LINES, total))
 
     def draw(self) -> None:
+        if self._resized:
+            # A new size means every row moved, so nothing cached can be reused.
+            self.painter.reset()
         height, cols = self.size()
         foot, caret = self.footer(cols, height)
         foot = foot[-max(1, height - 1) :]
         area = max(1, height - len(foot))
         transcript = self.viewport.visible(cols, area)
+        if self.viewport.search_matches:
+            transcript = self.viewport.highlight(transcript)
         if self.viewport.unseen:
             transcript[-1] = footer.jump_to_latest_pill(cols)
         frame = (transcript + foot)[:height]
         if len(frame) < height:
             frame += [""] * (height - len(frame))
+        # A capped frame is shorter than the terminal; the rows below it belong
+        # to it too, so a shrink does not leave older rows under the composer.
+        screen_rows = max(height, self.term.size()[0])
+        frame += [""] * (screen_rows - len(frame))
         cursor = None
         if caret is not None:
             cursor = (area + caret[0], caret[1])
@@ -878,6 +1354,8 @@ class Harness:
                 fh.write(
                     json.dumps(
                         {
+                            "term": list(self.term.size()),
+                            "cap": [self._cap_height, self._cap_width],
                             "rows": height,
                             "cols": cols,
                             "scroll": self.viewport.scroll,
@@ -896,6 +1374,8 @@ class Harness:
             self._resized = False
 
     def run(self) -> None:
+        with contextlib.suppress(ValueError, OSError):
+            signal.signal(signal.SIGWINCH, self.resized)
         self.draw()
         while self._running:
             data = self.term.read_available()
@@ -984,7 +1464,7 @@ def main() -> int:
         def fixed_budget() -> int:
             return budget
 
-        blocks.thinking_line_budget = fixed_budget
+        blocks.thinking_line_budget = fixed_budget  # ty:ignore[invalid-assignment]
 
     cols = args.width or 100
     height = args.height or 32
@@ -1009,18 +1489,8 @@ def main() -> int:
             print(ansi.strip_ansi(row) if args.plain else row)
         return 0
 
-    if args.width or args.height:
-        # A pinned size still needs a terminal, so shrink the reported one.
-        size = (args.height or 32, args.width or 100)
-
-        def fixed_size(self: Terminal) -> tuple[int, int]:
-            return size
-
-        Terminal.size = fixed_size  # type: ignore[method-assign]
-
     with Terminal() as term:
-        harness = Harness(term, history=args.history)
-        harness.term = term
+        harness = Harness(term, cap_width=args.width, cap_height=args.height, history=args.history)
         with contextlib.suppress(KeyboardInterrupt):
             harness.run()
     return 0

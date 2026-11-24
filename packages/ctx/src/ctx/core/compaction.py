@@ -11,19 +11,30 @@ Overflow formula:
 """
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from ctx.protocol.abc import BaseProvider
-from ctx.protocol.types import Message, TextPart, Usage, UserMessage
+from ctx.protocol.types import (
+    ImageContent,
+    Message,
+    TextContent,
+    TextPart,
+    ToolResultMessage,
+    Usage,
+    UserMessage,
+)
 
 SUMMARIZATION_PROMPT = """You are producing a HANDOFF document for a coding session that is \
-about to run out of context. Everything before this point is about to be deleted. \
-Your summary is the ONLY thing the next agent will have.
+about to run out of context. The bulk of the conversation is about to be deleted. \
+The next agent will also see the most recent turns verbatim, so do not spend the \
+budget reciting them: summarize the earlier conversation and the state it left behind, \
+and use those recent turns only to anchor what is still in progress.
 
-That next agent will continue this work, not restart it. If you drop a detail, it \
-cannot be recovered — it will be gone forever, and the next agent will either redo \
-finished work or break something that already works.
+That next agent will continue this work, not restart it. If you drop a detail from \
+the earlier conversation, it cannot be recovered — it will be gone forever, and the \
+next agent will either redo finished work or break something that already works.
 
 Respond with plain text only. Do not call any tool.
 
@@ -35,6 +46,10 @@ token you emit is a token the next agent has to read, so write the handoff \
 once, well, and stop.
 
 ## Binding length and fidelity rules
+
+0. **Your output budget is roughly 20,000 tokens.** Do not stop at 3,000. A \
+200,000-token conversation warrants a handoff of several thousand tokens across \
+all twelve sections. Fill the budget with concrete detail before you stop.
 
 1. **Use the whole output budget.** This is the single most important rule. Do not \
 stop while budget remains. A long session of 100k+ tokens of history warrants a \
@@ -210,12 +225,145 @@ def _strip_analysis(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", stripped)
 
 
+CLEARED_TOOL_RESULT = "[Old tool result content cleared]"
+
+#: Results whose raw output is safe to clear before summarization. openclaude
+#: keeps this exact set (plus MCP tools) in its microcompact step.
+COMPACTABLE_TOOLS = frozenset(
+    {
+        "read",
+        "bash",
+        "shell",
+        "grep",
+        "find",
+        "glob",
+        "ls",
+        "web_search",
+        "web_fetch",
+        "edit",
+        "write",
+        "apply_patch",
+    }
+)
+
+
+def rough_token_count(text: str) -> int:
+    """Char/4 estimate used where no provider usage is available."""
+    return len(text) // 4
+
+
+def estimate_messages_tokens(messages: Sequence[Message]) -> int:
+    total = 0
+    for message in messages:
+        content = getattr(message, "content", None)
+        if isinstance(content, str):
+            total += len(content)
+        elif isinstance(content, list):
+            for part in content:
+                text = getattr(part, "text", None)
+                if isinstance(text, str):
+                    total += len(text)
+                thinking = getattr(part, "thinking", None)
+                if isinstance(thinking, str):
+                    total += len(thinking)
+    return total // 4
+
+
+def _without_images(message: Message) -> Message:
+    content = getattr(message, "content", None)
+    if not isinstance(content, list) or not any(
+        isinstance(part, ImageContent) for part in content
+    ):
+        return message
+    parts: list[Any] = [
+        TextContent(text="[image]") if isinstance(part, ImageContent) else part for part in content
+    ]
+    return message.model_copy(update={"content": parts})
+
+
+def prepare_summary_messages(
+    messages: Sequence[Message], *, prune_tool_results: bool = True, tool_results_to_keep: int = 3
+) -> list[Message]:
+    """Trim what the summarizer sees: images out, old tool results cleared.
+
+    The tool call itself stays, so the model still knows what ran; only the raw
+    result is replaced with a marker. The last few results stay intact so the
+    summary can quote active state accurately.
+    """
+    compactable = [
+        message
+        for message in messages
+        if isinstance(message, ToolResultMessage)
+        and message.tool_name.lower() in COMPACTABLE_TOOLS
+    ]
+    keep = {id(message) for message in compactable[-max(1, tool_results_to_keep) :]}
+    out: list[Message] = []
+    for message in messages:
+        if (
+            isinstance(message, ToolResultMessage)
+            and prune_tool_results
+            and id(message) not in keep
+        ):
+            out.append(
+                message.model_copy(
+                    update={
+                        "content": [TextContent(text=CLEARED_TOOL_RESULT)],
+                        "ui_details": None,
+                        "ui_details_full": None,
+                        "ui_data": None,
+                    }
+                )
+            )
+        else:
+            out.append(_without_images(message))
+    return out
+
+
+def _has_text(message: Message) -> bool:
+    if isinstance(message, ToolResultMessage):
+        return False
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        return any(isinstance(part, TextContent) and bool(part.text.strip()) for part in content)
+    return False
+
+
+def select_preserved_tail(
+    messages: Sequence[Message], *, min_tokens: int, max_tokens: int, min_text_messages: int
+) -> list[Message]:
+    """Pick the recent tail kept verbatim beside the summary.
+
+    Mirrors openclaude's session-memory compaction: expand backwards until both
+    the token floor and the minimum number of real text turns are met, cap at a
+    hard maximum, and never start on an orphaned tool result.
+    """
+    if not messages:
+        return []
+    start = len(messages)
+    total = 0
+    texts = 0
+    while start > 0:
+        message = messages[start - 1]
+        total += estimate_messages_tokens([message])
+        if _has_text(message):
+            texts += 1
+        start -= 1
+        if (total >= min_tokens and texts >= min_text_messages) or total >= max_tokens:
+            break
+    while start > 0 and isinstance(messages[start], ToolResultMessage):
+        start -= 1
+    return list(messages[start:])
+
+
 async def generate_summary(
     messages: list[Message],
     provider: BaseProvider,
     system_prompt: str | None = None,
     on_delta: Callable[[SummaryProgress], None] | None = None,
     focus_instructions: str | None = None,
+    max_tokens: int | None = None,
 ) -> str:
     """Send the full conversation + summarization prompt to the LLM, return summary text.
 
@@ -226,7 +374,9 @@ async def generate_summary(
 
     The call pins ``thinking_level="off"``: reasoning tokens on a write-only
     task are pure latency, and the user's session reasoning level is meant for
-    turns that actually act on the codebase.
+    turns that actually act on the codebase. ``max_tokens`` should be an
+    explicit budget (20k by default in the harness) — inheriting the provider's
+    4096 default silently truncates a handoff after a few thousand tokens.
     """
     summary_messages: list[Message] = list(messages)
     if focus_instructions and focus_instructions.strip():
@@ -238,7 +388,11 @@ async def generate_summary(
     summary_messages.append(UserMessage(content=SUMMARIZATION_PROMPT))
 
     stream = await provider.stream(
-        summary_messages, system_prompt=system_prompt, tools=None, thinking_level="off"
+        summary_messages,
+        system_prompt=system_prompt,
+        tools=None,
+        thinking_level="off",
+        max_tokens=max_tokens,
     )
 
     text_parts: list[str] = []

@@ -31,10 +31,17 @@ from ctx.ai import (
 from ctx.ai.base import AuthMode
 from ctx.ai.dynamic_models import find_dynamic_model, get_dynamic_provider_headers
 from ctx.ai.thinking import clamp_thinking_level
-from ctx.core.compaction import SummaryProgress, generate_summary
+from ctx.core.compaction import (
+    SummaryProgress,
+    estimate_messages_tokens,
+    generate_summary,
+    prepare_summary_messages,
+    rough_token_count,
+)
 from ctx.core.config import add_recent_model, get_last_selected, set_last_selected
 from ctx.core.config import config as ctx_config
 from ctx.core.handoff import generate_handoff_prompt
+from ctx.core.harness_config import get_harness_config
 from ctx.plugins.bus import EventBus
 from ctx.plugins.event_contract import MODEL_SELECT, THINKING_LEVEL_SELECT
 from ctx.plugins.extensions import LoadedExtensions
@@ -1782,27 +1789,44 @@ class ConversationRuntime:
                 tokens_before = int(self.session.token_totals().context_tokens)
         if not tokens_before:
             tokens_before = self._estimate_all_messages_tokens()
+        cfg = get_harness_config()
+        all_messages = self.session.all_messages
+        preserved_from, preserved, preserved_tokens = self.session.select_preservation_tail(
+            min_tokens=cfg.compaction_keep_recent_tokens,
+            max_tokens=cfg.compaction_keep_max_tokens,
+            min_text_messages=cfg.compaction_min_text_messages,
+        )
+        summary_input = prepare_summary_messages(
+            all_messages,
+            prune_tool_results=cfg.compaction_prune_tool_results,
+            tool_results_to_keep=cfg.compaction_tool_results_to_keep,
+        )
         summary = await generate_summary(
-            self.session.all_messages,
+            summary_input,
             self.provider,
             system_prompt=self.agent.system_prompt,
             on_delta=on_progress,
             focus_instructions=instructions,
+            max_tokens=cfg.compaction_summary_max_tokens,
         )
-
-        summary_text = summary
 
         user_msg = (
             "[Context compacted — conversation history summarized above."
             " Continue working on the task.]"
         )
-        tokens_after = (len(summary_text) + len(user_msg)) // 4
+        # Count what the next request really carries, not just the summary:
+        # fixed system prompt, the summary, the preserved tail and framing.
+        tokens_after = estimate_messages_tokens(preserved) + rough_token_count(summary)
+        tokens_after += rough_token_count(user_msg)
+        tokens_after += rough_token_count(self.agent.system_prompt or "")
 
         self.session.append_compaction(
             summary=summary,
             first_kept_entry_id=self.session.leaf_id or "",
             tokens_before=tokens_before,
             tokens_after=tokens_after,
+            preserved_from_id=preserved_from,
+            preserved_tokens=preserved_tokens,
         )
         return CompactionResult(
             tokens_before=tokens_before, tokens_after=tokens_after, summary=summary

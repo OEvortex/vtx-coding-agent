@@ -1068,7 +1068,8 @@ class DiffOutput(Block):
     """List of (op, line_number, text) where op is '+', '-', or ' '."""
     path: str = ""
     """The file the lines belong to; empty when the block holds one file's diff."""
-    kind: str = "tool"
+    #: Its own kind, so spacing can keep it welded under the row that edited.
+    kind: str = "diff"
 
     def rows(self, width: int) -> list[str]:
         if not self.lines:
@@ -1366,11 +1367,15 @@ def _short(text: str, limit: int = 70) -> str:
 
 
 def spacing(previous: str | None, kind: str) -> int:
-    """Blank rows fx leaves between two transcript blocks."""
+    """Blank rows fx leaves between two transcript blocks.
+
+    Every block is its own thought, so each one gets a row of air above it —
+    including a tool group, which would otherwise sit welded to the reply that
+    introduced it and to the group that followed it. A patch's diff is the one
+    exception: it is the other half of the row above it, not a new thought.
+    """
     if previous is None:
         return 0
-    if kind == "tool" and previous in ("tool", "assistant", "assistant_tool"):
-        return 0
-    if kind == "assistant" and previous in ("assistant", "assistant_tool"):
+    if kind == "diff":
         return 0
     return 1

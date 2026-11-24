@@ -148,6 +148,14 @@ class LLMConfig(BaseModel):
 class CompactionConfig(BaseModel):
     on_overflow: OnOverflowMode = "continue"
     threshold_percent: float = 80.0
+    #: Output budget for the summary request (openclaude reserves 20k).
+    summary_max_tokens: int = 20_000
+    #: Recent messages preserved verbatim after the summary.
+    keep_recent_tokens: int = 12_000
+    keep_max_tokens: int = 40_000
+    min_text_messages: int = 5
+    prune_tool_results: bool = True
+    tool_results_to_keep: int = 3
 
 
 class AgentConfig(BaseModel):
@@ -1016,6 +1024,12 @@ def _sync_harness_settings(cfg: Config) -> None:
         default_context_window=cfg.agent.default_context_window,
         compaction_threshold_percent=cfg.compaction.threshold_percent,
         compaction_on_overflow=cfg.compaction.on_overflow,
+        compaction_summary_max_tokens=cfg.compaction.summary_max_tokens,
+        compaction_keep_recent_tokens=cfg.compaction.keep_recent_tokens,
+        compaction_keep_max_tokens=cfg.compaction.keep_max_tokens,
+        compaction_min_text_messages=cfg.compaction.min_text_messages,
+        compaction_prune_tool_results=cfg.compaction.prune_tool_results,
+        compaction_tool_results_to_keep=cfg.compaction.tool_results_to_keep,
         tool_call_idle_timeout_seconds=cfg.llm.tool_call_idle_timeout_seconds,
     )
 

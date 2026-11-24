@@ -140,7 +140,9 @@ class TestFollowTail:
         v.add(StubBlock(kind="assistant", lines=["a", "b", "c"]))
         v.visible(80, 10)
         assert not v.follow
-        assert v.unseen == 3
+        # Three content rows plus the blank row that now always separates two
+        # blocks: the reader counted the gap as a row too.
+        assert v.unseen == 4
 
     def test_bottom_resets_follow_and_unseen(self):
         v = Viewport()

@@ -90,6 +90,10 @@ class CompactionEntry(EntryBase):
     tokens_before: int
     tokens_after: int | None = None
     details: dict[str, Any] | None = None
+    #: Entry id where the verbatim recent tail starts (None = legacy compaction
+    #: with no preserved messages). Kept as a field so resumed sessions work.
+    preserved_from_id: str | None = None
+    preserved_tokens: int = 0
 
 
 class CustomMessageEntry(EntryBase):
@@ -615,6 +619,8 @@ class Session:
         tokens_before: int,
         tokens_after: int | None = None,
         details: dict[str, Any] | None = None,
+        preserved_from_id: str | None = None,
+        preserved_tokens: int = 0,
     ) -> str:
         entry = CompactionEntry(
             id=self._generate_entry_id(),
@@ -625,6 +631,8 @@ class Session:
             tokens_before=tokens_before,
             tokens_after=tokens_after,
             details=details,
+            preserved_from_id=preserved_from_id,
+            preserved_tokens=preserved_tokens,
         )
         self._append_entry(entry)
         return entry.id
@@ -808,7 +816,8 @@ class Session:
         # Build compacted message list:
         # 1. Synthetic user message framing this as a state restoration
         # 2. Assistant message with the compaction summary
-        # 3. All MessageEntry entries after the compaction entry
+        # 3. The verbatim recent tail preserved before the boundary
+        # 4. All MessageEntry entries after the compaction entry
 
         summary_text = last_compaction.summary
 
@@ -823,6 +832,20 @@ class Session:
                 content=[TextContent(text=summary_text)], stop_reason=StopReason.STOP
             ),
         ]
+
+        if last_compaction.preserved_from_id:
+            preserving = False
+            for entry in self.active_entries:
+                if entry.id == last_compaction.preserved_from_id:
+                    preserving = True
+                if preserving and not (
+                    isinstance(entry, CompactionEntry) and entry.id == last_compaction.id
+                ):
+                    message = self._llm_message(entry)
+                    if message is not None:
+                        result.append(message)
+                if isinstance(entry, CompactionEntry) and entry.id == last_compaction.id:
+                    break
 
         # Find the compaction entry's position and include messages after it
         past_compaction = False
@@ -846,6 +869,36 @@ class Session:
             for message in (self._llm_message(e) for e in self.active_entries)
             if message is not None
         ]
+
+    def select_preservation_tail(
+        self, *, min_tokens: int, max_tokens: int, min_text_messages: int
+    ) -> tuple[str | None, builtins.list[Message], int]:
+        """Pick the recent tail to keep verbatim after the next compaction.
+
+        Returns the entry id where the tail starts, the messages themselves,
+        and their estimated tokens. The id is stored on the CompactionEntry so
+        resumed sessions reconstruct the same window.
+        """
+        from ctx.core.compaction import estimate_messages_tokens, select_preserved_tail
+
+        pairs = [
+            (entry, message)
+            for entry in self.active_entries
+            if (message := self._llm_message(entry)) is not None
+        ]
+        tail = select_preserved_tail(
+            [message for _, message in pairs],
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            min_text_messages=min_text_messages,
+        )
+        if not tail:
+            return None, [], 0
+        tokens = estimate_messages_tokens(tail)
+        for entry, message in pairs:
+            if message is tail[0]:
+                return entry.id, tail, tokens
+        return None, tail, tokens
 
     def get_last_assistant_text(self) -> str | None:
         for message in reversed(self.messages):
