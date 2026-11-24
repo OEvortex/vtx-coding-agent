@@ -49,7 +49,7 @@ class ReadTool(BaseTool):
     )
     description = (
         "Read a file (numbered lines; 2000-line/2000-char caps — use offset/limit "
-        "ranges: grep first, then read a window, don't dump whole large files) or "
+        "ranges: search first, then read a window, don't dump whole large files) or "
         "list a directory (recursive, depth<=3). Supports jpg/png/gif/webp."
     )
 

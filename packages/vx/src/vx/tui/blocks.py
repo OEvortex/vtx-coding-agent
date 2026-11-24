@@ -1365,11 +1365,12 @@ class GrepToolStatus(ToolRow):
 
 @dataclass
 class WebToolStatus(ToolRow):
-    """web/web_search tool: `W query` or `L url`."""
+    """The web tool: `Searched web query` or `Fetched url`."""
 
     name: str = "web"
     query: str = ""
     url: str = ""
+    mode: str = "search"
     result_count: int = 0
     status: str = "running"
     kind: str = "tool"
@@ -1379,7 +1380,7 @@ class WebToolStatus(ToolRow):
 
     def body(self) -> str:
         t = _theme.current()
-        is_search = self.name == "web_search"
+        is_search = self.mode != "fetch" and self.name != "web_fetch"
         if self.status == "running":
             out = f"{t.dim_style}{'Searching web' if is_search else 'Fetching'}{ansi.RESET}"
         elif self.status == "cancelled":

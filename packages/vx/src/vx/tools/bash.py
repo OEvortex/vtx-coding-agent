@@ -159,11 +159,15 @@ class BashTool(BaseTool):
     tool_icon = "$"
     params = BashParams
     mutating = True
-    prompt_guidelines = ("bash for git/builds/tests/scripts (not file read/search/edit)",)
+    prompt_guidelines = (
+        "bash for git/builds/tests/scripts and searching (rg, grep, find)",
+        "not for reading or editing files — use read/apply_patch",
+    )
     description = (
-        "Run a shell command in the cwd (builds, tests, git, package managers). "
+        "Run a shell command in the cwd (builds, tests, git, package managers, and "
+        "searching with rg/grep/find). "
         f"Output truncated to last {MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB "
-        "(full saved to temp log). Not for file read/search/edit — use read/grep/apply_patch."
+        "(full saved to temp log). Not for reading or editing files — use read/apply_patch."
     )
 
     def format_call(self, params: BashParams) -> str:

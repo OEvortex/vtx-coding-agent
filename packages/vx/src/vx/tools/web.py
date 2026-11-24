@@ -1,22 +1,44 @@
-"""Web tools for vx — fetch URLs and search the web."""
+"""Web tool for vx: one tool, two modes — search the web or fetch a URL.
+
+``mode="search"`` (default) asks Exa's keyless MCP endpoint; ``mode="fetch"``
+reads a URL through Jina Reader's markdown view. Both jobs share one schema
+because the model asks for them with one intent ("look this up" vs "read this
+page") and one schema costs less context than two.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
-import re
 import urllib.error
+import urllib.parse
 import urllib.request
+from typing import Literal
 
 from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
 from pydantic import BaseModel, Field
 
+#: Ceiling on the text a fetch returns, so one page cannot flood the context.
+MAX_FETCH_CHARS = 30_000
+MAX_RESULTS = 10
+_TIMEOUT = 25
+
+_EXA_URL = "https://mcp.exa.ai/mcp"
+_JINA_URL = "https://r.jina.ai/"
+
+#: A browser UA: both endpoints answer a bare client with a bot page.
+_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
 
 class WebParams(BaseModel):
-    url: str = Field(description="URL to fetch")
-    extract_depth: str = Field(
-        description='Extraction depth: "basic" or "advanced"', default="basic"
+    query: str = Field(description="Search query, or the URL to download when mode='fetch'")
+    mode: Literal["search", "fetch"] = Field(
+        default="search",
+        description="'search' (default) queries the web; 'fetch' downloads a URL's text",
     )
 
 
@@ -27,169 +49,135 @@ class WebTool(BaseTool):
     mutating = False
     parallel_safe = True
     description = (
-        "Fetch and extract text content from a URL. "
-        "Use for reading web pages, documentation, or API responses."
+        "Web access. mode='search' (default): query the web, returns titles, URLs and "
+        "snippets. mode='fetch': download a URL and return its readable text. "
+        "Needs internet."
     )
 
     def format_call(self, params: WebParams) -> str:
-        return params.url[:100]
+        return f"{params.mode}: {params.query[:100]}"
 
     async def execute(
         self, params: WebParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
-        url = params.url
-        if not url.startswith(("http://", "https://")):
-            return ToolResult(
-                success=False,
-                result="URL must start with http:// or https://",
-                ui_summary="[red]Invalid URL[/red]",
-            )
-
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; vx-agent/1.0)",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=15) as response:
-                content_type = response.headers.get("Content-Type", "")
-                raw = response.read()
-
-            if "text/html" in content_type or "application/xhtml" in content_type:
-                # Basic HTML to text extraction
-                text = _html_to_text(raw.decode("utf-8", errors="replace"))
-            elif "application/json" in content_type:
-                try:
-                    text = json.dumps(json.loads(raw), indent=2)
-                except json.JSONDecodeError:
-                    text = raw.decode("utf-8", errors="replace")
-            else:
-                text = raw.decode("utf-8", errors="replace")
-
-            if len(text) > 50000:
-                text = text[:50000] + "\n\n[output truncated]"
-
-            return ToolResult(
-                success=True, result=text, ui_summary=f"[dim]Fetched {url[:60]}[/dim]"
-            )
-        except urllib.error.HTTPError as e:
-            return ToolResult(
-                success=False,
-                result=f"HTTP {e.code}: {e.reason}",
-                ui_summary=f"[red]HTTP {e.code}[/red]",
-            )
-        except urllib.error.URLError as e:
-            return ToolResult(
-                success=False,
-                result=f"Failed to fetch: {e.reason}",
-                ui_summary="[red]Fetch failed[/red]",
-            )
-        except Exception as e:
-            return ToolResult(success=False, result=f"Error: {e}", ui_summary="[red]Error[/red]")
+        if params.mode == "fetch":
+            return await asyncio.to_thread(_fetch, params.query.strip())
+        return await asyncio.to_thread(_search, params.query.strip())
 
 
-def _html_to_text(html: str) -> str:
-    """Very basic HTML to text extraction."""
-    # Remove script and style tags
-    text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    # Replace common tags
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<p[^>]*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    # Clean up whitespace
-    text = re.sub(r"\n\s*\n", "\n\n", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = "\n".join(line.strip() for line in text.split("\n"))
-    return text.strip()
+# -- http --------------------------------------------------------------------
 
 
-class WebSearchParams(BaseModel):
-    query: str = Field(description="Search query")
-
-
-class WebSearchTool(BaseTool):
-    name = "web_search"
-    tool_icon = "🔎"
-    params = WebSearchParams
-    mutating = False
-    parallel_safe = True
-    description = (
-        "Search the web for current information. Returns snippets and URLs from relevant pages."
+def _http(
+    url: str,
+    *,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = _TIMEOUT,
+) -> tuple[int, str]:
+    request = urllib.request.Request(
+        url, data=data, headers={"User-Agent": _USER_AGENT, **(headers or {})}
     )
-
-    def format_call(self, params: WebSearchParams) -> str:
-        return f'search: "{params.query}"'
-
-    async def execute(
-        self, params: WebSearchParams, cancel_event: asyncio.Event | None = None
-    ) -> ToolResult:
-        """Search using DuckDuckGo HTML (no API key needed)."""
-        import urllib.parse
-
-        query = params.query
-        try:
-            search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
-            req = urllib.request.Request(
-                search_url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; vx-agent/1.0)",
-                    "Accept": "text/html",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=10) as response:
-                html = response.read().decode("utf-8", errors="replace")
-
-            # Parse results from DuckDuckGo HTML
-            results = _parse_duckduckgo_results(html)
-
-            if not results:
-                return ToolResult(
-                    success=True, result="No results found", ui_summary="[dim]No results[/dim]"
-                )
-
-            lines: list[str] = []
-            for i, r in enumerate(results[:10], 1):
-                lines.append(f"{i}. {r['title']}")
-                lines.append(f"   {r['url']}")
-                if r.get("snippet"):
-                    lines.append(f"   {r['snippet']}")
-                lines.append("")
-
-            return ToolResult(
-                success=True,
-                result="\n".join(lines).strip(),
-                ui_summary=f"[dim]{len(results)} results[/dim]",
-            )
-        except Exception as e:
-            return ToolResult(
-                success=False, result=f"Search failed: {e}", ui_summary="[red]Search failed[/red]"
-            )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.status, response.read().decode("utf-8", errors="replace")
 
 
-def _parse_duckduckgo_results(html: str) -> list[dict]:
-    """Parse DuckDuckGo HTML search results."""
-    results: list[dict] = []
-    # Find result containers
-    pattern = r'<a class="result__a" href="(.*?)".*?title="(.*?)".*?>\s*(.*?)\s*</a>'
-    for match in re.finditer(pattern, html, re.DOTALL):
-        url_raw = match.group(1)
-        title = match.group(2).strip()
-        body_match = re.search(
-            r'<a.*?class="result__snippet".*?>(.*?)</a>', html[match.end() :], re.DOTALL
+def _error(text: str) -> ToolResult:
+    return ToolResult(success=False, result=text, ui_summary=f"[red]{text}[/red]")
+
+
+# -- search ------------------------------------------------------------------
+
+
+def _search(query: str) -> ToolResult:
+    if not query:
+        return _error("empty search query")
+    text, error = _search_exa(query)
+    if text:
+        return ToolResult(success=True, result=text, ui_summary=f"[dim]exa: {query[:40]}[/dim]")
+    if error:
+        return _error(error)
+    return ToolResult(success=True, result="No results found", ui_summary="[dim]No results[/dim]")
+
+
+def _search_exa(query: str) -> tuple[str | None, str | None]:
+    """Exa's public MCP endpoint: keyless search over the web."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "web_search_exa",
+            "arguments": {
+                "query": query,
+                "type": "auto",
+                "numResults": MAX_RESULTS,
+                "livecrawl": "fallback",
+            },
+        },
+    }
+    try:
+        _, body = _http(
+            _EXA_URL,
+            data=json.dumps(payload).encode(),
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            },
         )
-        snippet = ""
-        if body_match:
-            snippet = re.sub(r"<[^>]+>", "", body_match.group(1)).strip()
+    except Exception as exc:
+        return None, f"Exa request failed: {exc}"
 
-        # Convert DDG URL format
-        if url_raw.startswith("//links.duckduckgo.com/"):
-            continue  # Skip redirect URLs
+    # Streamed responses arrive as SSE frames; a plain body is JSON.
+    candidates = [line[6:] for line in body.splitlines() if line.startswith("data: ")]
+    candidates.append(body)
+    for chunk in candidates:
+        try:
+            text = _exa_text(json.loads(chunk))
+        except json.JSONDecodeError:
+            continue
+        if text:
+            return text, None
+    return None, "No results returned from Exa"
 
-        if title:
-            results.append({"title": title, "url": url_raw, "snippet": snippet})
 
-    return results
+def _exa_text(data: dict) -> str | None:
+    content = data.get("result", {}).get("content", [])
+    if isinstance(content, list) and content:
+        text = content[0].get("text")
+        return text if isinstance(text, str) and text.strip() else None
+    return None
+
+
+# -- fetch -------------------------------------------------------------------
+
+
+def _fetch(url: str) -> ToolResult:
+    if not url.startswith(("http://", "https://")):
+        return _error("mode='fetch' requires an http(s) URL")
+
+    text, error = _fetch_jina(url)
+    if text is None:
+        return _error(error or f"Fetch failed: {url}")
+
+    if len(text) > MAX_FETCH_CHARS:
+        text = text[:MAX_FETCH_CHARS] + f"\n\n[truncated at {MAX_FETCH_CHARS} chars]"
+    return ToolResult(success=True, result=text, ui_summary=f"[dim]fetch: {url[:70]}[/dim]")
+
+
+def _fetch_jina(url: str) -> tuple[str | None, str | None]:
+    """Jina Reader renders a page as markdown, which reads far better than HTML."""
+    try:
+        status, body = _http(f"{_JINA_URL}{url}", headers={"Accept": "text/plain"})
+    except Exception as exc:
+        return None, f"Fetch failed: {exc}"
+    if status != 200:
+        return None, f"Fetch failed: Jina Reader HTTP {status}"
+    marker = body.find("Markdown Content:")
+    text = (body[marker + len("Markdown Content:") :] if marker != -1 else body).strip()
+    if not text or text[:200].lower().lstrip().startswith(("<!doctype", "<html")):
+        return None, "Fetch returned no readable content"
+    return text, None
+
+
+__all__ = ["WebParams", "WebTool"]

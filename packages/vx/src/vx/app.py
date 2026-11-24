@@ -2150,12 +2150,18 @@ def _populate_tool_block_args(block: blocks.Block, tool_name: str, args: Any) ->
         if path:
             block.path = str(path)
     elif isinstance(block, blocks.WebToolStatus):
+        mode = a.get("mode")
+        if isinstance(mode, str) and mode:
+            block.mode = mode.lower()
         query = a.get("query", a.get("search", ""))
         if query:
             block.query = str(query)
         url = a.get("url", a.get("link", ""))
         if url:
             block.url = str(url)
+        if block.mode == "fetch" and not block.url and block.query:
+            # One field carries both jobs: the payload says which mode reads it.
+            block.url, block.query = block.query, ""
     elif isinstance(block, blocks.ToolStatus):
         # Generic fallback
         target = _tool_target(tool_name, args)

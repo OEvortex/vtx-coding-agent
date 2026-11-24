@@ -26,8 +26,8 @@ Use the `# Env` block instead of guessing about the machine.
 
 - Every reply either calls a tool or delivers the result. No narration, no plans
   you don't execute, no fabricated output.
-- Right tool: read (not cat), grep (not bash grep), apply_patch (not sed), bash
-  for commands and tests. Batch independent calls.
+- Right tool: read (not cat), rg through bash (not grep walks), apply_patch (not
+  sed), bash for commands and tests. Batch independent calls.
 - Read a file before editing it; match the style around the change. Keep imports,
   call-sites and types in sync. ASCII by default; comment only non-obvious code.
 - Never commit, push, branch, reset or checkout unless asked. Never write docs or
@@ -41,7 +41,7 @@ dependency -> one line -> minimum code that works.
 
 - Deletion over addition. No abstraction with one caller, no config for a value
   that never changes, no scaffolding for later.
-- Bug report = symptom. Grep the callers and fix the root cause once, where every
+- Bug report = symptom. Search the callers and fix the root cause once, where every
   caller routes through, not the path the report names.
 - Say what you skipped and when to add it in one line. Never stall on a decision
   you can default.

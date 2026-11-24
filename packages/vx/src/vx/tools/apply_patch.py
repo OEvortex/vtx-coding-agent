@@ -94,23 +94,12 @@ def format_diff_display(diff: str) -> str:
     return "\n".join(lines)
 
 
-class PatchEdit(BaseModel):
-    file_path: str = Field(description="Path to the file to edit")
-    old_str: str = Field(description="Text to search for (must match exactly)")
-    new_str: str = Field(description="Text to replace with")
-
-
 class PatchOp(BaseModel):
     path: str = Field(description="File path")
-    file_path: str = Field(description="File path (alias for path)", default="")
     old_str: str | None = Field(description="Text to find", default=None)
     new_str: str | None = Field(description="Replacement text", default=None)
     insert_line: int | None = Field(description="Line number to insert after", default=None)
     new_file_content: str | None = Field(description="Full content for new file", default=None)
-
-    @property
-    def target_path(self) -> str:
-        return self.file_path or self.path
 
 
 class ApplyPatchParams(BaseModel):
@@ -131,13 +120,13 @@ class ApplyPatchTool(BaseTool):
     )
 
     def format_call(self, params: ApplyPatchParams) -> str:
-        paths = [op.target_path for op in params.ops]
+        paths = [op.path for op in params.ops]
         return ", ".join(shorten_path(p) for p in paths)
 
     async def _apply_op(
         self, op: PatchOp
     ) -> tuple[str, FileChanges | None, list[tuple[str, str, str]]]:
-        path = Path(op.target_path)
+        path = Path(op.path)
 
         # Create new file
         if op.new_file_content is not None:
@@ -223,7 +212,7 @@ class ApplyPatchTool(BaseTool):
                 else:
                     results.append(result)
             except Exception as e:
-                errors.append(f"Error editing {op.target_path}: {e}")
+                errors.append(f"Error editing {op.path}: {e}")
 
         if errors and not results:
             return ToolResult(

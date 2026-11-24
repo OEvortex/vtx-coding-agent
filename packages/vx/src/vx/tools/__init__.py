@@ -25,9 +25,7 @@ if TYPE_CHECKING:
 _TOOL_MODULES = {
     "ApplyPatchTool": ".apply_patch",
     "BashTool": ".bash",
-    "GrepTool": ".grep",
     "ReadTool": ".read",
-    "WebSearchTool": ".web",
     "WebTool": ".web",
 }
 
@@ -41,16 +39,13 @@ def _build_catalog() -> None:
         importlib.import_module(".read", __name__),
         importlib.import_module(".apply_patch", __name__),
         importlib.import_module(".bash", __name__),
-        importlib.import_module(".grep", __name__),
         importlib.import_module(".web", __name__),
     ]
     all_tools = [
         modules[0].ReadTool(),
         modules[1].ApplyPatchTool(),
         modules[2].BashTool(),
-        modules[3].GrepTool(),
-        modules[4].WebTool(),
-        modules[4].WebSearchTool(),
+        modules[3].WebTool(),
     ]
     tools_by_name = {tool.name: tool for tool in all_tools}
     DEFAULT_TOOLS = ["read", "apply_patch", "bash", "web"]
