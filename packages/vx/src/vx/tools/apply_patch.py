@@ -2,12 +2,13 @@
 
 import asyncio
 import difflib
+import json
 from pathlib import Path
 
 import aiofiles
 from ctx.agent.tools.base import BaseTool, ToolResult
 from ctx.protocol.types import FileChanges
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from vx.tools._tool_utils import shorten_path
 
@@ -94,6 +95,17 @@ def format_diff_display(diff: str) -> str:
     return "\n".join(lines)
 
 
+#: Names a model reaches for that mean one of this tool's fields.
+_OP_ALIASES = {
+    "file_path": "path",
+    "filename": "path",
+    "old": "old_str",
+    "new": "new_str",
+    "replace": "new_str",
+    "content": "new_file_content",
+}
+
+
 class PatchOp(BaseModel):
     path: str = Field(description="File path")
     old_str: str | None = Field(description="Text to find", default=None)
@@ -101,9 +113,50 @@ class PatchOp(BaseModel):
     insert_line: int | None = Field(description="Line number to insert after", default=None)
     new_file_content: str | None = Field(description="Full content for new file", default=None)
 
+    @model_validator(mode="before")
+    @staticmethod
+    def _accept_aliases(value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        op = dict(value)
+        for alias, field in _OP_ALIASES.items():
+            if alias in op and field not in op:
+                op[field] = op.pop(alias)
+        return op
+
 
 class ApplyPatchParams(BaseModel):
     ops: list[PatchOp] = Field(description="List of patch operations to apply")
+
+    @field_validator("ops", mode="before")
+    @staticmethod
+    def _accept_shapes(value: object) -> object:
+        """Take the shapes models send: one op, JSON text, or flat key/value pairs."""
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                return value
+        if isinstance(value, dict):
+            value = [value]
+        if not isinstance(value, list):
+            return value
+        if value and all(isinstance(item, str) for item in value) and len(value) % 2 == 0:
+            # The whole list flattened: ["path", "a.py", "old_str", "x", ...]
+            return [{value[i]: value[i + 1] for i in range(0, len(value), 2)}]
+        ops: list[object] = []
+        for item in value:
+            if isinstance(item, str):
+                try:
+                    item = json.loads(item)
+                except json.JSONDecodeError:
+                    ops.append(item)
+                    continue
+            if isinstance(item, (list, tuple)) and len(item) % 2 == 0:
+                # A flattened pair list: ["path", "a.py", "old_str", "x", ...]
+                item = {str(item[i]): item[i + 1] for i in range(0, len(item), 2)}
+            ops.append(item)
+        return ops
 
 
 class ApplyPatchTool(BaseTool):
@@ -197,6 +250,9 @@ class ApplyPatchTool(BaseTool):
         file_changes: list[FileChanges] = []
         errors: list[str] = []
         all_diff_lines: list[tuple[str, str, str]] = []
+        #: The diff per file: a later op on the same file supersedes the
+        #: earlier preview, so each file is shown once, as it ended up.
+        diff_by_path: dict[str, list[tuple[str, str, str]]] = {}
 
         for op in params.ops:
             try:
@@ -205,6 +261,7 @@ class ApplyPatchTool(BaseTool):
                     file_changes.append(changes)
                 if diff_lines:
                     all_diff_lines.extend(diff_lines)
+                    diff_by_path[op.path] = diff_lines
                 if result.startswith("File not found") or result.startswith(
                     "Search text not found"
                 ):
@@ -235,5 +292,15 @@ class ApplyPatchTool(BaseTool):
             result="\n".join(results),
             ui_summary=", ".join(summary_parts),
             file_changes=file_changes if file_changes else None,
-            ui_data={"diff_lines": diff_data} if diff_data else None,
+            ui_data=(
+                {
+                    "diff_lines": diff_data,
+                    "diff_groups": [
+                        {"path": path, "lines": [[op, ln, text] for op, ln, text in lines]}
+                        for path, lines in diff_by_path.items()
+                    ],
+                }
+                if diff_data
+                else None
+            ),
         )

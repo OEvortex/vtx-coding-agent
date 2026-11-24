@@ -112,15 +112,15 @@ _KIND_OF_CATEGORY = {
 #: The most kinds of work a header names before ", and more".
 HEADER_MAX_PARTS = 3
 
-#: Row budget for a tool's folded output, mirroring fx's compact transcript.
+#: Row budget for a `!cmd`'s folded output, mirroring fx's compact transcript.
 OUTPUT_PREVIEW_ROWS = 5
-#: Row budget for diff preview in the compact transcript.
-DIFF_PREVIEW_ROWS = 10
+#: Rows of diff a finished patch prints before "ctrl+o to view".
+DIFF_PREVIEW_ROWS = 12
 _expanded = False
 
 
 def set_expanded(flag: bool) -> None:
-    """ctrl+o unfolds every tool output, fx's full-transcript view."""
+    """ctrl+o unfolds a `!cmd`'s output, fx's full-transcript view."""
     global _expanded
     _expanded = flag
 
@@ -569,177 +569,21 @@ class ToolGroup(Block):
             last = len(rows) - 1
             for index, call in enumerate(rows):
                 out.append(call.child_row(width, last=index == last))
-        if self.details and len(rows) > 1:
-            out.append("")
         for detail in self.details:
             out.extend(detail.rows(width))
         return out
 
 
 def _story_rows(calls: list[ToolRow]) -> list[ToolRow]:
-    """fx's rows for a group's calls, combining the work that passed.
+    """fx's rows for a group's calls: one row each, failures first.
 
-    Commands that ran one after another and did not fail share one row that
-    names their steps (``Ran echo, cat``), and reads of files share one that
-    names what they read, since nothing separates them but the names.
+    Nothing is combined. A merged row says what ran but not which command
+    failed or how long each took, so every call keeps its own row and a
+    failure sorts above the calls that passed.
     """
-    rows: list[ToolRow] = []
-    run: list[ToolRow] = []
-    kind = ""
-
-    def flush() -> None:
-        nonlocal run, kind
-        if len(run) > 1:
-            if kind == "read":
-                rows.append(CombinedReads(calls=list(run)))
-            else:
-                rows.append(CombinedCommands(calls=list(run)))
-        elif run:
-            rows.append(run[0])
-        run = []
-        kind = ""
-
-    for call in calls:
-        mergeable = _status_of(call) == "ok" and isinstance(call, (BashToolStatus, ReadToolStatus))
-        if mergeable:
-            if run and kind != call.category:
-                flush()
-            kind = call.category
-            run.append(call)
-            continue
-        flush()
-        rows.append(call)
-    flush()
-    # fx shows the calls that failed before the ones that passed: what went
-    # wrong is what a reader looks for.
-    failed = [row for row in rows if _status_of(row) == "error"]
-    return failed + [row for row in rows if _status_of(row) != "error"]
-
-
-@dataclass
-class CombinedReads(ToolRow):
-    """One row for the files a group read, named once each."""
-
-    calls: list[ToolRow] = field(default_factory=list)
-    name: str = "read"
-    status: str = "ok"
-    kind: str = "tool"
-
-    @property
-    def category(self) -> str:
-        return "read"
-
-    def body(self) -> str:
-        t = _theme.current()
-        names: list[str] = []
-        for call in self.calls:
-            path = _display_path(getattr(call, "path", ""))
-            if path and path not in names:
-                names.append(path)
-        kept = names[:SHORT_COMMAND_MAX_STEPS]
-        more = len(names) - len(kept)
-        text = ", ".join(kept) if kept else f"{len(self.calls)} files"
-        if more > 0:
-            text += f" +{more} more"
-        return f"{t.dim_style}Read{ansi.RESET} {t.tag_style}{text}{ansi.RESET}"
-
-
-@dataclass
-class CombinedCommands(ToolRow):
-    """One row for the commands that passed, naming each one's steps."""
-
-    calls: list[ToolRow] = field(default_factory=list)
-    name: str = "bash"
-    status: str = "ok"
-    kind: str = "tool"
-
-    def body(self) -> str:
-        t = _theme.current()
-        steps: list[str] = []
-        for call in self.calls:
-            command = getattr(call, "command", "")
-            if not command:
-                continue
-            steps.extend(_command_steps(command) or [_short(command, 40)])
-        kept = steps[:SHORT_COMMAND_MAX_STEPS]
-        more = len(steps) - len(kept)
-        text = ", ".join(kept) if kept else f"{len(self.calls)} commands"
-        if more > 0:
-            text += f" +{more} more"
-        return f"{t.dim_style}Ran{ansi.RESET} {t.tool_stdout_style}{text}{ansi.RESET}"
-
-
-@dataclass
-class ToolOutput(Block):
-    """A call's output while it runs: fx indents it two spaces, no rail."""
-
-    lines: list[str] = field(default_factory=list)
-    buffer: str = ""
-    hidden: int = 0
-    kind: str = "tool"
-
-    def rows(self, width: int) -> list[str]:
-        t = _theme.current()
-        out: list[str] = []
-        if _expanded:
-            # Expanded: all lines with 4-space indent, no rail (matching fx)
-            for line in self.lines:
-                chunk = ansi.clip(line.rstrip(), max(1, width - 4))
-                out.append(f"    {t.tool_stdout_style}{chunk.rstrip()}{ansi.RESET}")
-        else:
-            # Compact: up to OUTPUT_PREVIEW_ROWS with 2-space indent
-            shown = self.lines[:OUTPUT_PREVIEW_ROWS]
-            for line in shown:
-                chunk = ansi.clip(line.rstrip(), max(1, width - 2))
-                out.append(f"  {t.tool_stdout_style}{chunk.rstrip()}{ansi.RESET}")
-        hidden = self.hidden + max(
-            0, len(self.lines) - (OUTPUT_PREVIEW_ROWS if not _expanded else len(self.lines))
-        )
-        if hidden > 0:
-            noun = "line" if hidden == 1 else "lines"
-            indent = "    " if _expanded else "  "
-            out.append(f"{indent}{t.dim_style}… {hidden} {noun} more (ctrl+o to view){ansi.RESET}")
-        return out
-
-
-#: How many of a call's output lines the compact transcript keeps. fx prints a
-#: result whole, so the fold only takes over for output nobody reads.
-RESULT_PREVIEW_ROWS = 20
-
-
-@dataclass
-class ToolResult(Block):
-    """What a finished call returned, drawn as fx draws it.
-
-    fx prints the target on a line of its own, then the content in a framed
-    code panel: ``─ text ────``, the lines, and a closing rule.
-    """
-
-    label: str = ""
-    lines: list[str] = field(default_factory=list)
-    language: str = "text"
-    kind: str = "tool"
-
-    def rows(self, width: int) -> list[str]:
-        if not self.lines and not self.label:
-            return []
-        t = _theme.current()
-        out: list[str] = []
-        if self.label:
-            label = ansi.clip(self.label, max(1, width - 5))
-            out.append(f"  {t.dim_style}•{ansi.RESET} {t.tag_style}{label}{ansi.RESET}:")
-            out.append("")
-        # ctrl+o is the full-transcript view: nothing stays folded, or a long
-        # output could never be read back the way ctx lets you read it.
-        shown = self.lines if _expanded else self.lines[:RESULT_PREVIEW_ROWS]
-        hidden = len(self.lines) - len(shown)
-        body = list(shown)
-        if hidden > 0:
-            noun = "line" if hidden == 1 else "lines"
-            body.append(f"… {hidden} {noun} more (ctrl+o to view)")
-        for row in markdown.code_panel(body, self.language, max(4, width - 2)):
-            out.append(f"  {row}")
-        return out
+    failed = [call for call in calls if _status_of(call) == "error"]
+    passed = [call for call in calls if _status_of(call) != "error"]
+    return failed + passed
 
 
 @dataclass
@@ -1258,6 +1102,8 @@ class DiffOutput(Block):
 
     lines: list[tuple[str, str, str]] = field(default_factory=list)
     """List of (op, line_number, text) where op is '+', '-', or ' '."""
+    path: str = ""
+    """The file the lines belong to; empty when the block holds one file's diff."""
     kind: str = "tool"
 
     def rows(self, width: int) -> list[str]:
@@ -1273,6 +1119,8 @@ class DiffOutput(Block):
                 max_ln = max(max_ln, len(ln))
         gw = max(max_ln, 1)
         out: list[str] = []
+        if self.path:
+            out.append(f"  {t.dim_style}± {_display_path(self.path)}{ansi.RESET}")
         for op, ln, text in shown:
             # Build the gutter: "  │ " + line number padded + " "
             gutter = f"  │ {ln.rjust(gw)} " if ln else f"  │ {' ' * gw} "
@@ -1309,16 +1157,19 @@ def _escape_text(text: str) -> str:
 
 @dataclass
 class ApplyPatchToolStatus(ToolRow):
-    """apply_patch tool: ``● Edited path +3 -1`` — fx's compact one-row status."""
+    """apply_patch tool: ``● Edited path +3 / -1`` — one row, never a diff.
+
+    A call that touched several files says how many, because naming one of them
+    would claim the others were untouched.
+    """
 
     name: str = "apply_patch"
     path: str = ""
+    files: int = 0
     added: int = 0
     removed: int = 0
     status: str = "running"
     kind: str = "tool"
-    diff_lines: list[tuple[str, str, str]] = field(default_factory=list)
-    """Diff preview lines for DiffOutput: (op, line_number, text)."""
 
     def body(self) -> str:
         t = _theme.current()
@@ -1331,7 +1182,10 @@ class ApplyPatchToolStatus(ToolRow):
         else:
             label = _TOOL_VERBS.get(self.name, self.name)
         out = f"{t.dim_style}{label}{ansi.RESET}"
-        if self.path:
+        if self.files > 1:
+            noun = "files" if self.files != 1 else "file"
+            out += f" {t.tool_stdout_style}{self.files} {noun}{ansi.RESET}"
+        elif self.path:
             out += f" {t.tool_stdout_style}{_display_path(self.path)}{ansi.RESET}"
         if self.status not in ("running", "cancelled"):
             # fx-style diff stats: +N / -M in dim

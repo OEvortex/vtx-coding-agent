@@ -74,10 +74,6 @@ from vx.tui.keys import KeyDecoder
 from vx.tui.terminal import Terminal
 from vx.tui.viewport import Viewport
 
-#: Ceiling on the characters a live call keeps before its result arrives. The
-#: transcript is a record, so this is a memory guard, not a display limit: the
-#: result panel replaces the stream with the full text anyway.
-TOOL_OUTPUT_BUFFER = 400_000
 MAX_INPUT_LINES = 8
 
 
@@ -152,7 +148,6 @@ class VxApp(CommandsMixin):
         self._tool_blocks: dict[str, blocks.ToolStatusBlock] = {}
         self._tool_started: dict[str, float] = {}
         self._tool_groups: dict[str, blocks.ToolGroup] = {}
-        self._tool_outputs: dict[str, blocks.ToolOutput] = {}
         #: The group the running turn is still adding calls to. fx groups a
         #: run of calls, so anything else in the transcript ends it.
         self._live_group: blocks.ToolGroup | None = None
@@ -336,7 +331,6 @@ class VxApp(CommandsMixin):
         """
         group: blocks.ToolGroup | None = None
         by_call_id: dict[str, blocks.ToolStatusBlock] = {}
-        outputs: dict[str, blocks.ToolOutput] = {}
 
         for msg in msgs:
             if isinstance(msg, UserMessage):
@@ -384,11 +378,6 @@ class VxApp(CommandsMixin):
                 block.finished = len(by_call_id)
                 if isinstance(block, blocks.BashToolStatus):
                     _apply_exit_status(block, msg)
-                output = blocks.ToolOutput(lines=[])
-                panel = _result_panel(block, output, msg)
-                if panel is not None and group is not None:
-                    group.details.append(panel)
-                outputs[msg.tool_call_id] = output
 
     def _render_history_message(self, msg: Any) -> None:
         self._render_history_messages([msg])
@@ -1459,26 +1448,8 @@ class VxApp(CommandsMixin):
                     _populate_tool_block_display(block, _short(_strip_markup(display), 70))
             return
         if isinstance(ev, ToolOutputDeltaEvent):
-            block = self._tool_blocks.get(ev.tool_call_id)
-            if block is not None:
-                output = self._tool_outputs.get(ev.tool_call_id)
-                if output is None:
-                    output = blocks.ToolOutput(lines=[])
-                    self._tool_outputs[ev.tool_call_id] = output
-                    group = self._tool_groups.get(ev.tool_call_id)
-                    if group is not None:
-                        # fx prints a call's output under the group it ran in.
-                        group.details.append(output)
-                    else:
-                        self.viewport.add(output)
-                buffer = getattr(output, "buffer", "") + ev.delta
-                output.buffer = buffer[-TOOL_OUTPUT_BUFFER:]
-                lines = buffer.replace("\r", "").split("\n")
-                while len(lines) > 1 and not lines[-1].strip():
-                    lines.pop()
-                output.lines = [_markup_line(x) for x in lines[-blocks.OUTPUT_PREVIEW_ROWS :]]
-                output.hidden = max(0, len(lines) - blocks.OUTPUT_PREVIEW_ROWS)
-                self.viewport.touch()
+            # A call's row already says what it ran and how it ended; the stream
+            # itself is for the model, not a wall of text in the transcript.
             return
         if isinstance(ev, ToolResultEvent):
             block = self._tool_blocks.get(ev.tool_call_id)
@@ -1503,33 +1474,13 @@ class VxApp(CommandsMixin):
                     block.removed = sum(f.removed for f in ev.file_changes)
                 if isinstance(block, blocks.BashToolStatus):
                     _apply_exit_status(block, result)
-            output = self._tool_outputs.get(ev.tool_call_id)
-            # fx prints what a call returned as a titled panel, so the live
-            # stream gives way to the finished result in the same place.
-            panel = _result_panel(block, output, result)
-            if panel is not None:
-                self._place_detail(ev.tool_call_id, panel, replace=output)
-                self._tool_outputs.pop(ev.tool_call_id, None)
-            elif output is not None and not output.lines:
-                self._drop_detail(ev.tool_call_id, output)
-            # fx keeps a diff out of the compact transcript and shows it in the
-            # full one, so the patch's diff rides along unless it is unfolded.
-            if (
-                block is not None
-                and block.name == "apply_patch"
-                and ok
-                and result
-                and result.ui_data
-            ):
-                rows = result.ui_data.get("diff_lines")
-                if rows:
-                    lines = [
-                        (row[0], row[1], row[2])
-                        for row in rows
-                        if isinstance(row, (list, tuple)) and len(row) == 3
-                    ]
-                    if lines:
-                        self._place_detail(ev.tool_call_id, blocks.DiffOutput(lines=lines))
+                # A patch shows what it changed: the tool hands back its diff
+                # lines, and the group carries them under the row.
+                if block.name == "apply_patch" and ok and result and result.ui_data:
+                    for path, lines in _diff_sections(result.ui_data):
+                        self._place_detail(
+                            ev.tool_call_id, blocks.DiffOutput(lines=lines, path=path)
+                        )
             return
         if isinstance(ev, ToolApprovalEvent):
             self._request_approval(ev)
@@ -1582,27 +1533,14 @@ class VxApp(CommandsMixin):
             self._add_turn_summary()
             return
 
-    def _place_detail(
-        self, tool_call_id: str, detail: blocks.Block, replace: blocks.Block | None = None
-    ) -> None:
+    def _place_detail(self, tool_call_id: str, detail: blocks.Block) -> None:
         """Put a call's detail under its group, or after the call when alone."""
         group = self._tool_groups.get(tool_call_id)
         if group is not None:
-            if replace is not None and replace in group.details:
-                group.details[group.details.index(replace)] = detail
-            else:
-                group.details.append(detail)
+            group.details.append(detail)
         else:
             self.viewport.add(detail)
         self.viewport.touch()
-
-    def _drop_detail(self, tool_call_id: str, detail: blocks.Block) -> None:
-        group = self._tool_groups.get(tool_call_id)
-        with suppress(Exception):
-            if group is not None:
-                group.details.remove(detail)
-            else:
-                self.viewport.blocks.remove(detail)
 
     def _add_turn_summary(self) -> None:
         """fx's recap under a turn: what it did, how long it took, its tokens."""
@@ -1633,7 +1571,6 @@ class VxApp(CommandsMixin):
         self._tool_blocks.clear()
         self._tool_started.clear()
         self._tool_groups.clear()
-        self._tool_outputs.clear()
         self.viewport.touch()
 
     # ==================================================================
@@ -2044,7 +1981,7 @@ def _apply_exit_status(block: blocks.BashToolStatus, result: Any) -> None:
         block.exit_code = 0
     if not result.is_error:
         return
-    for line in _result_lines(result, None):
+    for line in _result_lines(result):
         failure = line.strip()
         if failure and failure not in _OUTPUT_MARKERS:
             block.reason = _short(failure, 60)
@@ -2055,37 +1992,41 @@ def _apply_exit_status(block: blocks.BashToolStatus, result: Any) -> None:
 _OUTPUT_MARKERS = {"[stderr]", "[stdout]"}
 
 
-def _result_lines(result: Any, output: blocks.ToolOutput | None) -> list[str]:
-    """A finished call's output lines, from its live stream or its result."""
+def _diff_sections(ui_data: dict[str, Any]) -> list[tuple[str, list[tuple[str, str, str]]]]:
+    """A patch's diff, one section per file, from the tool's ``ui_data``."""
+    groups = ui_data.get("diff_groups")
+    if isinstance(groups, list) and groups:
+        sections: list[tuple[str, list[tuple[str, str, str]]]] = []
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            rows = group.get("lines") or []
+            lines = [
+                (row[0], row[1], row[2])
+                for row in rows
+                if isinstance(row, (list, tuple)) and len(row) == 3
+            ]
+            if lines:
+                sections.append((str(group.get("path", "")), lines))
+        if sections:
+            return sections
+    rows = ui_data.get("diff_lines") or []
+    lines = [
+        (row[0], row[1], row[2])
+        for row in rows
+        if isinstance(row, (list, tuple)) and len(row) == 3
+    ]
+    return [("", lines)] if lines else []
+
+
+def _result_lines(result: Any) -> list[str]:
+    """A finished call's output lines, as the model received them."""
     lines: list[str] = []
     for content in getattr(result, "content", None) or []:
         text = getattr(content, "text", None)
         if text:
             lines.extend(str(text).replace("\r", "").rstrip("\n").split("\n"))
-    if not lines and output is not None and output.buffer:
-        # No result content (an extension tool): fall back on what streamed in.
-        return output.buffer.replace("\r", "").rstrip("\n").split("\n")
     return [line for line in lines if line.strip()]
-
-
-def _result_panel(
-    block: blocks.ToolStatusBlock | None, output: blocks.ToolOutput | None, result: Any
-) -> blocks.Block | None:
-    """fx's framed result panel: the target, then ``─ text ─`` and the lines."""
-    if block is None or result is None:
-        return None
-    lines = _result_lines(result, output)
-    if not lines:
-        return None
-    lines = [_strip_markup(line) for line in lines]
-    label = getattr(block, "command", "") or getattr(block, "path", "") or ""
-    exit_code = getattr(block, "exit_code", None)
-    if label and exit_code is not None:
-        # fx says how each command ended beside what it printed.
-        label = f"{label} (exit {exit_code})"
-    if isinstance(block, blocks.ReadToolStatus) or block.name == "read":
-        return None  # a read shows its content in the editor, not the transcript
-    return blocks.ToolResult(label=str(label), lines=lines)
 
 
 def _turn_recap(calls: list[blocks.ToolStatusBlock]) -> str:
@@ -2142,9 +2083,19 @@ def _populate_tool_block_args(block: blocks.Block, tool_name: str, args: Any) ->
         if cmd:
             block.command = str(cmd)
     elif isinstance(block, blocks.ApplyPatchToolStatus):
-        path = a.get("path", a.get("file_path", ""))
-        if path:
-            block.path = str(path)
+        ops = a.get("ops", a.get("edits", []))
+        paths = [
+            str(op.get("path", "")).strip()
+            for op in ops
+            if isinstance(op, dict) and str(op.get("path", "")).strip()
+        ]
+        if paths:
+            block.path = paths[0]
+            block.files = len(dict.fromkeys(paths))
+        else:
+            path = a.get("path", a.get("file_path", ""))
+            if path:
+                block.path = str(path)
     elif isinstance(block, blocks.GrepToolStatus):
         pattern = a.get("pattern", a.get("query", a.get("regex", a.get("search", ""))))
         if pattern:
@@ -2179,7 +2130,9 @@ def _populate_tool_block_display(block: blocks.Block, display: str) -> None:
     elif isinstance(block, blocks.BashToolStatus) and not block.command:
         block.command = display
     elif isinstance(block, blocks.ApplyPatchToolStatus) and not block.path:
-        block.path = display
+        # A multi-op call's display is a joined path list, which is not a target.
+        if ", " not in display:
+            block.path = display
     elif isinstance(block, blocks.GrepToolStatus) and not block.pattern:
         block.pattern = display
     elif isinstance(block, blocks.WebToolStatus) and not block.query and not block.url:
@@ -2191,11 +2144,6 @@ def _populate_tool_block_display(block: blocks.Block, display: str) -> None:
 def _short(text: str, limit: int = 70) -> str:
     flat = " ".join(str(text).split())
     return flat[: limit - 1] + "…" if len(flat) > limit else flat
-
-
-def _markup_line(text: str) -> str:
-    """Tool output can arrive already styled; only convert plain markup."""
-    return text if "\x1b" in text else ansi.markup_to_ansi(text)
 
 
 def _strip_markup(text: str) -> str:
