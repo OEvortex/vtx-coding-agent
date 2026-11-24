@@ -115,7 +115,6 @@ HEADER_MAX_PARTS = 3
 #: Row budget for a `!cmd`'s folded output, mirroring fx's compact transcript.
 OUTPUT_PREVIEW_ROWS = 5
 #: Rows of diff a finished patch prints before "ctrl+o to view".
-DIFF_PREVIEW_ROWS = 12
 _expanded = False
 
 
@@ -1094,10 +1093,13 @@ def _split_steps(command: str) -> list[tuple[list[tuple[str, bool]], bool]]:
 
 @dataclass
 class DiffOutput(Block):
-    """fx-style diff preview: ``  │ N + text`` with colored markers.
+    """A patch's diff: a ruler gutter, word-wrapped, split when there is room.
 
-    fx keeps diff blocks out of the compact transcript and shows them in the
-    full one, so this renders only while ctrl+o has unfolded the transcript.
+    Narrow terminals get one column with the sign glued to the ruler
+    (``206 │-``). Past :data:`DIFF_SPLIT_MIN_WIDTH` the same lines are paired
+    into an old/new split, so the change reads left-to-right instead of top-to-
+    bottom. Long lines wrap instead of being cut: a diff is the one place where
+    the end of a line matters.
     """
 
     lines: list[tuple[str, str, str]] = field(default_factory=list)
@@ -1110,44 +1112,158 @@ class DiffOutput(Block):
         if not self.lines:
             return []
         t = _theme.current()
-        shown = self.lines if _expanded else self.lines[:DIFF_PREVIEW_ROWS]
-        hidden = len(self.lines) - len(shown)
-        # Calculate gutter width from max line number
-        max_ln = 0
-        for _op, ln, _text in shown:
-            if ln:
-                max_ln = max(max_ln, len(ln))
-        gw = max(max_ln, 1)
         out: list[str] = []
         if self.path:
             out.append(f"  {t.dim_style}± {_display_path(self.path)}{ansi.RESET}")
-        for op, ln, text in shown:
-            # Build the gutter: "  │ " + line number padded + " "
-            gutter = f"  │ {ln.rjust(gw)} " if ln else f"  │ {' ' * gw} "
-            # Choose style based on op — use marker style for the +/- character,
-            # text style for the line content, and a subtle background highlight
-            if op == "+":
-                marker = f"{t.diff_added_marker_style}+{ansi.RESET}"
-                line_style = t.diff_added_style
-                bg = "\x1b[48;5;22m"  # dim green bg
-            elif op == "-":
-                marker = f"{t.diff_removed_marker_style}-{ansi.RESET}"
-                line_style = t.diff_removed_style
-                bg = "\x1b[48;5;52m"  # dim red bg
-            else:
-                marker = " "
-                line_style = t.diff_ctx_style
-                bg = ""
-            # Format: gutter + marker + " " + text (with background on added/removed)
-            line = (
-                f"{t.dim_style}{gutter}{ansi.RESET}{marker} "
-                f"{bg}{line_style}{_escape_text(text)}{ansi.RESET}"
-            )
-            out.append(ansi.clip_ellipsis(line, width))
-        if hidden > 0:
-            noun = "line" if hidden == 1 else "lines"
-            out.append(f"  {t.dim_style}… {hidden} {noun} more (ctrl+o to view){ansi.RESET}")
+        # A diff with nothing removed (a new file) would leave half the split
+        # empty, so it keeps the full width and the one-column ruler.
+        split = width >= DIFF_SPLIT_MIN_WIDTH and any(op == "-" for op, _ln, _x in self.lines)
+        if split:
+            out.extend(self._split(self.lines, width, t))
+        else:
+            out.extend(self._unified(self.lines, width, t))
         return out
+
+    def _unified(self, lines: list[tuple[str, str, str]], width: int, t: Any) -> list[str]:
+        """One column: ``  206 │- text``, wrapped under the code's own indent."""
+        gw = _number_width(lines)
+        lead = 2 + gw + 3
+        cw = max(width - lead, 8)
+        out: list[str] = []
+        for op, ln, text in lines:
+            if op == "~":
+                out.append(_unchanged_row(ln, t))
+                continue
+            mark, style, bg = _diff_look(op, t)
+            for index, chunk in enumerate(_code_chunks(_escape_text(text), cw)):
+                if index == 0:
+                    gutter = f"{t.dim_style}  {ln.rjust(gw)} │{ansi.RESET}{mark} "
+                else:
+                    gutter = f"{t.dim_style}  {' ' * gw} │{ansi.RESET}  "
+                out.append(f"{gutter}{bg}{style}{chunk}{ansi.RESET}")
+        return out
+
+    def _split(self, lines: list[tuple[str, str, str]], width: int, t: Any) -> list[str]:
+        """Two columns: the old file left, the new file right, aligned per change."""
+        pairs = _split_pairs(lines)
+        left_gw = _number_width([p for p in (left for left, _r in pairs if left) if p[0] != "~"])
+        right_gw = _number_width(
+            [p for p in (right for _l, right in pairs if right) if p[0] != "~"]
+        )
+        left_w = (width - len(_SPLIT_SEP)) // 2
+        right_w = width - len(_SPLIT_SEP) - left_w
+        left_cw = max(left_w - left_gw - 4, 8)
+        right_cw = max(right_w - right_gw - 4, 8)
+        dim = f"{t.dim_style}{_SPLIT_SEP}{ansi.RESET}"
+        out: list[str] = []
+        for left, right in pairs:
+            # A run of unchanged lines spans both columns, so it breaks the
+            # pairing instead of appearing twice.
+            marker = left if left is not None else right
+            if marker is not None and marker[0] == "~":
+                out.append(_unchanged_row(marker[1], t))
+                continue
+            left_rows = _split_half(left, left_gw, left_cw, t)
+            right_rows = _split_half(right, right_gw, right_cw, t)
+            for index in range(max(len(left_rows), len(right_rows))):
+                lrow = left_rows[index] if index < len(left_rows) else ""
+                rrow = right_rows[index] if index < len(right_rows) else ""
+                out.append(f"{_pad(lrow, left_w)}{dim}{rrow}")
+        return out
+
+
+#: Width at which a diff is paired into an old/new split instead of one column.
+DIFF_SPLIT_MIN_WIDTH = 110
+_SPLIT_SEP = " │ "
+
+
+def _number_width(lines: list[tuple[str, str, str]]) -> int:
+    return max((len(ln) for _op, ln, _text in lines if ln), default=1)
+
+
+def _diff_look(op: str, t: Any) -> tuple[str, str, str]:
+    """The sign, text style and background for one diff line."""
+    if op == "+":
+        return f"{t.diff_added_marker_style}+{ansi.RESET}", t.diff_added_style, "\x1b[48;5;22m"
+    if op == "-":
+        return f"{t.diff_removed_marker_style}-{ansi.RESET}", t.diff_removed_style, "\x1b[48;5;52m"
+    return " ", t.diff_ctx_style, ""
+
+
+def _unchanged_row(count: str, t: Any) -> str:
+    """The elision row for a run of unchanged lines above, between or below."""
+    lines = int(count) if count.isdigit() else 0
+    noun = "line" if lines == 1 else "lines"
+    return f"  {t.dim_style}⋯ {lines} {noun} unchanged{ansi.RESET}"
+
+
+def _split_half(line: tuple[str, str, str] | None, gw: int, cw: int, t: Any) -> list[str]:
+    """One side of a split row, wrapped to the column's text width."""
+    if line is None:
+        return []
+    op, ln, text = line
+    mark, style, bg = _diff_look(op, t)
+    out: list[str] = []
+    for index, chunk in enumerate(_code_chunks(_escape_text(text), cw)):
+        if index == 0:
+            gutter = f"{t.dim_style}{ln.rjust(gw)} │{ansi.RESET}{mark} "
+        else:
+            gutter = f"{t.dim_style}{' ' * gw} │{ansi.RESET}  "
+        out.append(f"{gutter}{bg}{style}{chunk}{ansi.RESET}")
+    return out
+
+
+def _code_chunks(text: str, cw: int) -> list[str]:
+    """Wrap code at ``cw``, hanging continuation rows under its own indent."""
+    body = text.lstrip(" ")
+    indent = min(len(text) - len(body), max(cw // 2, 0))
+    if not body:
+        return [""]
+    chunks = ansi.wrap(body, max(cw - indent, 8))
+    hang = " " * indent
+    return [hang + chunks[0], *(hang + chunk for chunk in chunks[1:])]
+
+
+def _pad(text: str, col_w: int) -> str:
+    """Pad styled text out to ``col_w`` cells so the divider stays straight."""
+    return text + " " * max(col_w - ansi.width(text), 0)
+
+
+def _split_pairs(
+    lines: list[tuple[str, str, str]],
+) -> list[tuple[tuple[str, str, str] | None, tuple[str, str, str] | None]]:
+    """Pair removed lines with added ones so the split columns line up."""
+    pairs: list[tuple[tuple[str, str, str] | None, tuple[str, str, str] | None]] = []
+    index = 0
+    total = len(lines)
+    while index < total:
+        op, _ln, _text = lines[index]
+        if op == "~":
+            # A run of unchanged lines belongs to neither column.
+            pairs.append((lines[index], None))
+            index += 1
+            continue
+        if op == " ":
+            pairs.append((lines[index], lines[index]))
+            index += 1
+            continue
+        removed: list[tuple[str, str, str]] = []
+        added: list[tuple[str, str, str]] = []
+        while index < total and lines[index][0] == "-":
+            removed.append(lines[index])
+            index += 1
+        while index < total and lines[index][0] == "+":
+            added.append(lines[index])
+            index += 1
+        for slot in range(max(len(removed), len(added))):
+            left = removed[slot] if slot < len(removed) else None
+            right = added[slot] if slot < len(added) else None
+            pairs.append((left, right))
+        if not removed and not added:
+            # A lone '+' or '-' run not followed by its pair: keep the line.
+            pairs.append((lines[index], None))
+            index += 1
+    return pairs
 
 
 def _escape_text(text: str) -> str:

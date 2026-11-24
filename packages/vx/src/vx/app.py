@@ -364,10 +364,16 @@ class VxApp(CommandsMixin):
                 for call in (p for p in msg.content if isinstance(p, ToolCall)):
                     block = _make_tool_status_block(call.name)
                     _populate_tool_block_args(block, call.name, call.arguments)
-                    if group is None:
-                        group = blocks.ToolGroup()
-                        self.viewport.add(group)
-                    group.calls.append(block)
+                    if call.name == "apply_patch":
+                        # Standalone, so an old turn groups calls the way a
+                        # live one does.
+                        self.viewport.add(blocks.ToolGroup(calls=[block]))
+                        group = None
+                    else:
+                        if group is None:
+                            group = blocks.ToolGroup()
+                            self.viewport.add(group)
+                        group.calls.append(block)
                     by_call_id[call.id] = block
                 continue
             if isinstance(msg, ToolResultMessage):
@@ -1414,13 +1420,20 @@ class VxApp(CommandsMixin):
             block = _make_tool_status_block(ev.tool_name)
             self._tool_blocks[ev.tool_call_id] = block
             self._tool_started[ev.tool_call_id] = time.monotonic()
-            group = self._live_group
-            if group is None:
-                group = blocks.ToolGroup()
-                self._live_group = group
-                self.viewport.add(group)
-            group.calls.append(block)
-            self._tool_groups[ev.tool_call_id] = group
+            if ev.tool_name == "apply_patch":
+                # A patch carries its own diff, so it stands alone: a group
+                # header above one row would only repeat the row, and the diff
+                # has to follow the call it belongs to.
+                self._break_group()
+                self.viewport.add(blocks.ToolGroup(calls=[block]))
+            else:
+                group = self._live_group
+                if group is None:
+                    group = blocks.ToolGroup()
+                    self._live_group = group
+                    self.viewport.add(group)
+                group.calls.append(block)
+                self._tool_groups[ev.tool_call_id] = group
             self.viewport.touch()
             self._run_label = f"running {ev.tool_name}"
             return

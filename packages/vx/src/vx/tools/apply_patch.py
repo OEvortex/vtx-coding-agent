@@ -3,6 +3,7 @@
 import asyncio
 import difflib
 import json
+from contextlib import suppress
 from pathlib import Path
 
 import aiofiles
@@ -25,57 +26,61 @@ def generate_diff(old: str, new: str) -> tuple[str, int, int]:
     return "".join(diff), added, removed
 
 
-def generate_diff_preview(old: str, new: str, max_lines: int = 12) -> list[tuple[str, str, str]]:
-    """Generate fx-style diff preview lines: (op, line_number, text).
+#: Context lines kept around each change; longer runs collapse to a marker.
+DIFF_CONTEXT = 3
 
-    Returns a list of tuples where op is '+', '-', or ' ' (context),
-    line_number is the string representation of the new file line number,
-    and text is the line content.
+
+def generate_diff_preview(
+    old: str, new: str, context: int = DIFF_CONTEXT
+) -> list[tuple[str, str, str]]:
+    """The change as rows: ``(op, line_number, text)``, one per line.
+
+    ``op`` is ``+``, ``-`` or a space for context, and ``~`` marks a run of
+    unchanged lines that was dropped: its line number is the count. Keeping
+    the hunk small this way means a patch in a two-thousand-line file still
+    shows where it landed without printing the file.
     """
     old_lines = old.splitlines()
     new_lines = new.splitlines()
-
-    # Use SequenceMatcher to find matching blocks
     matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
 
-    result: list[tuple[str, str, str]] = []
-    old_line_num = 0  # 1-based line number in old file
-    new_line_num = 0  # 1-based line number in new file
-
+    rows: list[tuple[str, str, str]] = []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "equal":
-            for _k, (oi, ni) in enumerate(zip(range(i1, i2), range(j1, j2), strict=True)):
-                old_line_num = oi + 1
-                new_line_num = ni + 1
-                if len(result) < max_lines:
-                    result.append((" ", str(new_line_num), new_lines[ni]))
-        elif tag == "replace":
-            # Remove old lines
-            for oi in range(i1, i2):
-                old_line_num = oi + 1
-                if len(result) < max_lines:
-                    result.append(("-", str(old_line_num), old_lines[oi]))
-            # Add new lines
-            for ni in range(j1, j2):
-                new_line_num = ni + 1
-                if len(result) < max_lines:
-                    result.append(("+", str(new_line_num), new_lines[ni]))
+        if tag == "replace":
+            rows.extend(("-", str(oi + 1), old_lines[oi]) for oi in range(i1, i2))
+            rows.extend(("+", str(ni + 1), new_lines[ni]) for ni in range(j1, j2))
         elif tag == "delete":
-            for oi in range(i1, i2):
-                old_line_num = oi + 1
-                if len(result) < max_lines:
-                    result.append(("-", str(old_line_num), old_lines[oi]))
+            rows.extend(("-", str(oi + 1), old_lines[oi]) for oi in range(i1, i2))
         elif tag == "insert":
-            for ni in range(j1, j2):
-                new_line_num = ni + 1
-                if len(result) < max_lines:
-                    result.append(("+", str(new_line_num), new_lines[ni]))
+            rows.extend(("+", str(ni + 1), new_lines[ni]) for ni in range(j1, j2))
+        else:
+            rows.extend((" ", str(ni + 1), new_lines[ni]) for ni in range(j1, j2))
+    return _collapse_context(rows, context)
 
-    # If we truncated, add an elision marker
-    if len(result) >= max_lines:
-        result.append((" ", "", "..."))
 
-    return result
+def _collapse_context(
+    rows: list[tuple[str, str, str]], context: int
+) -> list[tuple[str, str, str]]:
+    """Keep ``context`` lines around each change and count the rest."""
+    changed = [index for index, (op, _ln, _text) in enumerate(rows) if op in "+-"]
+    if not changed:
+        return rows
+    keep: set[int] = set()
+    for index in changed:
+        keep.update(range(max(0, index - context), min(len(rows), index + context + 1)))
+    out: list[tuple[str, str, str]] = []
+    skipped = 0
+    for index, row in enumerate(rows):
+        if index in keep:
+            if skipped:
+                out.append(("~", str(skipped), ""))
+                skipped = 0
+            out.append(row)
+        else:
+            skipped += 1
+    if skipped:
+        out.append(("~", str(skipped), ""))
+    return out
 
 
 def format_diff_display(diff: str) -> str:
@@ -249,18 +254,22 @@ class ApplyPatchTool(BaseTool):
         results: list[str] = []
         file_changes: list[FileChanges] = []
         errors: list[str] = []
-        all_diff_lines: list[tuple[str, str, str]] = []
         #: The diff per file: a later op on the same file supersedes the
         #: earlier preview, so each file is shown once, as it ended up.
         diff_by_path: dict[str, list[tuple[str, str, str]]] = {}
+        #: Each file's content before the first op touched it, so several ops
+        #: on one file still produce one diff of the whole change.
+        before: dict[str, str] = {}
 
         for op in params.ops:
+            if op.new_file_content is None and op.path not in before:
+                with suppress(OSError):
+                    before[op.path] = Path(op.path).read_text()
             try:
                 result, changes, diff_lines = await self._apply_op(op)
                 if changes:
                     file_changes.append(changes)
                 if diff_lines:
-                    all_diff_lines.extend(diff_lines)
                     diff_by_path[op.path] = diff_lines
                 if result.startswith("File not found") or result.startswith(
                     "Search text not found"
@@ -284,8 +293,16 @@ class ApplyPatchTool(BaseTool):
         if errors:
             summary_parts.append(f"[yellow]{len(errors)} warning(s)[/yellow]")
 
+        for path, start in before.items():
+            try:
+                end = Path(path).read_text()
+            except OSError:
+                continue
+            if path in diff_by_path and end != start:
+                diff_by_path[path] = generate_diff_preview(start, end)
+
         # Convert diff lines to JSON-serializable format for ui_data
-        diff_data = [[op, ln, text] for op, ln, text in all_diff_lines]
+        diff_data = [[op, ln, text] for lines in diff_by_path.values() for op, ln, text in lines]
 
         return ToolResult(
             success=True,
