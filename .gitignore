@@ -36,3 +36,5 @@ benchmark_results.json
 # Local configuration files
 .ctx/
 .vortexa/
+lol.py
+t.py
