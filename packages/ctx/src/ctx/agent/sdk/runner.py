@@ -650,6 +650,7 @@ class Runner:
         signature: str | None = None
         sdk_tool_calls: list[ToolCall] = []
         stop_reason: StopReason = StopReason.STOP
+        usage: Usage | None = None
 
         from ctx.core import ThinkingDeltaEvent
 
@@ -697,6 +698,7 @@ class Runner:
             elif isinstance(event, TurnEndEvent):
                 stop_reason = event.stop_reason
                 if event.assistant_message is not None:
+                    usage = event.assistant_message.usage
                     sdk_tool_calls = [
                         c for c in event.assistant_message.content if isinstance(c, ToolCall)
                     ]
@@ -714,7 +716,7 @@ class Runner:
         for tc in sdk_tool_calls:
             content_parts.append(tc)
 
-        assistant = AssistantMessage(content=content_parts, stop_reason=stop_reason)
+        assistant = AssistantMessage(content=content_parts, stop_reason=stop_reason, usage=usage)
 
         # Build SDK items.
         if thinking_chunks:
