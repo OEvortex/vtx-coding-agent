@@ -53,6 +53,7 @@ class SessionCommands(CommandSupport):
             rt.new_session()
             self._reset_codemode_store()
         self.viewport.clear()
+        self._reset_sidebar()
         self._welcome()
         self._ok("conversation cleared")
 
@@ -66,6 +67,7 @@ class SessionCommands(CommandSupport):
         with contextlib.suppress(Exception):
             rt.reload_context()
         self.viewport.clear()
+        self._reset_sidebar()
         self._welcome()
         self._ok("started a new conversation")
 

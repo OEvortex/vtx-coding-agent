@@ -55,6 +55,16 @@ class CommandSupport:
 
     def _refresh_stats(self, *, force: bool = False) -> None: ...
 
+    _show_sidebar: bool
+
+    def set_sidebar_shown(self, shown: bool) -> None:
+        """Pin the panel open or away, and remember that it was pinned."""
+        ...
+
+    def _reset_sidebar(self) -> None:
+        """Forget the plan and the touched files with the conversation."""
+        ...
+
     def _welcome(self) -> None:
         """Re-add the pinned welcome banner after the transcript is cleared."""
         ...

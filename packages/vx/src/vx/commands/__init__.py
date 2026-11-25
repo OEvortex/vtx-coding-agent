@@ -69,6 +69,8 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
 #: Keys worth knowing, listed under the commands in ``/help``; the composer's
 #: readline set is not discoverable from the screen otherwise.
 KEY_BINDINGS: list[tuple[str, str]] = [
+    ("ctrl+t", "hide or show the sidebar"),
+    ("ctrl+g", "fold the sidebar's sections"),
     ("ctrl+f", "search the transcript"),
     ("n / N", "next / previous search match"),
     ("ctrl+end", "jump to the latest message"),

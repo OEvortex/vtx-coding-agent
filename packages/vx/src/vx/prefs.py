@@ -7,6 +7,12 @@ the way tmux's ``history-limit`` bounds a pane's scrollback.
 
 Zero means keep everything, which is the default: a transcript is the record of
 a session and dropping it should be a choice, not an accident.
+
+The sidebar is here for the same reason. Its *shape* -- which sections are
+folded -- is a habit. Its *presence* is not a setting at all: the panel belongs
+to the work, so it opens when the agent has a plan or has written a file and
+closes when it has neither. A toggle (ctrl+t, ``/settings``) pins it either way,
+and that pin is the habit we keep.
 """
 
 from __future__ import annotations
@@ -54,6 +60,62 @@ def _write(data: dict[str, Any]) -> None:
         temp.replace(path)
     except OSError:
         return
+
+
+def _flag(value: Any, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
+
+
+def sidebar_shown() -> bool:
+    """Whether a pinned panel is open. Only means anything once it is pinned."""
+    return _flag(_read().get("sidebar_shown"), True)
+
+
+def set_sidebar_shown(shown: bool) -> None:
+    data = _read()
+    data["sidebar_shown"] = bool(shown)
+    data["sidebar_pinned"] = True
+    _write(data)
+
+
+def sidebar_pinned() -> bool:
+    """Whether the user has decided the panel's fate, or left it to the work."""
+    return _flag(_read().get("sidebar_pinned"), False)
+
+
+def set_sidebar_pinned(pinned: bool) -> None:
+    data = _read()
+    data["sidebar_pinned"] = bool(pinned)
+    _write(data)
+
+
+def sidebar_folds() -> tuple[bool, bool]:
+    """``(plan_open, files_open)``: a folded section stays folded."""
+    data = _read()
+    return (
+        _flag(data.get("sidebar_plan_open"), True),
+        _flag(data.get("sidebar_files_open"), True),
+    )
+
+
+def set_sidebar_folds(plan_open: bool, files_open: bool) -> None:
+    data = _read()
+    data["sidebar_plan_open"] = bool(plan_open)
+    data["sidebar_files_open"] = bool(files_open)
+    _write(data)
+
+
+def sidebar_label() -> str:
+    """``auto``, or ``on``/``off`` plus what is folded."""
+    if not sidebar_pinned():
+        return "auto"
+    if not sidebar_shown():
+        return "off"
+    plan_open, files_open = sidebar_folds()
+    if plan_open and files_open:
+        return "on"
+    folded = [name for name, open_ in (("plan", plan_open), ("files", files_open)) if not open_]
+    return f"on · {', '.join(folded)} folded"
 
 
 def history_rows() -> int:
