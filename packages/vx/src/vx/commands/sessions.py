@@ -525,19 +525,9 @@ class SessionCommands(CommandSupport):
         rt = self.runtime
         if rt is None:
             return
-        try:
-            recap = getattr(rt, "generate_recap", None)
-            if callable(recap):
-                text = await recap()
-            else:
-                text = _local_recap(rt.session)
-        except Exception as exc:
-            self._fail(f"recap failed: {exc}", topic="recap")
-            return
-        if not text:
-            self._warn("could not draft a recap", topic="recap")
-            return
-        self.viewport.add(blocks.Assistant(text=text))
+        # The box appears at once and fills when the words arrive, so a recap
+        # of a long session never looks like a frozen command.
+        await self._draft_recap(rt)
 
 
 def _prompt_preview(text: str, limit: int = 120) -> str:

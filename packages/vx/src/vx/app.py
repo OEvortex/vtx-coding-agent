@@ -211,6 +211,16 @@ class VxApp(_CommandBase):
         #: Session ids already asked for a title, and the call that is running.
         self._titled: set[str] = set()
         self._title_task: asyncio.Task | None = None
+        #: The recap on screen, the call drafting the next one, and the clock
+        #: the idle timer reads. A recap is a note about the session, so it is
+        #: replaced, never stacked.
+        self._recap: blocks.RecapCard | None = None
+        self._recap_task: asyncio.Task | None = None
+        self._idle_since: float | None = None
+        #: What the session has changed so far, for the recap's bottom rule.
+        self._session_files = 0
+        self._session_added = 0
+        self._session_removed = 0
         self._boot_task: asyncio.Task | None = None
         self._ready: Any = None
 
@@ -706,6 +716,8 @@ class VxApp(_CommandBase):
         if key.startswith("mouse:"):
             self._mouse_key(key)
             return
+        # The user is here: the idle recap is for when they are not.
+        self._idle_since = None
         if self._searching:
             self._search_key(key)
             return
@@ -740,6 +752,8 @@ class VxApp(_CommandBase):
             elif self._input:
                 self._input = ""
                 self._cursor = 0
+            elif self._recap is not None:
+                self._dismiss_recap()
             self._last_ctrl_c = 0.0
             return
         if key == "ctrl+c":
@@ -1551,6 +1565,8 @@ class VxApp(_CommandBase):
     # -- submit ----------------------------------------------------------
 
     def _submit(self) -> None:
+        # A new prompt is new work; the note about the last one is not part of it.
+        self._dismiss_recap()
         self._sync_sidebar()
         if self._prompt is not None:
             prompt = self._prompt
@@ -1988,6 +2004,8 @@ class VxApp(_CommandBase):
             self._finish_live()
             self._add_turn_summary()
             self._schedule_title()
+            # The quiet clock starts when the turn ends, not when it began.
+            self._idle_since = time.monotonic()
             return
 
     def _schedule_title(self) -> None:
@@ -2020,6 +2038,124 @@ class VxApp(_CommandBase):
         with suppress(Exception):
             self.runtime.set_session_name(title)
             self.viewport.touch()
+
+    # -- the recap -------------------------------------------------------
+
+    def _show_recap(self, text: str, *, note: str, drafting: bool = False) -> None:
+        """Put the box at the tail. One recap on screen, at most."""
+        self._dismiss_recap()
+        self._idle_since = None
+        self._recap = blocks.RecapCard(
+            text=text,
+            note=note,
+            drafting=drafting,
+            started=time.monotonic(),
+            files=self._session_files,
+            added=self._session_added,
+            removed=self._session_removed,
+        )
+        self.viewport.add(self._recap)
+        self.viewport.touch()
+
+    def _dismiss_recap(self) -> None:
+        """A new prompt is new work; ``esc`` is the reader saying they are done."""
+        recap, self._recap = self._recap, None
+        self._idle_since = None
+        if recap is not None and self.viewport.remove(recap):
+            self.viewport.touch()
+
+    def _fill_recap(self, text: str) -> None:
+        if self._recap is None:
+            return
+        self._recap.text = text
+        self._recap.drafting = False
+        self.viewport.touch()
+
+    def _maybe_recap(self) -> None:
+        """Draft a recap once the session has been quiet long enough.
+
+        The clock is armed by a finished turn and cleared by any key, so this
+        only fires when nobody is there. It is one cheap call over the recent
+        conversation, and it never stacks: a recap already on screen is not
+        replaced by another one.
+        """
+        if self._recap_task is not None:
+            return
+        if self._recap is not None:
+            # ``/clear`` empties the transcript without telling anyone; a card
+            # that is no longer in it cannot keep the next one from landing.
+            if any(block is self._recap for block in self.viewport.blocks):
+                return
+            self._recap = None
+        if self._is_running or self._idle_since is None:
+            return
+        rt = self.runtime
+        session = getattr(rt, "session", None)
+        if rt is None or session is None or not session.all_messages:
+            return
+        from ctx.core.config import config
+
+        if not config.recap.enabled:
+            return
+        seconds = max(5.0, float(config.recap.idle_seconds))
+        if time.monotonic() - self._idle_since < seconds:
+            return
+        # A turn that only said "done" has nothing to summarize, and asking a
+        # model to say so spends a call on nothing.
+        from ctx.core.recap import has_meaningful_activity
+
+        if not has_meaningful_activity(session.all_messages):
+            self._idle_since = None
+            return
+        self._idle_since = None
+        self._show_recap("", note=f"{seconds:.0f}s quiet", drafting=True)
+        self._recap_task = asyncio.create_task(self._draft_recap(rt, note=f"{seconds:.0f}s quiet"))
+
+    async def _recap_text(self, rt: Any) -> str:
+        """The recap's words: one cheap call, or the local summary if it fails."""
+        provider = getattr(rt, "provider", None)
+        session = getattr(rt, "session", None)
+        messages = getattr(session, "all_messages", None) or []
+        if provider is not None and messages:
+            try:
+                # The digest, not the transcript: prose says what happened,
+                # tool bodies only say what was read to find out.
+                from ctx.core.recap import build_recap_context, build_recap_digest, generate_recap
+
+                context = build_recap_digest(messages)
+                if not (context.messages or context.broader_context):
+                    context = build_recap_context(messages)
+                if context.messages or context.broader_context:
+                    text = await generate_recap(context, provider)
+                    if text:
+                        return text
+            except Exception:
+                pass
+        from vx.commands.sessions import _local_recap
+
+        return _local_recap(session)
+
+    async def _draft_recap(self, rt: Any = None, *, note: str = "you asked") -> None:
+        """Draft into the box that is already on screen, or open it."""
+        rt = rt if rt is not None else self.runtime
+        try:
+            if rt is None:
+                return
+            if self._recap is None:
+                self._show_recap("", note=note, drafting=True)
+            text = await self._recap_text(rt)
+            if not text:
+                self._dismiss_recap()
+                self._warn("could not draft a recap", topic="recap")
+                return
+            self._fill_recap(text)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._dismiss_recap()
+            self._fail(f"recap failed: {exc}", topic="recap")
+        finally:
+            self._recap_task = None
 
     def _save_sidebar(self) -> None:
         """Remember a pinned panel, so a restart draws it the same way."""
@@ -2117,6 +2253,10 @@ class VxApp(_CommandBase):
 
     def _add_turn_summary(self) -> None:
         """fx's recap under a turn: what it did, and how long it took."""
+        edits = [call for call in self._turn_calls if call.category in ("edit", "write")]
+        self._session_files += len(edits)
+        self._session_added += sum(getattr(call, "added", 0) for call in edits)
+        self._session_removed += sum(getattr(call, "removed", 0) for call in edits)
         recap = _turn_recap(self._turn_calls)
         seconds = max(0.0, time.monotonic() - self._run_started) if self._run_started else 0.0
         self._turn_calls = []
@@ -2434,6 +2574,7 @@ class VxApp(_CommandBase):
                 await asyncio.sleep(0.05)
                 self._drain_events()
                 self._refresh_stats()
+                self._maybe_recap()
                 self._draw()
         except asyncio.CancelledError:
             pass

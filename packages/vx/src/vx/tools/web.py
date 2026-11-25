@@ -50,8 +50,7 @@ class WebTool(BaseTool):
     parallel_safe = True
     description = (
         "Web access. mode='search' (default): query the web, returns titles, URLs and "
-        "snippets. mode='fetch': download a URL and return its readable text. "
-        "Needs internet."
+        "snippets. mode='fetch': download a URL and return its readable text."
     )
 
     def format_call(self, params: WebParams) -> str:

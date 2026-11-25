@@ -6,7 +6,7 @@ with the panel: whatever the model last said *is* the plan.
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Literal
 
 from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
@@ -58,7 +58,9 @@ def _status(value: Any) -> str:
 
 class TodoItemParam(BaseModel):
     text: str = Field(default="", description="What the step is, in a few words")
-    status: str = Field(default="pending", description="pending | active | done | blocked")
+    status: Literal["pending", "active", "done", "blocked"] = Field(
+        default="pending", description="pending | active | done | blocked"
+    )
 
     @field_validator("status", mode="before")
     @classmethod

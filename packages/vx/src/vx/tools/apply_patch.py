@@ -114,7 +114,7 @@ _OP_ALIASES = {
 
 
 class PatchOp(BaseModel):
-    path: str = Field(description="File path")
+    path: str = Field(..., description="File path (required)")
     old_str: str | None = Field(description="Text to find", default=None)
     new_str: str | None = Field(description="Replacement text", default=None)
     insert_line: int | None = Field(description="Line number to insert after", default=None)
@@ -204,9 +204,9 @@ class ApplyPatchTool(BaseTool):
     mutating = True
     parallel_safe = False
     description = (
-        "Apply precise edits to files. Each op: search+replace (old_str→new_str), "
-        "insert at line, or create new file (new_file_content). "
-        "old_str must match exactly (whitespace-sensitive)."
+        "Apply precise edits to files. Each op requires `path` plus one of: "
+        "replace (old_str + new_str, exact whitespace), "
+        "insert (insert_line + new_str), or create (new_file_content)."
     )
 
     def format_call(self, params: ApplyPatchParams) -> str:

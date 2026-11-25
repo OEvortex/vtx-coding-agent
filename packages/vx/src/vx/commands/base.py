@@ -69,6 +69,10 @@ class CommandSupport:
         """Re-add the pinned welcome banner after the transcript is cleared."""
         ...
 
+    async def _draft_recap(self, rt: Any = None, *, note: str = "you asked") -> None:
+        """Draft a recap into the box vx draws for it."""
+        ...
+
     def _enqueue_or_run(self, prompt: str) -> None:
         """Run a prompt as a normal turn, or queue it behind the live one."""
         ...

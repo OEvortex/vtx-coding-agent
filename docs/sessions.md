@@ -419,9 +419,10 @@ summary, each trimmed to its edges.
 The prompt is deliberately narrow (`RECAP_PROMPT`):
 
 ```text
-The user stepped away and is coming back. Write a concise 1-2 sentence summary of
-the high-level task and what has been done so far. Focus only on summarizing progress
-and current state. Do not suggest next steps, headers, bullet points, or commit recaps.
+Summarize this session for someone picking the work back up: in one or two sentences,
+state what was asked and what now stands. Describe the session; do not speak in the
+first person and do not address the reader. No next steps, headers, bullets, or commit
+summaries.
 ```
 
 It is generated with `system_prompt=None` and `tools=None`, so it is a plain completion
@@ -431,6 +432,15 @@ Whether a recap is worth drafting at all is decided by `has_meaningful_activity`
 over the tail of the conversation after the last user message: at least 3 tool calls and at
 least 150 characters of assistant text. A session that has only just started produces
 nothing.
+
+The context sent with the prompt is a **digest**, not a transcript
+(`build_recap_digest`): the last 40 messages flattened to one page, prose kept and
+clipped to 320 characters, each tool call reduced to `name(argument) -> first line of
+result`, the whole thing budgeted at 4000 characters and cut from the front with
+`(N earlier entries omitted.)` when it overruns. On a session with 828 messages that is
+~1.0k tokens instead of ~12.4k; it is not faster, but it is bounded and cheap. The
+transcript view (`build_recap_context`) remains as the fallback when the digest would be
+empty.
 
 The timer is armed when a run ends, with the interval read from config
 (`src/ctx/term/recap.py:79`):

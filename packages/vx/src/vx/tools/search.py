@@ -30,7 +30,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
@@ -156,7 +156,7 @@ class SearchParams(BaseModel):
         ),
     )
 
-    mode: str = Field(
+    mode: Literal["content", "files"] = Field(
         default="content",
         description="`content` finds matching lines, `files` finds matching paths.",
     )
@@ -988,9 +988,8 @@ class SearchTool(BaseTool[SearchParams]):
     name = "search"
     params = SearchParams
     description = (
-        "Find text or files. Uses ripgrep when installed and falls back to git "
-        "grep, then to plain Python, so it always works. Respects ignore files, "
-        "and `a|b|c` searches several things in one call."
+        "Search file contents (mode='content') or file paths (mode='files'). "
+        "Respects ignore files; `a|b|c` searches several patterns in one call."
     )
     mutating = False
     parallel_safe = True

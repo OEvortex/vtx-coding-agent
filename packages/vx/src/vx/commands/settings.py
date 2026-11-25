@@ -15,6 +15,8 @@ from ctx.core.config import (
     set_git_context,
     set_notifications_enabled,
     set_permissions_mode,
+    set_recap_enabled,
+    set_recap_idle_seconds,
     set_show_welcome_shortcuts,
     set_theme,
     set_thinking_lines,
@@ -43,6 +45,39 @@ PERMISSION_MODE_DESCRIPTIONS = {
     "prompt": "ask before mutating tool calls",
     "auto": "allow tool calls without approval prompts",
 }
+
+#: How long a session must sit quiet before the recap drafts itself. Seconds,
+#: because that is what the config holds; the labels are how a reader says it.
+RECAP_IDLE_CHOICES = ("15s", "30s", "1m", "2m", "5m")
+
+RECAP_IDLE_DESCRIPTIONS = {
+    "15s": "draft soon after you step away",
+    "30s": "the default rhythm",
+    "1m": "give a slow thought room to finish",
+    "2m": "only for real breaks",
+    "5m": "draft only if you are gone a while",
+}
+
+
+def recap_idle_label(seconds: float) -> str:
+    """``60`` seconds reads as ``1m``: a duration, not a measurement."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds % 60:
+        return f"{seconds / 60:.1f}m"
+    return f"{seconds / 60:.0f}m"
+
+
+def recap_idle_seconds(label: str) -> float:
+    """The label back to seconds; unknown text keeps the current value."""
+    text = label.strip().lower()
+    scale = 60.0 if text.endswith("m") else 1.0
+    digits = "".join(ch for ch in text if ch.isdigit() or ch == ".")
+    try:
+        return max(5.0, float(digits) * scale)
+    except ValueError:
+        return 60.0
+
 
 THINKING_LINES_DESCRIPTIONS = {
     "1": "show 1 line",
@@ -325,6 +360,14 @@ class SettingsCommands(CommandSupport):
                 detail="on" if config.notifications.enabled else "off",
                 value="notifications",
             ),
+            footer.MenuItem(
+                label="recap", detail="on" if config.recap.enabled else "off", value="recap"
+            ),
+            footer.MenuItem(
+                label="recap-idle",
+                detail=recap_idle_label(config.recap.idle_seconds),
+                value="recap-idle",
+            ),
             footer.MenuItem(label="sidebar", detail=prefs.sidebar_label(), value="sidebar"),
             footer.MenuItem(
                 label="show-shortcuts",
@@ -371,6 +414,19 @@ class SettingsCommands(CommandSupport):
             enabled = not config.ui.colored_tool_badge
             set_colored_tool_badge(enabled)
             self._ok(f"colored tool badge turned {'on' if enabled else 'off'}", topic="settings")
+        elif value == "recap":
+            enabled = not config.recap.enabled
+            set_recap_enabled(enabled)
+            self._ok(f"recap turned {'on' if enabled else 'off'}", topic="settings")
+        elif value == "recap-idle":
+            self._pick_choice(
+                "Recap after",
+                list(RECAP_IDLE_CHOICES),
+                recap_idle_label(config.recap.idle_seconds),
+                self._select_recap_idle,
+                RECAP_IDLE_DESCRIPTIONS,
+            )
+            return
         elif value == "history":
             self._select_history_rows()
             return
@@ -401,6 +457,11 @@ class SettingsCommands(CommandSupport):
             )
             return
         self._show_settings_picker(selected_value=value)
+
+    def _select_recap_idle(self, label: str) -> None:
+        seconds = recap_idle_seconds(label)
+        set_recap_idle_seconds(seconds)
+        self._ok(f"recap after {recap_idle_label(seconds)} quiet", topic="settings")
 
     def _select_history_rows(self) -> None:
         """The scrollback limit, offered the way tmux's ``history-limit`` is."""

@@ -1183,6 +1183,44 @@ def set_notifications_enabled(enabled: bool) -> Config:
     return reload_config()
 
 
+def set_recap_enabled(enabled: bool) -> Config:
+    """Turn the idle session recap on or off."""
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    recap = data.get("recap")
+    if not isinstance(recap, dict):
+        recap = {}
+        data["recap"] = recap
+
+    recap["enabled"] = enabled
+    _set_config_version(data)
+
+    _atomic_write_text(config_file, _serialize_config_yaml(data))
+    return reload_config()
+
+
+def set_recap_idle_seconds(seconds: float) -> Config:
+    """How long a session sits quiet before a recap is drafted.
+
+    Clamped to the model's own floor: a recap faster than a few seconds would
+    fire between two thoughts of the same turn.
+    """
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    recap = data.get("recap")
+    if not isinstance(recap, dict):
+        recap = {}
+        data["recap"] = recap
+
+    recap["idle_seconds"] = max(5.0, float(seconds))
+    _set_config_version(data)
+
+    _atomic_write_text(config_file, _serialize_config_yaml(data))
+    return reload_config()
+
+
 def set_model_provider_filter(provider: str) -> Config:
     """Set the single provider slug shown in the /model picker.
 

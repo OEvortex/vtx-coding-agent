@@ -188,7 +188,7 @@ JOB_READ_LINES = 200
 
 class BashParams(BaseModel):
     command: str = Field(
-        default="", description="Command line string to execute (omit it when reading a job)"
+        default="", description="Command line string to execute (required unless job is set)"
     )
     timeout: int = Field(
         description=f"Timeout in seconds (default {DEFAULT_TIMEOUT})", default=DEFAULT_TIMEOUT
@@ -204,7 +204,7 @@ class BashParams(BaseModel):
         default="",
         description="Job id to read: its lines since the last read, then how it is doing.",
     )
-    kill: bool = Field(default=False, description="Stop the job named by job.")
+    kill: bool = Field(default=False, description="Stop the background job named by job.")
     wait: int = Field(
         default=0,
         description="With job: seconds to wait for new output before reporting (0 = now).",
@@ -217,10 +217,10 @@ class BashTool(BaseTool):
     params = BashParams
     mutating = True
     description = (
-        "Run a shell command in the cwd (builds, tests, git, package managers, and "
-        "searching with rg/grep/find). "
+        "Run a shell command in the cwd (builds, tests, git, package managers). "
         f"Output truncated to last {MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB "
-        "(full saved to temp log). Not for reading or editing files — use read/apply_patch. "
+        "(full saved to temp log). Not for reading/listing (use read), searching "
+        "(use search), editing (use apply_patch), or fetching URLs (use web). "
         "Long-lived work goes in the background: background=true returns a job id, "
         'bash(job="j1") reads what it has said since last time, bash(job="j1", kill=true) '
         "stops it."
