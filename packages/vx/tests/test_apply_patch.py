@@ -49,6 +49,7 @@ class TestParams:
         params = ApplyPatchParams.model_validate(
             {"ops": ["path", "a.py", "old_str", "x", "new_str", "y"]}
         )
+        assert isinstance(params.ops, list)
         assert params.ops[0].path == "a.py"
         assert params.ops[0].old_str == "x"
         assert params.ops[0].new_str == "y"
@@ -57,6 +58,7 @@ class TestParams:
         params = ApplyPatchParams.model_validate(
             {"ops": '[{"path": "a.py", "new_file_content": "hi"}]'}
         )
+        assert isinstance(params.ops, list)
         assert params.ops[0].new_file_content == "hi"
 
     def test_aliases_accepted(self):
@@ -144,3 +146,50 @@ class TestExecute:
         # One diff group for the file, not one per op.
         groups = (result.ui_data or {}).get("diff_groups", [])
         assert len(groups) == 1
+
+
+class TestUnreadableOps:
+    """A patch that arrives as broken text has to say so, in words it can use.
+
+    The session that found this: the model sent `ops` as a string whose quotes
+    did not balance (a triple-double opened, a triple-single closed), ctx threw
+    it away during validation with "arguments failed validation", and the model
+    retried the same shape twice. It could not see what was wrong, so it could
+    not fix it.
+    """
+
+    # A triple-double opened, a triple-single closed: the shape it sent.
+    BROKEN = '[{"old_str": ' + '"""' + "x" + "'''}" + "]"
+
+    def test_python_triple_quotes_are_read(self):
+        params = ApplyPatchParams.model_validate(
+            {"ops": "[{'path': 'a.py', 'new_str': '''three'''}]"}
+        )
+        assert isinstance(params.ops, list)
+        assert params.ops[0].new_str == "three"
+
+    def test_a_fenced_block_is_read(self):
+        params = ApplyPatchParams.model_validate(
+            {"ops": '```json\n[{"path": "a.py", "new_file_content": "hi"}]\n```'}
+        )
+        assert isinstance(params.ops, list)
+        assert params.ops[0].new_file_content == "hi"
+
+    def test_broken_text_survives_validation(self):
+        params = ApplyPatchParams.model_validate({"ops": self.BROKEN})
+        assert isinstance(params.ops, str)
+
+    def test_format_call_does_not_crash_on_it(self):
+        params = ApplyPatchParams.model_validate({"ops": self.BROKEN})
+        assert ApplyPatchTool().format_call(params) == "unreadable ops"
+
+    @pytest.mark.asyncio
+    async def test_the_tool_explains_the_fix_instead_of_vanishing(self):
+        params = ApplyPatchParams.model_validate({"ops": self.BROKEN})
+        assert isinstance(params.ops, str)
+        result = await ApplyPatchTool().execute(params)
+        assert result.success is False
+        text = str(result.result)
+        assert "new_file_content" in text
+        assert "old_str" in text
+        assert "unbalanced" in text

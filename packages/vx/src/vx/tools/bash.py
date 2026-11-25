@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -19,6 +20,16 @@ DEFAULT_TIMEOUT = 180
 MAX_OUTPUT_BYTES = 50 * 1024
 MAX_OUTPUT_LINES = 2000
 _SUBPROCESS_DRAIN_TIMEOUT_SECONDS = 1.0
+#: How long to keep reading after the command itself has exited. A daemon left
+#: in the background inherits the pipe and never closes it; waiting for that is
+#: waiting for a command the user already finished.
+_PIPE_GRACE_SECONDS = 0.4
+#: A single line can be a minified blob or a base64 image, so the reader's line
+#: limit has to be well past the default 64 KiB.
+_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
+#: How often to look for the child's exit. Cheap, and it does not depend on the
+#: pipes, which is the whole point.
+_EXIT_POLL_SECONDS = 0.02
 
 _IS_WINDOWS: bool = sys.platform == "win32"
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]")
@@ -124,17 +135,41 @@ def _truncate_tail(text: str) -> TruncationResult:
     return TruncationResult("\n".join(output_lines), True, len(output_lines), total_lines)
 
 
-async def _kill_process_tree(proc: asyncio.subprocess.Process) -> None:
-    if proc.returncode is not None:
-        return
+async def _wait_exit(proc: asyncio.subprocess.Process, timeout: float | None = None) -> bool:
+    """Wait for the child to be reaped, ignoring who still holds its pipes.
+
+    ``Process.wait()`` looks like the obvious way to know a command finished,
+    and it is a trap: asyncio only resolves it once *every* pipe is closed, so a
+    command that leaves a daemon in the background -- ``npm run dev &``,
+    ``sleep 300 &``, a server started by a test -- blocks it until the timeout.
+    That is what a transcript stuck on "running bash" for three minutes was.
+    ``returncode`` is set the moment the child is reaped, so that is the clock.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while proc.returncode is None:
+        if deadline is not None and time.monotonic() > deadline:
+            return False
+        await asyncio.sleep(_EXIT_POLL_SECONDS)
+    return True
+
+
+async def _kill_process_tree(proc: asyncio.subprocess.Process, group: int | None = None) -> None:
+    """Kill the child and everything it started, then wait for it to be gone.
+
+    The group id is the child's own pid (it was started in a new session), and
+    it has to be used even after the child is reaped: a command that leaves a
+    daemon behind exits, and ``getpgid`` on a dead pid then fails while the
+    group -- the daemon -- is still there.
+    """
     try:
         if _IS_WINDOWS:
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
         else:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        await proc.wait()
+            os.killpg(group if group is not None else os.getpgid(proc.pid), signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
         pass
+    with contextlib.suppress(Exception):
+        await _wait_exit(proc, timeout=2.0)
 
 
 def _write_full_output_to_temp(output: str) -> str:
@@ -187,6 +222,8 @@ class BashTool(BaseTool):
             )
 
         proc = None
+        #: The child's process group, kept from before it could exit.
+        group: int | None = None
         try:
             spawn_argv = _get_spawn_argv(command)
             if spawn_argv is None:
@@ -197,6 +234,7 @@ class BashTool(BaseTool):
                     stdin=asyncio.subprocess.DEVNULL,
                     env=_get_env(),
                     start_new_session=not _IS_WINDOWS,
+                    limit=_STREAM_LIMIT_BYTES,
                 )
             else:
                 proc = await asyncio.create_subprocess_exec(
@@ -206,8 +244,12 @@ class BashTool(BaseTool):
                     stdin=asyncio.subprocess.DEVNULL,
                     env=_get_env(),
                     start_new_session=not _IS_WINDOWS,
+                    limit=_STREAM_LIMIT_BYTES,
                 )
 
+            # The child leads its own group, so the group outlives the child and
+            # can be cleaned up even when the child exited first.
+            group = None if _IS_WINDOWS else proc.pid
             if (
                 hasattr(proc, "stdout")
                 and hasattr(proc, "stderr")
@@ -223,7 +265,12 @@ class BashTool(BaseTool):
                     if not reader:
                         return
                     while True:
-                        chunk = await reader.readline()
+                        try:
+                            chunk = await reader.readline()
+                        except (asyncio.LimitOverrunError, ValueError):
+                            # Longer than the stream limit: take what is
+                            # buffered instead of failing the whole call.
+                            chunk = await reader.read(1 << 16)
                         if not chunk:
                             break
                         dest.append(chunk)
@@ -234,11 +281,20 @@ class BashTool(BaseTool):
                                     on_output(text)
 
                 async def _stream_all() -> tuple[bytes, bytes]:
-                    await asyncio.gather(
-                        _stream_pipe(proc.stdout, stdout_chunks),
-                        _stream_pipe(proc.stderr, stderr_chunks),
-                        proc.wait(),
-                    )
+                    pipes = [
+                        asyncio.create_task(_stream_pipe(proc.stdout, stdout_chunks)),
+                        asyncio.create_task(_stream_pipe(proc.stderr, stderr_chunks)),
+                    ]
+                    await _wait_exit(proc)
+                    # The command is done. Whatever still holds these pipes is
+                    # a child it left behind, and the caller is waiting on the
+                    # command, not on the daemon.
+                    await asyncio.wait(pipes, timeout=_PIPE_GRACE_SECONDS)
+                    for task in pipes:
+                        if not task.done():
+                            task.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await task
                     return b"".join(stdout_chunks), b"".join(stderr_chunks)
 
                 comm_task = asyncio.create_task(_stream_all())
@@ -259,14 +315,14 @@ class BashTool(BaseTool):
                             task.cancel()
                             with contextlib.suppress(asyncio.CancelledError):
                                 await task
-                        await _kill_process_tree(proc)
+                        await _kill_process_tree(proc, group)
                         return ToolResult(
                             success=False,
                             ui_summary=f"[red]Command timed out after {params.timeout}s[/red]",
                         )
 
                     if cancel_wait in done and cancel_event.is_set():
-                        await _kill_process_tree(proc)
+                        await _kill_process_tree(proc, group)
                         if not comm_task.done():
                             with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                                 await asyncio.wait_for(
@@ -294,7 +350,7 @@ class BashTool(BaseTool):
                     )
 
             except TimeoutError:
-                await _kill_process_tree(proc)
+                await _kill_process_tree(proc, group)
                 if comm_task is not None and not comm_task.done():
                     with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                         await asyncio.wait_for(
@@ -369,4 +425,5 @@ class BashTool(BaseTool):
             return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
         finally:
             if proc is not None:
-                await _kill_process_tree(proc)
+                with contextlib.suppress(Exception):
+                    await _kill_process_tree(proc, group)

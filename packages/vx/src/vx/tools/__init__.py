@@ -24,9 +24,12 @@ if TYPE_CHECKING:
 
 _TOOL_MODULES = {
     "ApplyPatchTool": ".apply_patch",
+    "AskUserTool": ".ask_user",
     "BashTool": ".bash",
     "ReadTool": ".read",
+    "SearchTool": ".search",
     "SkillTool": ".skill",
+    "TodoTool": ".todo",
     "WebTool": ".web",
 }
 
@@ -42,6 +45,9 @@ def _build_catalog() -> None:
         importlib.import_module(".bash", __name__),
         importlib.import_module(".web", __name__),
         importlib.import_module(".skill", __name__),
+        importlib.import_module(".ask_user", __name__),
+        importlib.import_module(".todo", __name__),
+        importlib.import_module(".search", __name__),
     ]
     all_tools = [
         modules[0].ReadTool(),
@@ -49,9 +55,12 @@ def _build_catalog() -> None:
         modules[2].BashTool(),
         modules[3].WebTool(),
         modules[4].SkillTool(),
+        modules[5].AskUserTool(),
+        modules[6].TodoTool(),
+        modules[7].SearchTool(),
     ]
     tools_by_name = {tool.name: tool for tool in all_tools}
-    DEFAULT_TOOLS = ["read", "apply_patch", "bash", "web", "skill"]
+    DEFAULT_TOOLS = ["read", "apply_patch", "bash", "web", "skill", "search", "ask_user", "todo"]
 
     def get_tools(names: list[str] | None = None):
         if names is None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from contextlib import suppress
+from typing import Any
 
 from vx.tui import ansi
 from vx.tui import theme as _theme
@@ -689,6 +690,11 @@ _KEYWORDS = {
     "esac",
 }
 _COMMENT_PREFIXES = ("#", "//", "/*", "*", "--", ";;")
+
+
+def highlight_line(line: str, t: Any | None = None) -> str:
+    """One code line, painted. A search hit reads like a line out of a file."""
+    return _highlight(line, t if t is not None else _theme.current())
 
 
 def _highlight(line: str, t) -> str:

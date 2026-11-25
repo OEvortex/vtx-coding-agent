@@ -107,19 +107,61 @@ class TestHintRow:
         assert "high" in text
         assert "main" in text
 
-    def test_width_matches_cols(self):
+    def test_context_is_a_meter(self):
         row = footer.hint_row(
-            cols=60,
+            cols=100,
             permission="",
-            model="m",
+            model="",
+            effort="",
+            context_used=56_000,
+            context_total=320_000,
+            workspace="",
+        )
+        assert footer.context_meter(56_000, 320_000) == "██░░░░░░░░ 18%"
+        assert "██░░░░░░░░ 18%" in plain(row)
+
+    def test_meter_shows_as_soon_as_context_is_spent(self):
+        # An empty bar at 0.01% and at 0 answers nothing.
+        assert footer.context_meter(1, 320_000) == "█░░░░░░░░░ 0.01%"
+
+    def test_a_million_token_window_does_not_read_zero(self):
+        # A whole short session sits under 1% of a million-token window, and
+        # `0%` there reads as a meter that stopped working.
+        million = 1_048_576
+        assert footer.context_meter(900, million) == "█░░░░░░░░░ 0.09%"
+        assert footer.context_meter(5_800, million) == "█░░░░░░░░░ 0.55%"
+
+    def test_the_reading_moves_between_turns(self):
+        # The digits have to be fine enough that one more turn changes them.
+        million = 1_048_576
+        assert footer.context_meter(5_800, million) != footer.context_meter(5_900, million)
+        assert footer.context_meter(10_731, million) == "█░░░░░░░░░ 1.0%"
+
+    def test_meter_widens_the_bar_with_use(self):
+        million = 1_048_576
+        assert footer.context_meter(200_000, million).startswith("██░")
+        assert footer.context_meter(500_000, million).startswith("█████░")
+        assert footer.context_meter(million, million).startswith("██████████")
+
+    def test_meter_over_the_window_is_honest(self):
+        # Past the window the reading is real, not clamped to a tidy 100%.
+        assert footer.context_meter(1_200_000, 1_048_576) == "██████████ 114%"
+
+    def test_meter_without_a_total_is_a_count(self):
+        assert footer.context_meter(56_000, None) == "56k"
+
+    def test_meter_with_nothing_used_is_absent(self):
+        row = footer.hint_row(
+            cols=100,
+            permission="",
+            model="",
             effort="",
             context_used=0,
-            context_total=None,
-            workspace="/w",
+            context_total=320_000,
+            workspace="",
         )
-        from vx.tui import ansi
-
-        assert ansi.width(row) == 60
+        assert footer.context_meter(0, 320_000) == ""
+        assert "░" not in plain(row)
 
     def test_hint_has_no_unseen_text(self):
         row = footer.hint_row(

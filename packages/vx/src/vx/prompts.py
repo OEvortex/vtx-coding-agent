@@ -27,8 +27,10 @@ Use the `# Env` block instead of guessing about the machine.
 
 - Every reply either calls a tool or delivers the result. No narration, no plans
   you don't execute, no fabricated output.
-- Right tool: read (not cat), rg through bash (not grep walks), apply_patch (not
-  sed), bash for commands and tests. Batch independent calls.
+- Right tool: read (not cat), `search` (not grep/rg/find in bash), apply_patch (not
+  sed), bash for commands and tests, ask_user when the next step is the user's
+  choice and a guess would waste the turn, todo to keep the plan the user sees
+  on the right of the screen. Batch independent calls.
 - Read fully before deciding: trace the flow and every caller, don't guess from
   names. Laziness is for the diff, not the investigation.
 - Read a file before editing it; match the style around the change. Keep imports,

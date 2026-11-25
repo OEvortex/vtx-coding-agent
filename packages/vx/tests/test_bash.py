@@ -1,4 +1,8 @@
-"""Bash tool: output sanitizing, truncation, and the empty-command guard."""
+"""Bash tool: output sanitizing, truncation, and commands that never end."""
+
+import asyncio
+import os
+import time
 
 import pytest
 from vx.tools.bash import (
@@ -65,3 +69,69 @@ class TestExecute:
         result = await BashTool().execute(BashParams(command="exit 3"))
         assert not result.success
         assert "3" in (result.ui_summary or "")
+
+
+class TestNotStuck:
+    """A command that leaves something behind must not freeze the transcript.
+
+    asyncio's ``Process.wait()`` resolves only once every pipe is closed, so a
+    background child holding stdout keeps it -- and the turn -- waiting until
+    the timeout. These pin the behaviour that replaced it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_background_child_does_not_hold_up_the_call(self):
+        started = time.monotonic()
+        result = await BashTool().execute(BashParams(command="sleep 60 & echo up", timeout=30))
+        assert time.monotonic() - started < 5
+        assert result.success
+        assert "up" in (result.result or "")
+
+    @pytest.mark.asyncio
+    async def test_the_background_child_is_killed_with_the_call(self, tmp_path):
+        pidfile = tmp_path / "pid"
+        await BashTool().execute(
+            BashParams(command=f"sleep 60 & echo $! > {pidfile}; echo up", timeout=30)
+        )
+        pid = int(pidfile.read_text().strip())
+        for _ in range(50):
+            if not os.path.exists(f"/proc/{pid}"):
+                break
+            await asyncio.sleep(0.02)
+        assert not os.path.exists(f"/proc/{pid}")
+
+    @pytest.mark.asyncio
+    async def test_one_long_line_is_output_not_an_error(self):
+        # Over the reader's 64 KiB line default: minified JSON, a base64 blob.
+        result = await BashTool().execute(
+            BashParams(command="head -c 200000 /dev/zero | tr '\\0' a", timeout=30)
+        )
+        assert result.success
+        assert "Separator is not found" not in (result.ui_summary or "")
+        assert len(result.result or "") > 1000
+
+    @pytest.mark.asyncio
+    async def test_the_timeout_still_reports(self):
+        started = time.monotonic()
+        result = await BashTool().execute(BashParams(command="sleep 60", timeout=1))
+        assert time.monotonic() - started < 5
+        assert not result.success
+        assert "timed out" in (result.ui_summary or "")
+
+    @pytest.mark.asyncio
+    async def test_escape_aborts_a_running_command(self):
+        cancel = asyncio.Event()
+
+        async def press() -> None:
+            await asyncio.sleep(0.2)
+            cancel.set()
+
+        task = asyncio.create_task(press())
+        assert task
+        started = time.monotonic()
+        result = await BashTool().execute(
+            BashParams(command="sleep 60", timeout=30), cancel_event=cancel
+        )
+        assert time.monotonic() - started < 3
+        assert not result.success
+        assert "aborted" in (result.ui_summary or "")

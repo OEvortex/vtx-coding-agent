@@ -1,8 +1,10 @@
 """Apply patch tool for vx — apply edits to files."""
 
+import ast
 import asyncio
 import difflib
 import json
+import warnings
 from contextlib import suppress
 from pathlib import Path
 
@@ -130,17 +132,48 @@ class PatchOp(BaseModel):
         return op
 
 
+#: What a model is told when its ops arrive as text nothing can parse.
+_BAD_OPS = (
+    "`ops` arrived as a string, not a list of objects, and it does not parse as "
+    "JSON or a Python literal (a quote inside it is unbalanced). Send `ops` as a "
+    'real JSON array: [{"path": ..., "old_str": ..., "new_str": ...}]. '
+    "To replace a whole file, use one op with `new_file_content` instead of "
+    "passing the whole file as `old_str`; for small changes keep `old_str` short."
+)
+
+
+def _parse_ops_text(value: str) -> object:
+    """A string of ops, as best it can be read: JSON first, then Python.
+
+    Models hand `ops` over as text far more often than as an array, and a
+    triple-quoted block is Python, not JSON. Neither parser is allowed to
+    guess: half a patch applied is worse than a refusal that says why.
+    """
+    text = value.strip()
+    if text.startswith("```"):
+        # A fenced block: the model's habit of wrapping the payload in markdown.
+        text = text.split("\n", 1)[-1]
+        text = text.rsplit("```", 1)[0].strip()
+    with suppress(ValueError, SyntaxError):
+        return json.loads(text)
+    with suppress(ValueError, SyntaxError), warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        return ast.literal_eval(text)
+    return value
+
+
 class ApplyPatchParams(BaseModel):
-    ops: list[PatchOp] = Field(description="List of patch operations to apply")
+    ops: list[PatchOp] | str = Field(description="List of patch operations to apply")
 
     @field_validator("ops", mode="before")
     @staticmethod
     def _accept_shapes(value: object) -> object:
         """Take the shapes models send: one op, JSON text, or flat key/value pairs."""
         if isinstance(value, str):
-            try:
-                value = json.loads(value)
-            except json.JSONDecodeError:
+            value = _parse_ops_text(value)
+            if isinstance(value, str):
+                # Unparseable: kept as text so `execute` can say what to do
+                # instead of dying in validation, where the reason is lost.
                 return value
         if isinstance(value, dict):
             value = [value]
@@ -177,6 +210,8 @@ class ApplyPatchTool(BaseTool):
     )
 
     def format_call(self, params: ApplyPatchParams) -> str:
+        if isinstance(params.ops, str):
+            return "unreadable ops"
         paths = [op.path for op in params.ops]
         return ", ".join(shorten_path(p) for p in paths)
 
@@ -247,6 +282,8 @@ class ApplyPatchTool(BaseTool):
     async def execute(
         self, params: ApplyPatchParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
+        if isinstance(params.ops, str):
+            return ToolResult(success=False, result=_BAD_OPS, ui_summary="unreadable ops")
         if not params.ops:
             return ToolResult(success=False, result="No operations provided")
 

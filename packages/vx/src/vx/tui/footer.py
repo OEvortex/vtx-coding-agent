@@ -20,6 +20,52 @@ SEARCH_PROMPT = "⌕ "
 CONTINUATION = "  "
 SEPARATOR = " · "
 
+#: Cells in the context meter. Ten is the fewest that shows a 5% step, and it
+#: costs one column more than the ``56k/320k 17%`` it replaces.
+CONTEXT_CELLS = 10
+#: Written as escapes so the source stays ASCII: a full and an empty cell.
+BLOCK_FULL = "\u2588"
+BLOCK_EMPTY = "\u2591"
+
+
+def context_meter(used: int, total: int | None, cells: int = CONTEXT_CELLS) -> str:
+    """``██░░░░░░░░ 18%``: how full the window is, as a bar and a percentage.
+
+    The percentage carries the precision the bar cannot: ten cells is a 10%
+    step. It keeps decimals while it needs them -- a million-token window spends
+    a whole short session under 1%, and ``0%`` there reads as a broken meter.
+    """
+    if used <= 0:
+        return ""
+    if not total:
+        return f"{used // 1000}k"
+    ratio = used / max(1, total)
+    # A bar that reads empty at 1% and at 0% answers nothing: one cell shows as
+    # soon as any context is spent.
+    filled = min(cells, max(1, round(ratio * cells)))
+    return f"{BLOCK_FULL * filled}{BLOCK_EMPTY * (cells - filled)} {_percent(ratio)}"
+
+
+def _percent(ratio: float) -> str:
+    """``18%``, ``1.4%``, ``0.55%`` -- as many digits as the reading needs."""
+    pct = ratio * 100
+    if pct >= 10:
+        return f"{pct:.0f}%"
+    if pct >= 1:
+        return f"{pct:.1f}%"
+    # Below one percent, tenths are too coarse to move between turns.
+    return f"{max(0.01, pct):.2f}%"
+
+
+def _token_count(used: int) -> str:
+    """``940``, ``10.7k``, ``940k``: enough digits to move every turn."""
+    if used < 1000:
+        return str(used)
+    if used < 100_000:
+        return f"{used / 1000:.1f}k"
+    return f"{used // 1000}k"
+
+
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
@@ -177,14 +223,9 @@ def hint_row(
         segments.append(compact_model(model))
     if effort and effort != "auto":
         segments.append(effort)
-    if context_used > 0:
-        if context_total:
-            segments.append(
-                f"{context_used // 1000}k/{context_total // 1000}k "
-                f"{context_used * 100 // max(1, context_total)}%"
-            )
-        else:
-            segments.append(f"{context_used // 1000}k")
+    meter = context_meter(context_used, context_total)
+    if meter:
+        segments.append(meter)
     identity = _workspace_identity(workspace, branch, cols)
     left = SEPARATOR.join(segments)
     right_width = ansi.width(right)

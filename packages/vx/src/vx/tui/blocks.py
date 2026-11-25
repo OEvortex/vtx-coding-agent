@@ -8,6 +8,7 @@ worry about neighbours.
 from __future__ import annotations
 
 import os
+import time
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -38,6 +39,7 @@ _TOOL_VERBS = {
     "edit": "Edited",
     "apply_patch": "Edited",
     "grep": "Searched",
+    "search": "Searched",
     "find": "Listed",
     "glob": "Listed",
     "ls": "Listed",
@@ -48,6 +50,7 @@ _TOOL_VERBS = {
     "task": "Ran subagent",
     "codemode": "Ran code",
     "tool_search": "Found tools",
+    "ask_user": "Asked",
 }
 
 #: fx's verb for what a failed call tried to do (failedVerb).
@@ -57,6 +60,7 @@ _FAILED_VERBS = {
     "edit": "edit",
     "apply_patch": "edit",
     "grep": "search",
+    "search": "search",
     "find": "match",
     "glob": "match",
     "ls": "match",
@@ -70,6 +74,7 @@ _FAILED_VERBS = {
 _TOOL_CATEGORIES = {
     "read": "read",
     "grep": "read",
+    "search": "read",
     "write": "write",
     "skill": "read",
     "edit": "edit",
@@ -114,6 +119,8 @@ HEADER_MAX_PARTS = 3
 
 #: Row budget for a `!cmd`'s folded output, mirroring fx's compact transcript.
 OUTPUT_PREVIEW_ROWS = 5
+#: Rows an option's preview may take while it is the banded choice.
+ASK_PREVIEW_ROWS = 3
 #: Rows of diff a finished patch prints before "ctrl+o to view".
 _expanded = False
 
@@ -148,6 +155,7 @@ type ToolStatusBlock = (
     | BashToolStatus
     | ApplyPatchToolStatus
     | GrepToolStatus
+    | SearchToolStatus
     | WebToolStatus
 )
 
@@ -1054,6 +1062,188 @@ class BashToolStatus(ToolRow):
 
 
 @dataclass
+class AskChoice:
+    """One offered answer: the label, a line saying what it means, a preview."""
+
+    label: str = ""
+    description: str = ""
+    preview: str = ""
+
+
+@dataclass
+class AskItem:
+    """One question of an ``ask_user`` call with the answer it got (if any)."""
+
+    question: str = ""
+    options: list[AskChoice] = field(default_factory=list)
+    answer: str | None = None
+    custom: bool = False
+    multi: bool = False
+    checked: list[int] = field(default_factory=list)
+
+
+@dataclass
+class AskUser(Block):
+    """The ``ask_user`` tool: questions the model cannot answer by itself.
+
+    It is a tool row like any other, so the question stays welded to the turn
+    that asked it instead of floating over the composer. A call may carry
+    several questions: answered ones fold to ``✓ question → answer``, the open
+    one shows its choices under the selection band, and the ones still to come
+    wait as dim lines — the whole request is visible before it is answered.
+    """
+
+    items: list[AskItem] = field(default_factory=list)
+    at: int = 0
+    selected: int = 0
+    draft: str = ""
+    skipped: bool = False
+    started: float | None = None
+    ended: float | None = None
+    kind: str = "tool"
+
+    @property
+    def waiting(self) -> bool:
+        return not self.skipped and self.at < len(self.items)
+
+    def current(self) -> AskItem | None:
+        return self.items[self.at] if 0 <= self.at < len(self.items) else None
+
+    def elapsed(self) -> float | None:
+        if self.started is None:
+            return None
+        return (self.ended if self.ended is not None else time.monotonic()) - self.started
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        total = len(self.items)
+        asked = f"Asked you {total} questions" if total > 1 else "Asked you a question"
+        head = f"{ansi.BOLD}{asked}{ansi.RESET}"
+        progress = (
+            f"{t.dim_style} · {min(self.at + 1, total)}/{total}{ansi.RESET}" if total > 1 else ""
+        )
+        seconds = self.elapsed()
+        clock = f" · {_elapsed_label(seconds)}" if seconds is not None and not self.waiting else ""
+        if self.skipped:
+            tail = f"{clock} {t.red_style}✗{ansi.RESET}"
+        elif self.waiting:
+            tail = f"{t.dim_style} · waiting{ansi.RESET}{progress}"
+        else:
+            tail = f"{clock} {t.green_style}✓{ansi.RESET}"
+        glyph = f"{t.dim_style}●{ansi.RESET}" if self.waiting else "●"
+        out = [ansi.clip(f"{glyph} {head}{tail}", width)]
+        for item in self.items[: self.at]:
+            out.extend(self._answered_rows(item, width))
+        current = self.current()
+        if current is not None and not self.skipped:
+            for line in ansi.wrap(" ".join(current.question.split()), max(8, width - 4)):
+                out.append(f"{t.dim_style}├{ansi.RESET} {t.hint_style}{line}{ansi.RESET}")
+            # One digit, two spaces, the longest label, and a cell of slack.
+            longest = max((len(choice.label) for choice in current.options), default=8)
+            band = min(longest + 4, max(8, width - 6))
+            detail_room = max(0, width - band - 8)
+            for index, choice in enumerate(current.options):
+                detail = ansi.clip_ellipsis(choice.description, detail_room)
+                tail_rows = f"  {t.dim_style}{detail}{ansi.RESET}" if detail else ""
+                mark = ""
+                if current.multi:
+                    mark = "[x] " if index in current.checked else "[ ] "
+                text = f"{index + 1}  {mark}{choice.label}"
+                if index == self.selected:
+                    cell = ansi.pad(text, band + len(mark))
+                    out.append(
+                        f"{t.dim_style}├{ansi.RESET} {t.selected_completion_style}"
+                        f"{cell}{ansi.RESET}{tail_rows}"
+                    )
+                else:
+                    # Padded like the banded row, so every description starts
+                    # in the same column.
+                    label = ansi.clip_ellipsis(choice.label, max(4, band - 3))
+                    cell = ansi.pad(f"{index + 1}  {mark}{label}", band + len(mark))
+                    out.append(
+                        f"{t.dim_style}├{ansi.RESET} {t.dim_style}{cell}{ansi.RESET}{tail_rows}"
+                    )
+                # Only the banded choice spends rows on its preview.
+                if index == self.selected and choice.preview:
+                    out.extend(self._preview_rows(choice.preview, width))
+        # Everything after the open question is still to come.
+        for item in self.items[self.at + 1 :] if not self.skipped else []:
+            pending = ansi.clip_ellipsis(item.question, max(8, width - 6))
+            out.append(f"{t.dim_style}├ · {pending}{ansi.RESET}")
+        if self.waiting:
+            draft = " ".join(self.draft.split())
+            if draft:
+                typed = ansi.clip_ellipsis(draft, max(4, width - 8))
+                out.append(
+                    f"{t.dim_style}├{ansi.RESET} {t.selected_completion_style}{typed}{ansi.RESET}"
+                )
+            count = len(current.options) if current is not None else 0
+            if current is not None and current.multi and count:
+                hint = f"1-{count} toggles · enter confirms · esc skips"
+            elif not count:
+                hint = "enter sends your text · esc skips"
+            else:
+                hint = _ask_hint(count)
+            out.append(f"{t.dim_style}└ {ansi.clip_ellipsis(hint, max(4, width - 2))}{ansi.RESET}")
+            return [ansi.clip(row, width) if row else "" for row in out]
+        if self.skipped:
+            answered = sum(1 for item in self.items if item.answer)
+            left = total - answered
+            body = (
+                "skipped" if not answered else f"{answered} of {total} answered · skipped {left}"
+            )
+            out.append(f"{t.dim_style}└ {body}{ansi.RESET}")
+        elif total > 1:
+            out.append(f"{t.dim_style}└ all {total} answered{ansi.RESET}")
+        return [ansi.clip(row, width) if row else "" for row in out]
+
+    def _preview_rows(self, preview: str, width: int) -> list[str]:
+        """A selected option's markdown, a few dim lines, never unbounded."""
+        t = _theme.current()
+        body = [line for line in preview.strip().splitlines() if line.strip()]
+        rows: list[str] = []
+        for line in body:
+            for wrapped in ansi.wrap(line.rstrip(), max(8, width - 6)):
+                rows.append(f"{t.dim_style}│   {wrapped}{ansi.RESET}")
+                if len(rows) >= ASK_PREVIEW_ROWS:
+                    return rows
+        return rows
+
+    def _answered_rows(self, item: AskItem, width: int) -> list[str]:
+        t = _theme.current()
+        if not item.answer:
+            skipped = ansi.clip_ellipsis(item.question, max(8, width - 6))
+            return [f"{t.dim_style}├ ✗ {skipped}{ansi.RESET}"]
+        # Only a ticked multi-select question reports its ticks: answering by
+        # typing on the same question is a plain answer.
+        if item.multi and item.checked:
+            names = ", ".join(
+                item.options[index].label for index in item.checked if index < len(item.options)
+            )
+            head = ansi.clip_ellipsis(item.question, max(8, width // 2))
+            tail = ansi.clip_ellipsis(names or "none", max(8, width - ansi.width(head) - 8))
+            line = (
+                f"{t.dim_style}├{ansi.RESET} {t.green_style}✓{ansi.RESET} "
+                f"{t.dim_style}{head}{ansi.RESET}  {t.dim_style}→{ansi.RESET}  "
+                f"{t.hint_style}{tail}{ansi.RESET}"
+            )
+            return [ansi.clip(line, width)]
+        room = max(10, width - 6)
+        head = ansi.clip_ellipsis(item.question, max(8, room // 2))
+        tail = ansi.clip_ellipsis(item.answer, max(8, room - ansi.width(head) - 4))
+        line = (
+            f"{t.dim_style}├{ansi.RESET} {t.green_style}✓{ansi.RESET} "
+            f"{t.dim_style}{head}{ansi.RESET}  {t.dim_style}→{ansi.RESET}  "
+            f"{t.hint_style}{tail}{ansi.RESET}"
+        )
+        return [ansi.clip(line, width)]
+
+
+def _ask_hint(count: int) -> str:
+    return f"1-{count} or ↑↓ · type an answer · enter sends · esc skips"
+
+
+@dataclass
 class DiffOutput(Block):
     """A patch's diff: a ruler gutter, word-wrapped, split when there is room.
 
@@ -1068,12 +1258,15 @@ class DiffOutput(Block):
     """List of (op, line_number, text) where op is '+', '-', or ' '."""
     path: str = ""
     """The file the lines belong to; empty when the block holds one file's diff."""
+    #: The patch is still being written: the last row is left open with a caret.
+    streaming: bool = False
     #: Its own kind, so spacing can keep it welded under the row that edited.
     kind: str = "diff"
 
     def rows(self, width: int) -> list[str]:
         if not self.lines:
             return []
+        lines = self._with_caret() if self.streaming else self.lines
         t = _theme.current()
         out: list[str] = []
         if self.path:
@@ -1081,12 +1274,24 @@ class DiffOutput(Block):
             out.append(ansi.clip_ellipsis(path, width))
         # A diff with nothing removed (a new file) would leave half the split
         # empty, so it keeps the full width and the one-column ruler.
-        split = width >= DIFF_SPLIT_MIN_WIDTH and any(op == "-" for op, _ln, _x in self.lines)
+        split = width >= DIFF_SPLIT_MIN_WIDTH and any(op == "-" for op, _ln, _x in lines)
         if split:
-            out.extend(self._split(self.lines, width, t))
+            out.extend(self._split(lines, width, t))
         else:
-            out.extend(self._unified(self.lines, width, t))
+            out.extend(self._unified(lines, width, t))
         return out
+
+    def _with_caret(self) -> list[tuple[str, str, str]]:
+        """The rows so far, with a caret on the line the stream is still writing.
+
+        The caret is the one mark that separates text that has arrived from text
+        that is still coming. A line the stream has only reached the start of
+        gets none: a bare caret under a ``+`` reads as an empty hunk line.
+        """
+        if not self.lines or not self.lines[-1][2]:
+            return self.lines
+        op, ln, text = self.lines[-1]
+        return [*self.lines[:-1], (op, ln, text + STREAMING_CARET)]
 
     def _unified(self, lines: list[tuple[str, str, str]], width: int, t: Any) -> list[str]:
         """One column: ``  206 │- text``, wrapped under the code's own indent."""
@@ -1140,6 +1345,9 @@ class DiffOutput(Block):
 
 #: Width at which a diff is paired into an old/new split instead of one column.
 DIFF_SPLIT_MIN_WIDTH = 110
+
+#: The cursor on a half-written row of a diff whose patch is still arriving.
+STREAMING_CARET = "\u258f"
 _SPLIT_SEP = " │ "
 
 
@@ -1325,6 +1533,178 @@ class GrepToolStatus(ToolRow):
             noun = "match" if self.match_count == 1 else "matches"
             out += f" {t.dim_style}· {self.match_count} {noun}{ansi.RESET}"
         return out + self.duration()
+
+
+@dataclass
+class SearchToolStatus(ToolRow):
+    """The search tool: what was looked for, where, and what it cost.
+
+    Two modes, one row. Content mode reads ``Searched 'x' · 3 matches in 2
+    files · 25ms``; files mode reads ``Found '*.py' · 6 files · 17ms``. A rung
+    other than ripgrep names itself, because "why was that slow" is a fair
+    question with an answer.
+    """
+
+    name: str = "search"
+    pattern: str = ""
+    mode: str = "content"
+    scope: str = ""
+    glob: str = ""
+    backend: str = ""
+    matches: int = 0
+    files: int = 0
+    total: int = 0
+    scanned: int = 0
+    counts: tuple[tuple[str, int], ...] = ()
+    error: str = ""
+    status: str = "running"
+    kind: str = "tool"
+
+    @property
+    def category(self) -> str:
+        """Files mode lists names; content mode reads files."""
+        return "list" if self.mode == "files" else "read"
+
+    def duration(self) -> str:
+        """Milliseconds under a second: `25ms` reads, `0.0s` looks broken."""
+        if self.elapsed is None:
+            return ""
+        if self.elapsed < 1:
+            return f" {ansi.dim()}· {round(self.elapsed * 1000)}ms{ansi.RESET}"
+        return super().duration()
+
+    def _where(self) -> str:
+        if not self.scope or self.scope == ".":
+            return ""
+        return self.scope
+
+    #: A row wider than this has its optional parts dropped, so the duration and
+    #: the mark never get eaten by a long pattern. The detail rows say the rest.
+    ROW_BUDGET = 62
+
+    def body(self) -> str:
+        t = _theme.current()
+        if self.status == "error":
+            reason = self.error or "no results"
+            return (
+                f"{t.red_style}Couldn't search{ansi.RESET} "
+                f"{t.dim_style}· {_short(reason, 48)}{ansi.RESET}" + self.duration()
+            )
+        if self.status == "running":
+            verb = "Finding" if self.mode == "files" else "Searching"
+        elif self.status == "cancelled":
+            verb = "Cancelled"
+        else:
+            verb = "Found" if self.mode == "files" else "Searched"
+
+        count = ""
+        if self.status in ("ok", "error", "cancelled"):
+            # A single-file scope scans nothing, so "in 0 files" would be true
+            # and useless; the row says plainly that there was nothing.
+            scanned = f" in {self.scanned} files" if self.scanned else ""
+            if self.mode == "files":
+                noun = "file" if self.files == 1 else "files"
+                count = f"{self.files} {noun}" if self.files else "no files"
+                if self.total > self.files:
+                    count = f"{self.files} of {self.total} {noun}"
+            elif not self.matches:
+                count = f"no matches{scanned}"
+            else:
+                noun = "match" if self.matches == 1 else "matches"
+                shown = (
+                    f"{self.matches} of {self.total} {noun}"
+                    if self.total > self.matches
+                    else f"{self.matches} {noun}"
+                )
+                count = f"{shown} in {self.files} {'file' if self.files == 1 else 'files'}"
+        backdrop = ""
+        primary = "fd" if self.mode == "files" else "rg"
+        if self.backend and self.backend != primary and self.status != "running":
+            backdrop = self.backend
+
+        pattern = _short(self.pattern, 40)
+        where = self._where() if self.status != "running" else ""
+        glob = _short(self.glob, 20) if self.glob and self.mode != "files" else ""
+
+        def shape(pat: str, scope: str, name: str) -> str:
+            tail = " · ".join(part for part in (count, name) if part)
+            lead = f"{verb} {pat}" if pat else verb
+            middle = " · ".join(part for part in (scope, glob) if part)
+            head = f"{lead} · {middle}" if middle else lead
+            return f"{head} · {tail}" if tail else head
+
+        candidates = [
+            (pattern, where, backdrop),
+            (pattern, "", backdrop),
+            (pattern, "", ""),
+            (_short(self.pattern, 22), "", ""),
+        ]
+        text = candidates[-1]
+        for candidate in candidates:
+            text = candidate
+            if ansi.width(shape(*candidate)) <= self.ROW_BUDGET:
+                break
+
+        pat, scope, name = text
+        out = f"{t.dim_style}{verb}{ansi.RESET}"
+        if pat:
+            out += f" {t.tag_style}{pat}{ansi.RESET}"
+        if scope:
+            out += f" {t.dim_style}· {scope}{ansi.RESET}"
+        if glob:
+            out += f" {t.dim_style}· {glob}{ansi.RESET}"
+        if count:
+            out += f" {t.dim_style}· {ansi.RESET}{count}"
+        if name:
+            out += f" {t.dim_style}· {name}{ansi.RESET}"
+        return out + self.duration()
+
+
+@dataclass
+class SearchResults(Block):
+    """A search's detail, drawn only when ctrl+o asks for it.
+
+    A row already says how much was found, so nothing is printed under it by
+    default: the transcript is not a pager, and a preview of the hits pushes
+    the conversation off the screen. ctrl+o is the pager, and then a hit reads
+    like a line out of a file -- the file's own gutter width, its own code.
+    """
+
+    counts: tuple[tuple[str, int], ...] = ()
+    groups: tuple[tuple[str, tuple[tuple[int, str], ...]], ...] = ()
+    files: tuple[str, ...] = ()
+    more: int = 0
+    kind: str = "detail"
+
+    def rows(self, width: int) -> list[str]:
+        t = _theme.current()
+        out: list[str] = []
+        if len(self.counts) > 1:
+            # The one thing a row cannot say: which alternative found nothing.
+            parts = []
+            for name, count in self.counts:
+                label = f"{_short(name, 20)} {count}"
+                parts.append(label if count else f"{t.dim_style}{label}{ansi.RESET}")
+            out.append(f"  {' · '.join(parts)}")
+        if _expanded:
+            out.extend(self._hits(width, t))
+        return [ansi.clip_ellipsis(row, width) for row in out]
+
+    def _hits(self, width: int, t: Any) -> list[str]:
+        """The hits, one file at a time, under that file's own ruler."""
+        out: list[str] = [
+            f"  {t.dim_style}{_display_path(path)}{ansi.RESET}" for path in self.files
+        ]
+        for path, hits in self.groups:
+            out.append(f"  {t.dim_style}{_display_path(path)}{ansi.RESET}")
+            gutter = max((len(str(line)) for line, _text in hits), default=1)
+            for line, text in hits:
+                number = str(line).rjust(gutter)
+                code = markdown.highlight_line(text, t) if text else ""
+                out.append(f"  {t.dim_style}{number} │{ansi.RESET} {code}")
+        if self.more:
+            out.append(f"  {t.dim_style}+{self.more} more · raise max_results{ansi.RESET}")
+        return out
 
 
 @dataclass

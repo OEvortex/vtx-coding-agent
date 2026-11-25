@@ -22,7 +22,7 @@ from vx import prefs, titles
 from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
 from vx.permissions import BUILTIN_MODES, PermissionRuntime
-from vx.tui import ansi, blocks, footer, theme
+from vx.tui import ansi, blocks, footer, sidebar, theme
 from vx.tui.canvas import Painter
 from vx.tui.keys import KeyDecoder
 from vx.tui.terminal import Terminal
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     # Annotation only: these modules pull ctx's agent graph (plus aiohttp) in,
     # and the shell has to answer a key before that finishes loading.
     from ctx.agent.runtime import ConversationRuntime
-    from ctx.core import AskUserEvent, ToolApprovalEvent
+    from ctx.core import AskUserEvent, AskUserResponse, ToolApprovalEvent
 
     from vx.commands import CommandsMixin as _CommandBase
 else:
@@ -145,6 +145,23 @@ class VxApp(_CommandBase):
         self._live_thinking: blocks.Thinking | None = None
         self._thinking_started: float | None = None
         self._tool_blocks: dict[str, blocks.ToolStatusBlock] = {}
+        #: The plan on the right, and the files this turn has written. Both are
+        #: read off real tool results -- no fixture, nothing to drift.
+        self._sidebar = sidebar.Sidebar()
+        #: The panel belongs to the work: it opens when the agent has a plan or
+        #: has written a file, and closes when it has neither. A toggle -- ctrl+t
+        #: or /settings -- pins it either way, and only that pin is remembered.
+        self._sidebar_auto = True
+        self._show_sidebar = False
+        with suppress(Exception):
+            # Reading prefs is cheap here and must never fail boot.
+            plan_open, files_open = prefs.sidebar_folds()
+            self._sidebar.todos_open = plan_open
+            self._sidebar.files_open = files_open
+            self._sidebar_auto = not prefs.sidebar_pinned()
+            self._show_sidebar = False if self._sidebar_auto else prefs.sidebar_shown()
+        #: The diff drawn under a patch that is still being written.
+        self._stream_diffs: dict[str, blocks.DiffOutput] = {}
         self._tool_started: dict[str, float] = {}
         self._tool_groups: dict[str, blocks.ToolGroup] = {}
         #: The group the running turn is still adding calls to. fx groups a
@@ -429,6 +446,7 @@ class VxApp(_CommandBase):
             return
         # ctx replays every active entry, so a resumed session shows the whole
         # conversation; clipping it here was what hid older turns.
+        self._reset_sidebar()
         self._render_history_messages(list(session.messages))
 
     def _render_history_messages(self, msgs: list[Any]) -> None:
@@ -452,6 +470,7 @@ class VxApp(_CommandBase):
         for msg in msgs:
             if isinstance(msg, UserMessage):
                 group = None
+                self._sidebar.touches.clear()
                 content = msg.content
                 if isinstance(content, str):
                     text = content
@@ -494,6 +513,7 @@ class VxApp(_CommandBase):
                     by_call_id[call.id] = block
                 continue
             if isinstance(msg, ToolResultMessage):
+                self._note_result(msg, msg.file_changes)
                 block = by_call_id.get(msg.tool_call_id)
                 if block is None:
                     continue
@@ -501,6 +521,8 @@ class VxApp(_CommandBase):
                 block.finished = len(by_call_id)
                 if isinstance(block, blocks.BashToolStatus):
                     _apply_exit_status(block, msg)
+                if isinstance(block, blocks.SearchToolStatus):
+                    _apply_search(block, msg)
 
     def _render_history_message(self, msg: Any) -> None:
         self._render_history_messages([msg])
@@ -567,8 +589,7 @@ class VxApp(_CommandBase):
         if self._approval is not None:
             self._approval_key(key)
             return
-        if self._ask is not None:
-            self._ask_key(key)
+        if self._ask is not None and self._ask_key(key):
             return
         if key.startswith("mouse:"):
             self._mouse_key(key)
@@ -698,6 +719,19 @@ class VxApp(_CommandBase):
             return
         if key in ("ctrl+right", "alt+f"):
             self._cursor = self._word_end()
+            return
+        if key == "ctrl+t":
+            # An explicit toggle ends the automatic behaviour: from here the
+            # panel is the user's, not the work's.
+            self._sidebar_auto = False
+            self._show_sidebar = not self._show_sidebar
+            self._save_sidebar()
+            return
+        if key == "ctrl+g":
+            fold = not (self._sidebar.todos_open or self._sidebar.files_open)
+            self._sidebar.todos_open = fold
+            self._sidebar.files_open = fold
+            self._save_folds()
             return
         if key == "ctrl+y":
             if self._kill_ring:
@@ -1046,7 +1080,9 @@ class VxApp(_CommandBase):
 
     def _refresh_slash_menu(self) -> None:
         # A text prompt owns the composer; typing / there is not a command.
-        if self._prompt is not None:
+        # Neither is it one while a question is waiting: the composer holds the
+        # answer, so a slash must stay a slash.
+        if self._prompt is not None or self._ask is not None:
             return
         text = self._input
         if not text.startswith("/") or " " in text:
@@ -1070,7 +1106,10 @@ class VxApp(_CommandBase):
         }
 
     def _refresh_atpath_menu(self) -> None:
-        # Don't clobber an active slash menu.
+        # Don't clobber an active slash menu, and don't open one over a question
+        # that is waiting for an answer.
+        if self._ask is not None:
+            return
         if self._menu is not None and self._menu.get("kind") == "slash":
             return
         parsed = parse_at(self._input, self._cursor)
@@ -1400,6 +1439,9 @@ class VxApp(_CommandBase):
     # -- submit ----------------------------------------------------------
 
     def _submit(self) -> None:
+        # The file list is "what this turn wrote", so it clears with the turn.
+        self._sidebar.touches.clear()
+        self._sync_sidebar()
         if self._prompt is not None:
             prompt = self._prompt
             self._prompt = None
@@ -1733,6 +1775,8 @@ class VxApp(_CommandBase):
                     _populate_tool_block_args(
                         block, getattr(ev, "tool_name", "") or block.name, snapshot
                     )
+                    if isinstance(block, blocks.ApplyPatchToolStatus):
+                        self._stream_patch(ev.tool_call_id, block, snapshot)
                     self.viewport.touch()
             return
         if isinstance(ev, ToolEndEvent):
@@ -1754,6 +1798,7 @@ class VxApp(_CommandBase):
             ok = True
             if result is not None:
                 ok = not result.is_error
+            self._note_result(result, ev.file_changes)
             if block is not None:
                 block.status = "ok" if ok else "error"
                 started = self._tool_started.pop(ev.tool_call_id, None)
@@ -1771,8 +1816,14 @@ class VxApp(_CommandBase):
                     block.removed = sum(f.removed for f in ev.file_changes)
                 if isinstance(block, blocks.BashToolStatus):
                     _apply_exit_status(block, result)
+                self._end_stream_patch(ev.tool_call_id)
                 # A patch shows what it changed: the tool hands back its diff
                 # lines, and the group carries them under the row.
+                if isinstance(block, blocks.SearchToolStatus) and result is not None:
+                    _apply_search(block, result)
+                    detail = _search_results(getattr(result, "ui_data", None))
+                    if detail is not None:
+                        self._place_detail(ev.tool_call_id, detail)
                 if block.name == "apply_patch" and ok and result and result.ui_data:
                     for path, lines in _diff_sections(result.ui_data):
                         self._place_detail(
@@ -1862,6 +1913,107 @@ class VxApp(_CommandBase):
             self.runtime.set_session_name(title)
             self.viewport.touch()
 
+    def _save_sidebar(self) -> None:
+        """Remember a pinned panel, so a restart draws it the same way."""
+        with suppress(Exception):
+            prefs.set_sidebar_pinned(True)
+            prefs.set_sidebar_shown(self._show_sidebar)
+            prefs.set_sidebar_folds(self._sidebar.todos_open, self._sidebar.files_open)
+
+    def _save_folds(self) -> None:
+        """A folded section stays folded; the panel's presence is not ours to keep."""
+        with suppress(Exception):
+            prefs.set_sidebar_folds(self._sidebar.todos_open, self._sidebar.files_open)
+
+    def set_sidebar_shown(self, shown: bool) -> None:
+        """``/settings``' way into the same switch ctrl+t throws."""
+        self._sidebar_auto = False
+        self._show_sidebar = bool(shown)
+        self._save_sidebar()
+
+    def _reset_sidebar(self) -> None:
+        """A new conversation has no plan and no files of its own yet."""
+        self._sidebar.todos.clear()
+        self._sidebar.touches.clear()
+        self._sync_sidebar()
+
+    def _sync_sidebar(self) -> None:
+        """Auto: the panel is there exactly when it has something to show."""
+        if not self._sidebar_auto:
+            return
+        wanted = self._sidebar.has_content()
+        if wanted != self._show_sidebar:
+            self._show_sidebar = wanted
+            self.viewport.touch()
+
+    def _note_result(self, result: Any, file_changes: Any = None) -> None:
+        """Fold a finished call into the sidebar: its plan, and its file counts.
+
+        A tool result is the only honest source for either. The panel is a view
+        of what the tools reported, not a second guess at what happened.
+        """
+        if result is None:
+            return
+        ui_data = getattr(result, "ui_data", None)
+        if isinstance(ui_data, dict) and isinstance(ui_data.get("todos"), list):
+            self._sidebar.todos = [
+                sidebar.Todo(text=str(item.get("text", "")), status=str(item.get("status", "")))
+                for item in ui_data["todos"]
+                if isinstance(item, dict) and item.get("text")
+            ]
+        for change in file_changes or []:
+            self._bump_touch(change)
+        self._sync_sidebar()
+
+    def _bump_touch(self, change: Any) -> None:
+        """One file's ``+N -M``, summed per path so a file edited twice is one row."""
+        path = str(getattr(change, "path", "") or "")
+        if not path:
+            return
+        added = int(getattr(change, "added", 0) or 0)
+        removed = int(getattr(change, "removed", 0) or 0)
+        for touch in self._sidebar.touches:
+            if touch.path == path:
+                touch.added += added
+                touch.removed += removed
+                break
+        else:
+            self._sidebar.touches.insert(0, sidebar.Touch(path, added, removed))
+
+    def _stream_patch(
+        self, tool_call_id: str, block: blocks.ApplyPatchToolStatus, args: dict[str, Any]
+    ) -> None:
+        """Draw a patch that is still arriving, line by line, under its call.
+
+        The model writes a tool call's arguments before the tool runs, so the
+        edit is readable while it is still text. Showing it is the difference
+        between a transcript that waits and one that reports.
+        """
+        sections = _stream_patch_sections(_parse_args(args))
+        if not sections:
+            return
+        path, rows, added, removed = sections[0]
+        if path and not block.path:
+            block.path = path
+        block.added, block.removed = added, removed
+        diff = self._stream_diffs.get(tool_call_id)
+        if diff is None:
+            diff = blocks.DiffOutput(lines=rows, path=path or block.path, streaming=True)
+            self._stream_diffs[tool_call_id] = diff
+            self.viewport.add(diff)
+        else:
+            diff.lines = rows
+            diff.path = path or block.path
+
+    def _end_stream_patch(self, tool_call_id: str) -> None:
+        """Hand the patch back to the tool's own diff, or drop the preview."""
+        diff = self._stream_diffs.pop(tool_call_id, None)
+        if diff is None:
+            return
+        diff.streaming = False
+        with suppress(ValueError):
+            self.viewport.blocks.remove(diff)
+
     def _place_detail(self, tool_call_id: str, detail: blocks.Block) -> None:
         """Put a call's detail under its group, or after the call when alone."""
         group = self._tool_groups.get(tool_call_id)
@@ -1905,6 +2057,8 @@ class VxApp(_CommandBase):
         self._live_thinking = None
         self._thinking_started = None
         self._live_group = None
+        for call_id in list(self._stream_diffs):
+            self._end_stream_patch(call_id)
         self._tool_blocks.clear()
         self._tool_started.clear()
         self._tool_groups.clear()
@@ -1988,79 +2142,151 @@ class VxApp(_CommandBase):
     # ==================================================================
 
     def _request_ask_user(self, ev: AskUserEvent) -> None:
+        """Draw the call as a transcript row and wait for the answers.
+
+        The question is part of the turn that asked it, so it goes where the
+        turn's other calls go and stays there: scrolling, /resume and ctrl+o
+        must not lose a question the model is still blocked on.
+        """
         from ctx.core import AskUserResponse
 
         if ev.future is None or ev.future.done() or not ev.questions:
             if ev.future is not None and not ev.future.done():
                 ev.future.set_result(AskUserResponse())
             return
-        self._ask = {
-            "questions": ev.questions,
-            "idx": 0,
-            "selected": 0,
-            "answers": [],
-            "future": ev.future,
-            "draft": "",
-        }
+        # The call already streamed a generic `● ask_user` row; the question
+        # replaces it, so the transcript never shows both.
+        placeholder = self._tool_blocks.pop(ev.tool_call_id, None)
+        if placeholder is not None:
+            group = self._tool_groups.pop(ev.tool_call_id, None)
+            if group is not None:
+                if placeholder in group.calls:
+                    group.calls.remove(placeholder)
+                if not group.calls and group in self.viewport.blocks:
+                    self.viewport.blocks.remove(group)
+            elif placeholder in self.viewport.blocks:
+                self.viewport.blocks.remove(placeholder)
+        self._break_group()
+        block = blocks.AskUser(
+            items=[
+                blocks.AskItem(
+                    question=question.question.strip(),
+                    multi=bool(getattr(question, "multi_select", False)),
+                    options=[
+                        blocks.AskChoice(
+                            label=option.label,
+                            description=option.description or "",
+                            preview=getattr(option, "preview", "") or "",
+                        )
+                        for option in question.options
+                    ],
+                )
+                for question in ev.questions
+            ],
+            started=time.monotonic(),
+        )
+        self.viewport.add(block)
+        self._ask = {"block": block, "future": ev.future, "answers": []}
         self._input = ""
         self._cursor = 0
+        self.viewport.touch()
 
-    def _ask_view(self) -> footer.QuestionView:
-        ask = self._ask
-        assert ask is not None
-        question = ask["questions"][min(ask["idx"], len(ask["questions"]) - 1)]
-        options = [footer.QuestionOption(o.label, o.description or "") for o in question.options]
-        return footer.QuestionView(
-            question=question.question,
-            options=options,
-            selected=ask["selected"],
-            index=ask["idx"],
-            total=len(ask["questions"]),
-            draft=ask["draft"],
-        )
-
-    def _ask_key(self, key: str) -> None:
+    def _ask_key(self, key: str) -> bool:
+        """True when the key belonged to the question, not to the composer."""
         from ctx.core import AskUserResponse
 
         ask = self._ask
         if ask is None:
-            return
-        question = ask["questions"][ask["idx"]]
-        count = len(question.options)
+            return False
+        block: blocks.AskUser = ask["block"]
+        current = block.current()
         if key == "esc":
-            ask["future"].set_result(AskUserResponse())
-            self._ask = None
-            return
-        if key == "up" and count:
-            ask["selected"] = (ask["selected"] - 1) % (count + 1)
-            return
-        if key == "down" and count:
-            ask["selected"] = (ask["selected"] + 1) % (count + 1)
-            return
-        if key in "123456789" and count:
-            index = int(key) - 1
-            if index < count:
-                ask["selected"] = index
-                self._answer_question(str(question.options[index].label))
-            return
-        if key == "enter":
-            if ask["draft"].strip():
-                self._answer_question(ask["draft"].strip(), custom=True)
-            elif count and ask["selected"] < count:
-                self._answer_question(question.options[ask["selected"]].label)
-            return
+            block.skipped = True
+            block.ended = time.monotonic()
+            block.at = len(block.items)
+            self._finish_ask(AskUserResponse(answers=tuple(ask["answers"])))
+            return True
         if key == "ctrl+o":
             blocks.set_expanded(not blocks.expanded())
             self.viewport.touch()
+            return True
+        if current is None:
+            return False
+        options = current.options
+        if key in ("up", "down") and options:
+            step = -1 if key == "up" else 1
+            block.selected = max(0, min(len(options) - 1, block.selected + step))
+            self.viewport.touch()
+            return True
+        if len(key) == 1 and key.isdigit():
+            # A digit is a pick attempt: an out-of-range number is swallowed
+            # rather than leaking into the answer as text.
+            index = int(key) - 1
+            if 0 <= index < len(options):
+                if current.multi:
+                    self._toggle_choice(index)
+                else:
+                    self._answer_question(options[index].label)
+            return True
+        if key != "enter":
+            return False
+        typed = " ".join(self._input.split())
+        self._input, self._cursor = "", 0
+        if current.multi and options and not typed:
+            if not current.checked:
+                current.checked = [min(block.selected, len(options) - 1)] if options else []
+            self._answer_multi()
+        elif typed:
+            self._answer_question(typed, custom=True)
+        elif options:
+            self._answer_question(options[min(block.selected, len(options) - 1)].label)
+        return True
+
+    def _toggle_choice(self, index: int) -> None:
+        ask = self._ask
+        if ask is None:
             return
-        if key == "backspace":
-            ask["draft"] = ask["draft"][:-1]
+        block: blocks.AskUser = ask["block"]
+        current = block.current()
+        if current is None:
             return
-        if key.startswith("paste:"):
-            ask["draft"] += key[6:].replace("\r\n", "\n")
+        if index in current.checked:
+            current.checked.remove(index)
+        else:
+            current.checked.append(index)
+            current.checked.sort()
+            # The band follows the tick, so the row you just changed is the row
+            # you are on.
+            block.selected = index
+        self.viewport.touch()
+
+    def _answer_multi(self) -> None:
+        from ctx.core import AskUserAnswer, AskUserResponse
+
+        ask = self._ask
+        if ask is None:
             return
-        if len(key) == 1 and ord(key) >= 32:
-            ask["draft"] += key
+        block: blocks.AskUser = ask["block"]
+        current = block.current()
+        if current is None:
+            return
+        chosen = [current.options[index].label for index in current.checked]
+        current.answer = ", ".join(chosen)
+        ask["answers"].append(
+            AskUserAnswer(
+                question=current.question,
+                kind="multi",
+                answer=current.answer,
+                selected=tuple(chosen),
+            )
+        )
+        block.at += 1
+        block.selected = 0
+        self.viewport.touch()
+        if block.at < len(block.items):
+            return
+        block.ended = time.monotonic()
+        self._finish_ask(AskUserResponse(answers=tuple(ask["answers"])))
 
     def _answer_question(self, text: str, *, custom: bool = False) -> None:
         from ctx.core import AskUserAnswer, AskUserResponse
@@ -2068,19 +2294,35 @@ class VxApp(_CommandBase):
         ask = self._ask
         if ask is None:
             return
-        question = ask["questions"][ask["idx"]]
-        if custom:
-            answer = AskUserAnswer(question=question.question, kind="custom", answer=text)
-        else:
-            answer = AskUserAnswer(question=question.question, kind="option", answer=text)
-        ask["answers"].append(answer)
-        ask["draft"] = ""
-        ask["selected"] = 0
-        ask["idx"] += 1
-        if ask["idx"] >= len(ask["questions"]):
-            ask["future"].set_result(AskUserResponse(answers=tuple(ask["answers"])))
-            self._ask = None
-            self._notice("; ".join(a.scalar() for a in ask["answers"]), topic="answered")
+        block: blocks.AskUser = ask["block"]
+        current = block.current()
+        if current is None:
+            return
+        current.answer = text
+        current.custom = custom
+        ask["answers"].append(
+            AskUserAnswer(
+                question=current.question, kind="custom" if custom else "option", answer=text
+            )
+        )
+        block.at += 1
+        block.selected = 0
+        self.viewport.touch()
+        if block.at < len(block.items):
+            # Same row, same call: the next question opens where the last one was.
+            return
+        block.ended = time.monotonic()
+        self._finish_ask(AskUserResponse(answers=tuple(ask["answers"])))
+
+    def _finish_ask(self, response: AskUserResponse) -> None:
+        ask = self._ask
+        if ask is None:
+            return
+        self._ask = None
+        if not ask["future"].done():
+            ask["future"].set_result(response)
+        # No notice: the row already reports what was answered, and repeating it
+        # underneath says the same thing twice.
 
     # ==================================================================
     # frame
@@ -2126,11 +2368,6 @@ class VxApp(_CommandBase):
                 selected=ap["selected"],
             )
             return [footer.rule(cols), *view.panel(cols)[:7], view.hint(cols)], None
-
-        if self._ask is not None:
-            view = self._ask_view()
-            panel = view.panel(cols)
-            return [footer.rule(cols), "", *panel, footer.rule(cols), view.hint(cols)], None
 
         if self._searching:
             search_rows, caret_row, caret_col = footer.composer_rows(
@@ -2279,12 +2516,24 @@ class VxApp(_CommandBase):
         foot = foot[-max(1, rows - 1) :]
         area = max(1, rows - len(foot))
         self._body_rows = area
-        transcript = self.viewport.visible(cols, area)
+        # The panel gives way first: it is a summary, and a summary beside a
+        # two-word-wide transcript is not worth the columns.
+        panel_cols = sidebar.sidebar_cols(cols, rows) if self._show_sidebar else 0
+        main = cols - (panel_cols + sidebar.SIDEBAR_CHROME) if panel_cols else cols
+        transcript = self.viewport.visible(main, area)
         transcript = self.viewport.highlight(transcript)
         if self.viewport.unseen:
             # The gap above the footer is the natural place for the tooltip:
             # it points at the tail without covering the reader's transcript.
-            transcript[-1] = footer.jump_to_latest_pill(cols)
+            transcript[-1] = footer.jump_to_latest_pill(main)
+        if panel_cols:
+            rule = f"{theme.current().dim_style}\u2502{ansi.RESET} "
+            panel = self._sidebar.rows(panel_cols, len(transcript))
+            # The viewport leaves short rows short -- the painter pads them --
+            # so the gap to the rule has to be made up here.
+            transcript = [
+                f"{_pad_to(row, main)}{rule}{panel[index]}" for index, row in enumerate(transcript)
+            ]
         frame = transcript + foot
         frame = frame[:rows] if len(frame) > rows else frame + [""] * (rows - len(frame))
         self._frame = frame
@@ -2317,6 +2566,12 @@ class VxApp(_CommandBase):
 # -- helpers -----------------------------------------------------------------
 
 
+def _pad_to(row: str, width: int) -> str:
+    """A row widened to ``width`` visible cells, escapes kept intact."""
+    gap = width - ansi.width(row)
+    return row + " " * gap if gap > 0 else row
+
+
 def _make_tool_status_block(tool_name: str) -> blocks.ToolStatusBlock:
     """Create a specialized status block for the given tool name."""
     if tool_name == "read":
@@ -2327,10 +2582,118 @@ def _make_tool_status_block(tool_name: str) -> blocks.ToolStatusBlock:
         return blocks.ApplyPatchToolStatus(status="running")
     if tool_name == "grep":
         return blocks.GrepToolStatus(status="running")
+    if tool_name == "search":
+        return blocks.SearchToolStatus(status="running")
     if tool_name in ("web", "web_search", "web_fetch"):
         return blocks.WebToolStatus(name=tool_name, status="running")
     # Fallback to generic block for unknown tools
     return blocks.ToolStatus(name=tool_name, status="running")
+
+
+def _apply_search(block: blocks.SearchToolStatus, result: Any) -> None:
+    """Fill a search row from what the tool reported, not from its arguments."""
+    data = getattr(result, "ui_data", None)
+    if not isinstance(data, dict):
+        _search_error(block, result)
+        return
+    block.mode = str(data.get("mode") or block.mode)
+    block.pattern = str(data.get("pattern") or block.pattern)
+    block.backend = str(data.get("backend") or "")
+    block.scanned = int(data.get("scanned") or 0)
+    block.scope = str(data.get("scope") or block.scope)
+    block.glob = str(data.get("glob") or block.glob)
+    counts = data.get("counts")
+    if isinstance(counts, list):
+        block.counts = tuple(
+            (str(item[0]), int(item[1]))
+            for item in counts
+            if isinstance(item, (list, tuple)) and len(item) == 2
+        )
+    block.total = int(data.get("total") or 0)
+    if block.mode == "files":
+        block.files = len(data.get("files") or []) or block.total
+    else:
+        block.matches = len(data.get("rows") or []) or block.total
+        rows = data.get("rows")
+        if isinstance(rows, list):
+            block.files = len({str(row.get("path", "")) for row in rows if isinstance(row, dict)})
+    error = data.get("error")
+    if isinstance(error, str) and error:
+        block.error = error
+    _search_error(block, result)
+
+
+def _search_error(block: blocks.SearchToolStatus, result: Any) -> None:
+    """A failed call's reason: the tool's own, or what the harness said.
+
+    A call can fail before the tool sees it -- a cut-off argument stream is a
+    JSON error, with no ``ui_data`` at all -- and the row has that message to
+    show. Without it the row says "no results", which is a lie about a parse
+    error and hides the one thing worth reading.
+    """
+    if block.error or not getattr(result, "is_error", False):
+        return
+    for line in _result_lines(result):
+        reason = line.strip()
+        if reason and reason not in _OUTPUT_MARKERS:
+            block.error = _short(reason, 48)
+            return
+
+
+def _search_results(ui_data: Any) -> blocks.SearchResults | None:
+    """A search's detail block: the counts, and the hits when ctrl+o asks.
+
+    Placed after every search, because ctrl+o has to have something to open;
+    the block itself draws only the counts line until it is asked.
+    """
+    if not isinstance(ui_data, dict):
+        return None
+    counts = tuple(
+        (str(item[0]), int(item[1]))
+        for item in (ui_data.get("counts") or [])
+        if isinstance(item, (list, tuple)) and len(item) == 2
+    )
+    files = tuple(str(path) for path in (ui_data.get("files") or []))
+    rows = ui_data.get("rows") or []
+    order: list[str] = []
+    grouped: dict[str, list[tuple[int, str]]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        path = str(row.get("path") or "")
+        if not path:
+            continue
+        if path not in grouped:
+            grouped[path] = []
+            order.append(path)
+        grouped[path].append((int(row.get("line") or 0), str(row.get("text") or "")))
+    total = int(ui_data.get("total") or 0)
+    shown = len(rows) if ui_data.get("mode") != "files" else len(files)
+    if not order and not files and len(counts) < 2:
+        return None
+    return blocks.SearchResults(
+        counts=counts,
+        groups=tuple((path, tuple(grouped[path])) for path in order),
+        files=files,
+        more=max(0, total - shown),
+    )
+
+
+def _search_error(block: blocks.SearchToolStatus, result: Any) -> None:
+    """A failed call's reason: the tool's own, or what the harness said.
+
+    A call can fail before the tool sees it -- a cut-off argument stream is a
+    JSON error, with no ``ui_data`` at all -- and the row has that message to
+    show. Without it the row says "no results", which is a lie about a parse
+    error and hides the one thing worth reading.
+    """
+    if block.error or not getattr(result, "is_error", False):
+        return
+    for line in _result_lines(result):
+        reason = line.strip()
+        if reason and reason not in _OUTPUT_MARKERS:
+            block.error = _short(reason, 48)
+            return
 
 
 def _apply_exit_status(block: blocks.BashToolStatus, result: Any) -> None:
@@ -2422,6 +2785,61 @@ def _turn_recap(calls: list[blocks.ToolStatusBlock]) -> str:
     return recap[:1].upper() + recap[1:]
 
 
+#: A streaming patch stops at this many rows: the block is a preview of what is
+#: arriving, and the finished diff replaces it with real line numbers.
+STREAM_MAX_ROWS = 120
+#: Files shown while several are being written; the rest land with the result.
+STREAM_MAX_OPS = 3
+
+
+def _stream_patch_sections(
+    args: dict[str, Any],
+) -> list[tuple[str, list[tuple[str, str, str]], int, int]]:
+    """A patch that is still arriving, as ``(path, rows, added, removed)`` per op.
+
+    The arguments are a search/replace patch, not a unified diff, so the rows
+    have no line numbers yet: the text is known and the place in the file is
+    not. Numbers arrive with the tool's own diff when the patch lands.
+    """
+    ops = args.get("ops", args.get("edits", []))
+    if isinstance(ops, dict):
+        ops = [ops]
+    if not isinstance(ops, list):
+        return []
+    sections: list[tuple[str, list[tuple[str, str, str]], int, int]] = []
+    for op in ops[:STREAM_MAX_OPS]:
+        if not isinstance(op, dict):
+            continue
+        path = str(op.get("path", op.get("file_path", "")) or "")
+        rows: list[tuple[str, str, str]] = []
+        new_file = op.get("new_file_content")
+        if isinstance(new_file, str) and new_file:
+            rows = [("+", "", line) for line in _split_patch_text(new_file)]
+        else:
+            for key, symbol in (("old_str", "-"), ("new_str", "+")):
+                text = op.get(key)
+                if isinstance(text, str) and text:
+                    rows.extend((symbol, "", line) for line in _split_patch_text(text))
+            insert = op.get("insert_line")
+            appended = op.get("new_str")
+            if insert and isinstance(appended, str) and appended and not rows:
+                rows = [("+", "", line) for line in _split_patch_text(appended)]
+        if not rows:
+            continue
+        added = sum(1 for op_sign, _ln, _text in rows if op_sign == "+")
+        removed = sum(1 for op_sign, _ln, _text in rows if op_sign == "-")
+        sections.append((path, rows[-STREAM_MAX_ROWS:], added, removed))
+    return sections
+
+
+def _split_patch_text(text: str) -> list[str]:
+    """The lines written so far; a trailing newline means none is half-written."""
+    lines = text.split("\n")
+    if text.endswith("\n"):
+        lines.pop()
+    return lines
+
+
 def _parse_args(args: Any) -> dict:
     """Parse tool args from string or dict."""
     if isinstance(args, dict):
@@ -2472,6 +2890,24 @@ def _populate_tool_block_args(block: blocks.Block, tool_name: str, args: Any) ->
         path = a.get("path", a.get("directory", a.get("root_dir", "")))
         if path:
             block.path = str(path)
+    elif isinstance(block, blocks.SearchToolStatus):
+        pattern = a.get("pattern", a.get("query", a.get("search", "")))
+        patterns = a.get("patterns")
+        if not pattern and isinstance(patterns, list) and patterns:
+            pattern = "|".join(str(part) for part in patterns if str(part).strip())
+        if pattern:
+            block.pattern = str(pattern)
+        mode = a.get("mode")
+        if isinstance(mode, str) and mode:
+            block.mode = (
+                "files" if mode.lower() in ("files", "file", "paths", "list") else "content"
+            )
+        scope = a.get("path", a.get("dir", a.get("directory", "")))
+        if scope:
+            block.scope = str(scope)
+        glob = a.get("glob", a.get("include", ""))
+        if glob:
+            block.glob = str(glob)
     elif isinstance(block, blocks.WebToolStatus):
         mode = a.get("mode")
         if isinstance(mode, str) and mode:
