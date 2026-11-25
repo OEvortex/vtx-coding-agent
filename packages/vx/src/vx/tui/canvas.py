@@ -28,11 +28,13 @@ class Painter:
         parts: list[str] = []
         full = height != self._rows or cols != self._cols or not self._last
         for index, row in enumerate(rows):
-            clipped = ansi.pad(ansi.clip(row, cols), cols) if row else ""
+            # Always emit exactly one full-width row. A separate 2K first would
+            # briefly blank the line, and a screenshot (or a busy terminal)
+            # catches that gap as a solid bar through the picture.
+            clipped = ansi.pad(ansi.clip(row, cols), cols) if row else " " * cols
             previous = self._last[index] if index < len(self._last) else None
             if full or previous != clipped:
                 parts.append(f"\x1b[{index + 1};1H")
-                parts.append("\x1b[2K")
                 parts.append(clipped)
         if cursor is not None:
             parts.append(f"\x1b[{cursor[0] + 1};{cursor[1] + 1}H")
@@ -40,7 +42,7 @@ class Painter:
                 parts.append("\x1b[?25h")
         else:
             parts.append("\x1b[?25l")
-        self._last = [ansi.pad(ansi.clip(r, cols), cols) if r else "" for r in rows]
+        self._last = [ansi.pad(ansi.clip(r, cols), cols) if r else " " * cols for r in rows]
         self._rows = height
         self._cols = cols
         self._cursor = cursor

@@ -75,7 +75,11 @@ class Terminal:
         # Keep IUTF8-ish decoding simple: raw mode still delivers UTF-8 bytes.
         self._running = True
         _ACTIVE_TERMINALS.add(self)
-        os.set_blocking(self._fd, False)
+        # Do NOT make the fd non-blocking: in an interactive shell stdin and
+        # stdout share one terminal file description, so O_NONBLOCK would also
+        # apply to stdout. A full output buffer then makes flush() raise and
+        # the whole frame is silently dropped, leaving torn, half-painted
+        # screens. select() below already guarantees a read cannot block.
         self.write(_ALTERNATE_SCREEN_ON)
         self.write("\x1b[2J\x1b[H")
 
@@ -88,7 +92,6 @@ class Terminal:
         if self._saved_attrs is not None:
             termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved_attrs)
             self._saved_attrs = None
-        os.set_blocking(self._fd, True)
 
     def __enter__(self) -> Terminal:
         self.enter()

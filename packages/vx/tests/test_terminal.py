@@ -1,5 +1,8 @@
 """Terminal: mouse reporting is always on, alt-screen lifecycle constants."""
 
+import os
+import pty
+
 from vx.tui import terminal
 
 
@@ -33,3 +36,30 @@ class TestMouseReporting:
             assert called is True
         finally:
             terminal._ACTIVE_TERMINALS.discard(dummy)
+
+
+def test_enter_keeps_the_tty_blocking():
+    """stdin and stdout share one fd; O_NONBLOCK would drop whole frames."""
+    master, slave = pty.openpty()
+
+    class Stdin:
+        def fileno(self):
+            return slave
+
+    class Stdout:
+        def write(self, data):
+            return len(data)
+
+        def flush(self):
+            pass
+
+    try:
+        term = terminal.Terminal(stdin=Stdin(), stdout=Stdout())
+        term.enter()
+        try:
+            assert os.get_blocking(slave) is True
+        finally:
+            term.exit()
+    finally:
+        os.close(master)
+        os.close(slave)
