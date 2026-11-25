@@ -624,12 +624,14 @@ def _story_rows(calls: list[ToolRow]) -> list[ToolRow]:
 
 @dataclass
 class TurnSummary(Block):
-    """fx's recap under a turn: ``Ran 2 commands · 7s (↑30 ↓88)``."""
+    """fx's recap under a turn: ``Ran 2 commands · 7s``.
+
+    No usage on the line: a turn's size belongs in the reply that paid for it,
+    and a pair of counts under every turn was noise next to the recap's prose.
+    """
 
     recap: str = ""
     seconds: float = 0.0
-    tokens_in: int = 0
-    tokens_out: int = 0
     kind: str = "notice"
 
     def rows(self, width: int) -> list[str]:
@@ -637,10 +639,7 @@ class TurnSummary(Block):
         parts = [part for part in (self.recap, _duration(self.seconds)) if part]
         if not parts:
             return []
-        text = " · ".join(parts)
-        if self.tokens_in or self.tokens_out:
-            text += f" (↑{self.tokens_in} ↓{self.tokens_out})"
-        return [ansi.clip_ellipsis(f"  {t.dim_style}{text}{ansi.RESET}", width)]
+        return [ansi.clip_ellipsis(f"  {t.dim_style}{' · '.join(parts)}{ansi.RESET}", width)]
 
 
 def _duration(seconds: float) -> str:

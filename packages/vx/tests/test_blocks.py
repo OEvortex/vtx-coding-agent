@@ -137,3 +137,12 @@ class TestSpacing:
         rows = [ansi.strip_ansi(row) for row in viewport.lines(80)]
         assert rows[0].startswith("● Edited a.py")
         assert rows[1].startswith("  ± a.py")  # no blank row between them
+
+
+class TestTurnSummary:
+    def test_the_recap_carries_no_usage(self):
+        block = blocks.TurnSummary(recap="Ran 1 command · edited 1 file", seconds=10.0)
+        assert rows(block) == ["  Ran 1 command · edited 1 file · 10s"]
+
+    def test_a_recap_with_no_measured_duration_still_reads(self):
+        assert rows(blocks.TurnSummary(recap="Explored 2 files")) == ["  Explored 2 files · 0s"]
