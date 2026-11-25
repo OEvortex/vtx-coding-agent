@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
+from typing import Any, cast
 
 from vx.app import VxApp
 from vx.tui import ansi, blocks, footer
@@ -36,7 +37,7 @@ class StubTerminal:
 
 
 def make_app() -> VxApp:
-    app = VxApp(cwd="/tmp", terminal=StubTerminal())
+    app = VxApp(cwd="/tmp", terminal=cast(Any, StubTerminal()))
     app._ready = asyncio.Event()
     app._ready.set()
     app._draw = lambda *args, **kwargs: None
@@ -111,7 +112,7 @@ def test_clicking_pill_jumps_to_latest():
 
 
 def test_pill_is_painted_when_behind_the_tail():
-    app = VxApp(cwd="/tmp", terminal=StubTerminal())
+    app = VxApp(cwd="/tmp", terminal=cast(Any, StubTerminal()))
     app._ready = asyncio.Event()
     app._ready.set()
     for i in range(40):
@@ -122,7 +123,7 @@ def test_pill_is_painted_when_behind_the_tail():
     app.viewport.visible(80, 24)
 
     app._draw()
-    assert "Jump to latest message Ctrl+End" in "".join(app.term.writes)
+    assert "Jump to latest message Ctrl+End" in "".join(cast(StubTerminal, app.term).writes)
 
 
 def test_click_opens_link_under_pointer():

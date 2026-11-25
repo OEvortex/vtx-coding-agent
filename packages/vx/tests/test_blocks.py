@@ -146,3 +146,42 @@ class TestTurnSummary:
 
     def test_a_recap_with_no_measured_duration_still_reads(self):
         assert rows(blocks.TurnSummary(recap="Explored 2 files")) == ["  Explored 2 files · 0s"]
+
+
+class TestRecapCard:
+    def test_the_note_rides_in_the_top_rule_and_the_facts_in_the_bottom(self):
+        block = blocks.RecapCard(
+            text="You were migrating auth to JWT.",
+            note="you asked",
+            files=4,
+            added=126,
+            removed=19,
+        )
+        out = rows(block)
+        assert out[0].startswith("╭─ ✦ recap ")
+        assert out[0].endswith(" you asked ─╮")
+        assert out[1] == "│ " + "You were migrating auth to JWT.".ljust(74) + " │"
+        assert "edited 4 files · +126 -19" in out[-1]
+        assert out[-1].endswith("╯")
+
+    def test_a_recap_without_a_change_has_a_plain_foot(self):
+        out = rows(blocks.RecapCard(text="Read two files.", note="8s quiet"))
+        assert out[-1].startswith("╰─")
+        assert "edited" not in out[-1]
+
+    def test_the_body_is_markdown_so_code_spans_read_like_a_reply(self):
+        raw = blocks.RecapCard(text="Watch `jobs.py` here.", note="you asked").rows(80)[1]
+        assert "jobs.py" in ansi.strip_ansi(raw)
+        assert "\x1b[38;5;255m" in raw  # inline code keeps the reply's colour
+
+    def test_drafting_draws_the_same_box_with_a_spinner(self):
+        out = rows(blocks.RecapCard(drafting=True, note="drafting", started=0.0))
+        assert out[0].startswith("╭─ ") and " recap " in out[0]
+        assert out[0].endswith(" drafting ─╮")
+        assert out[1].startswith("│ reading the session…")
+        assert len(out) == 3
+
+    def test_every_row_is_exactly_the_box_width(self):
+        for width in (80, 44, 30):
+            for row in blocks.RecapCard(text="One long line. " * 8, note="x", files=1).rows(width):
+                assert ansi.width(row) == width - 2

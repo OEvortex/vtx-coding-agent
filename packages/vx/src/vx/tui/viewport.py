@@ -53,6 +53,20 @@ class Viewport:
         self.blocks.append(block)
         self._dirty = True
 
+    def remove(self, block: blocks.Block) -> bool:
+        """Drop one block by identity; True when it was still there.
+
+        A recap is replaced and dismissed while the transcript keeps growing
+        under it, so it cannot assume it is the tail. Identity, not equality:
+        two recaps read the same, and the one that goes is the one on screen.
+        """
+        for index, existing in enumerate(self.blocks):
+            if existing is block:
+                del self.blocks[index]
+                self._dirty = True
+                return True
+        return False
+
     def clear(self) -> None:
         self.blocks.clear()
         self._rows = []

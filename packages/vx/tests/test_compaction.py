@@ -50,7 +50,8 @@ class TestHelpers:
             if isinstance(m.content[0], TextContent) and m.content[0].text == CLEARED_TOOL_RESULT
         ]
         assert len(cleared) == 2
-        assert prepared[-1].content[0].text == "x" * 200
+        last = prepared[-1].content[0]
+        assert isinstance(last, TextContent) and last.text == "x" * 200
 
     def test_prepare_strips_images(self):
         message = UserMessage(
@@ -102,6 +103,8 @@ class TestSessionPreservedTail:
 
 
 class _FakeProvider:
+    name = "fake"
+
     def __init__(self):
         self.max_tokens = None
 

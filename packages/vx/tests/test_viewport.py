@@ -188,3 +188,14 @@ class TestSearch:
         v.set_search("alpha", 80)
         v.set_search("", 80)
         assert v.search_matches == []
+
+
+class TestRemove:
+    def test_a_block_leaves_by_identity(self):
+        v = Viewport()
+        first, second = StubBlock(lines=["a"]), StubBlock(lines=["a"])
+        v.add(first)
+        v.add(second)
+        assert v.remove(second) is True
+        assert v.blocks == [first]
+        assert v.remove(second) is False
