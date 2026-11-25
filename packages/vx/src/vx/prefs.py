@@ -10,7 +10,7 @@ a session and dropping it should be a choice, not an accident.
 
 The sidebar is here for the same reason. Its *shape* -- which sections are
 folded -- is a habit. Its *presence* is not a setting at all: the panel belongs
-to the work, so it opens when the agent has a plan or has written a file and
+to the work, so it opens when the agent has a plan or a command running and
 closes when it has neither. A toggle (ctrl+t, ``/settings``) pins it either way,
 and that pin is the habit we keep.
 """
@@ -90,18 +90,18 @@ def set_sidebar_pinned(pinned: bool) -> None:
 
 
 def sidebar_folds() -> tuple[bool, bool]:
-    """``(plan_open, files_open)``: a folded section stays folded."""
+    """``(plan_open, jobs_open)``: a folded section stays folded."""
     data = _read()
-    return (
-        _flag(data.get("sidebar_plan_open"), True),
-        _flag(data.get("sidebar_files_open"), True),
-    )
+    # The files section is gone, replaced by the terminals; a prefs file from
+    # before that keeps its fold, since the section sits in the same place.
+    jobs_open = data.get("sidebar_jobs_open", data.get("sidebar_files_open"))
+    return (_flag(data.get("sidebar_plan_open"), True), _flag(jobs_open, True))
 
 
-def set_sidebar_folds(plan_open: bool, files_open: bool) -> None:
+def set_sidebar_folds(plan_open: bool, jobs_open: bool) -> None:
     data = _read()
     data["sidebar_plan_open"] = bool(plan_open)
-    data["sidebar_files_open"] = bool(files_open)
+    data["sidebar_jobs_open"] = bool(jobs_open)
     _write(data)
 
 
@@ -111,10 +111,10 @@ def sidebar_label() -> str:
         return "auto"
     if not sidebar_shown():
         return "off"
-    plan_open, files_open = sidebar_folds()
-    if plan_open and files_open:
+    plan_open, jobs_open = sidebar_folds()
+    if plan_open and jobs_open:
         return "on"
-    folded = [name for name, open_ in (("plan", plan_open), ("files", files_open)) if not open_]
+    folded = [name for name, open_ in (("plan", plan_open), ("jobs", jobs_open)) if not open_]
     return f"on · {', '.join(folded)} folded"
 
 

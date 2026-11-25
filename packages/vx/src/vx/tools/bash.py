@@ -181,10 +181,33 @@ def _write_full_output_to_temp(output: str) -> str:
     return path
 
 
+#: A poll hands the model the tail, not a job's whole life: the drawer is where
+#: output is read, and this is what the model needs to decide the next move.
+JOB_READ_LINES = 200
+
+
 class BashParams(BaseModel):
-    command: str = Field(description="Command line string to execute")
+    command: str = Field(
+        default="", description="Command line string to execute (omit it when reading a job)"
+    )
     timeout: int = Field(
         description=f"Timeout in seconds (default {DEFAULT_TIMEOUT})", default=DEFAULT_TIMEOUT
+    )
+    background: bool = Field(
+        default=False,
+        description=(
+            "Start the command as a job (j1, j2, ...) and return at once. For dev "
+            "servers, watchers and anything longer than a prompt."
+        ),
+    )
+    job: str = Field(
+        default="",
+        description="Job id to read: its lines since the last read, then how it is doing.",
+    )
+    kill: bool = Field(default=False, description="Stop the job named by job.")
+    wait: int = Field(
+        default=0,
+        description="With job: seconds to wait for new output before reporting (0 = now).",
     )
 
 
@@ -197,11 +220,71 @@ class BashTool(BaseTool):
         "Run a shell command in the cwd (builds, tests, git, package managers, and "
         "searching with rg/grep/find). "
         f"Output truncated to last {MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB "
-        "(full saved to temp log). Not for reading or editing files — use read/apply_patch."
+        "(full saved to temp log). Not for reading or editing files — use read/apply_patch. "
+        "Long-lived work goes in the background: background=true returns a job id, "
+        'bash(job="j1") reads what it has said since last time, bash(job="j1", kill=true) '
+        "stops it."
     )
 
     def format_call(self, params: BashParams) -> str:
-        return params.command
+        if params.kill:
+            return f"kill {params.job}"
+        if params.job:
+            return f"{params.job} · {params.command}".rstrip(" ·")
+        return ("background: " if params.background else "") + params.command
+
+    async def _start_job(self, command: str) -> ToolResult:
+        """Run it as a job and hand back the name the model will poll."""
+        from vx.jobs import REGISTRY
+
+        job = await REGISTRY.start(command)
+        if job is None:
+            msg = "No shell to run the command in"
+            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+        result = (
+            f"Started {job.id}: {command}\n"
+            f'Poll with bash(job="{job.id}", wait=20); stop with '
+            f'bash(job="{job.id}", kill=True).'
+        )
+        return ToolResult(
+            success=True, result=result, ui_summary=f"[green]Started {job.id}[/green]"
+        )
+
+    async def _read_job(self, params: BashParams) -> ToolResult:
+        """Report a job's state and the lines it said since the last read."""
+        from vx.jobs import REGISTRY
+
+        job = REGISTRY.get(params.job)
+        if job is None:
+            known = ", ".join(j.id for j in REGISTRY.all()) or "none"
+            msg = f"No job “{params.job}”; known jobs: {known}"
+            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+        if params.kill:
+            await REGISTRY.kill(job)
+            tail = "\n".join(job.tail(20))
+            summary = f"{job.id} terminated · exit {job.exit_code}"
+            return ToolResult(
+                success=True,
+                result=f"{summary}\n{tail}".rstrip(),
+                ui_summary=f"[yellow]{summary}[/yellow]",
+            )
+        if params.wait:
+            await REGISTRY.wait_for(job, params.wait)
+        lines = job.take_unread()
+        dropped = 0
+        if len(lines) > JOB_READ_LINES:
+            dropped = len(lines) - JOB_READ_LINES
+            lines = lines[-JOB_READ_LINES:]
+        head = f"{job.id} · {job.state_text()}"
+        body = "\n".join(lines)
+        if dropped:
+            body = f"(+{dropped} earlier lines not shown)\n{body}"
+        if not body:
+            body = "(no new output)"
+        summary = f"{job.id} · {job.state_text()}"
+        if job.unread():
+            summary += f" · {job.unread()} unread"
+        return ToolResult(success=True, result=f"{head}\n{body}", ui_summary=summary)
 
     async def execute(
         self,
@@ -210,9 +293,13 @@ class BashTool(BaseTool):
         inline_output: bool = False,
         on_output: Callable[[str], None] | None = None,
     ) -> ToolResult:
+        if params.job or params.kill:
+            return await self._read_job(params)
         if not params.command.strip():
             msg = "Command cannot be empty"
             return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+        if params.background:
+            return await self._start_job(params.command)
 
         command = params.command
         cwd = Path.cwd()

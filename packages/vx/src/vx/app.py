@@ -22,7 +22,7 @@ from vx import prefs, titles
 from vx.atpath import expand_paths, list_candidates, parse_at
 from vx.brand import VERSION
 from vx.permissions import BUILTIN_MODES, PermissionRuntime
-from vx.tui import ansi, blocks, footer, sidebar, theme
+from vx.tui import ansi, blocks, footer, panels, sidebar, theme
 from vx.tui.canvas import Painter
 from vx.tui.keys import KeyDecoder
 from vx.tui.terminal import Terminal
@@ -145,19 +145,28 @@ class VxApp(_CommandBase):
         self._live_thinking: blocks.Thinking | None = None
         self._thinking_started: float | None = None
         self._tool_blocks: dict[str, blocks.ToolStatusBlock] = {}
-        #: The plan on the right, and the files this turn has written. Both are
-        #: read off real tool results -- no fixture, nothing to drift.
+        #: The plan on the right, and the terminals the run left open. Both are
+        #: read off real state -- a tool result, or the job registry. Nothing to
+        #: drift.
         self._sidebar = sidebar.Sidebar()
         #: The panel belongs to the work: it opens when the agent has a plan or
         #: has written a file, and closes when it has neither. A toggle -- ctrl+t
         #: or /settings -- pins it either way, and only that pin is remembered.
         self._sidebar_auto = True
         self._show_sidebar = False
+        #: The terminal drawer: one running job, open over the transcript until
+        #: it is closed. Clicking a terminal in the panel opens its drawer.
+        self._terminal: panels.TerminalPanel | None = None
+        #: Where the panel sat in the last frame, for hit-testing a click.
+        self._side_main = 0
+        self._side_cols = 0
+        #: The drawer's ``(x, y, width, height)`` in the last frame, if any.
+        self._drawer_rect: tuple[int, int, int, int] | None = None
         with suppress(Exception):
             # Reading prefs is cheap here and must never fail boot.
-            plan_open, files_open = prefs.sidebar_folds()
+            plan_open, jobs_open = prefs.sidebar_folds()
             self._sidebar.todos_open = plan_open
-            self._sidebar.files_open = files_open
+            self._sidebar.jobs_open = jobs_open
             self._sidebar_auto = not prefs.sidebar_pinned()
             self._show_sidebar = False if self._sidebar_auto else prefs.sidebar_shown()
         #: The diff drawn under a patch that is still being written.
@@ -170,7 +179,6 @@ class VxApp(_CommandBase):
         #: The calls the running turn ran and finished, which its recap sums up.
         self._turn_calls: list[blocks.ToolStatusBlock] = []
         self._finished = 0
-        self._turn_usage = {"in": 0, "out": 0}
         #: Rows the last frame gave the transcript, which bounds scrolling.
         self._body_rows = 0
         #: (first visible row, cursor it was paged for). The cursor travelling
@@ -235,6 +243,12 @@ class VxApp(_CommandBase):
             if self.runtime is not None:
                 with suppress(Exception):
                     await self.runtime.close()
+            # Jobs die with the session: no orphaned dev server, no stray build
+            # still holding a port after the panel is gone.
+            with suppress(Exception):
+                from vx.jobs import REGISTRY
+
+                await REGISTRY.kill_all()
             self.term.exit()
         return 0
 
@@ -470,7 +484,6 @@ class VxApp(_CommandBase):
         for msg in msgs:
             if isinstance(msg, UserMessage):
                 group = None
-                self._sidebar.touches.clear()
                 content = msg.content
                 if isinstance(content, str):
                     text = content
@@ -554,12 +567,20 @@ class VxApp(_CommandBase):
         action = parts[1] if len(parts) > 1 else ""
         if action in ("wheelup", "wheeldown"):
             step = 3 if action == "wheelup" else -3
+            panel = self._terminal
+            if panel is not None and len(parts) >= 4 and self._over_drawer(int(parts[3])):
+                panel.scroll = max(0, min(panel.max_scroll(), panel.scroll - step))
+                self.viewport.touch()
+                self._draw()
+                return
             self.viewport.scroll_by(step, *self._size())
             self._draw()
             return
         if action in ("left", "click") and len(parts) >= 4:
             with suppress(Exception):
                 x, y = int(parts[2]), int(parts[3])
+                if self._click_panel(x, y):
+                    return
                 if 1 <= y <= len(self._frame):
                     uri = ansi.link_at(self._frame[y - 1], x - 1)
                     if uri == footer.JUMP_TO_LATEST_URI:
@@ -567,6 +588,95 @@ class VxApp(_CommandBase):
                         self._draw()
                     elif uri:
                         self._open_link(uri)
+
+    def _over_drawer(self, y: int) -> bool:
+        rect = self._drawer_rect
+        return rect is not None and rect[1] <= y - 1 < rect[1] + rect[3]
+
+    def _click_panel(self, x: int, y: int) -> bool:
+        """A click on the panel: fold a section, or open that terminal."""
+        from vx.jobs import REGISTRY
+
+        if not self._side_cols or x <= self._side_main + sidebar.SIDEBAR_CHROME - 1:
+            return False
+        row = y - 1
+        if row == self._sidebar.tasks_header_row:
+            self._sidebar.todos_open = not self._sidebar.todos_open
+            self._save_folds()
+            self._draw()
+            return True
+        if row == self._sidebar.jobs_header_row:
+            self._sidebar.jobs_open = not self._sidebar.jobs_open
+            self._save_folds()
+            self._draw()
+            return True
+        job_id = self._sidebar.job_hits.get(row)
+        if job_id and REGISTRY.get(job_id) is not None:
+            self._open_terminal(job_id)
+            return True
+        return False
+
+    # -- the terminal drawer ---------------------------------------------
+
+    def _open_terminal(self, job_id: str) -> None:
+        from vx.jobs import REGISTRY
+
+        job = REGISTRY.get(job_id)
+        if job is None:
+            return
+        if self._terminal is not None and self._terminal.job is job:
+            self._terminal = None
+        else:
+            self._terminal = panels.TerminalPanel(job=job)
+        self.viewport.touch()
+        self._draw()
+
+    def _close_terminal(self) -> None:
+        self._terminal = None
+        self._drawer_rect = None
+        self.viewport.touch()
+        self._draw()
+
+    def _terminal_key(self, key: str) -> bool:
+        """The drawer's keys. Anything else falls through to the composer."""
+        panel = self._terminal
+        if panel is None:
+            return False
+        if key in ("esc", "q", "enter", "left", "ctrl+w"):
+            self._close_terminal()
+            return True
+        body_h = max(1, panel.height(self._body_rows) - 2)
+        if key == "end":
+            panel.scroll = panel.max_scroll()
+            panel.follow = True
+        elif key in ("up", "down", "pgup", "pgdn", "home"):
+            # Reading back through the output stops the tail moving under the
+            # eye; `end` is how you rejoin it.
+            back = {"up": 1, "pgup": body_h, "home": panel.max_scroll()}.get(key, 0)
+            step = {"down": 1, "pgdn": body_h}.get(key, 0)
+            panel.follow = False
+            panel.scroll = max(0, min(panel.max_scroll(), panel.first_line(body_h) - back + step))
+        elif key in ("k", "ctrl+k", "ctrl+x"):
+            self._kill_terminal()
+            return True
+        else:
+            return False
+        self.viewport.touch()
+        self._draw()
+        return True
+
+    def _kill_terminal(self) -> None:
+        """SIGTERM the group off the event loop, so the drawer keeps drawing."""
+        import asyncio
+
+        from vx.jobs import REGISTRY
+
+        panel = self._terminal
+        if panel is None:
+            return
+        asyncio.get_event_loop().create_task(REGISTRY.kill(panel.job))
+        self.viewport.touch()
+        self._draw()
 
     @staticmethod
     def _open_link(uri: str) -> None:
@@ -582,6 +692,8 @@ class VxApp(_CommandBase):
 
     def _handle_key(self, key: str) -> None:
         if self._exiting:
+            return
+        if self._terminal is not None and self._terminal_key(key):
             return
         if self._menu is not None:
             self._menu_key(key)
@@ -728,9 +840,9 @@ class VxApp(_CommandBase):
             self._save_sidebar()
             return
         if key == "ctrl+g":
-            fold = not (self._sidebar.todos_open or self._sidebar.files_open)
+            fold = not (self._sidebar.todos_open or self._sidebar.jobs_open)
             self._sidebar.todos_open = fold
-            self._sidebar.files_open = fold
+            self._sidebar.jobs_open = fold
             self._save_folds()
             return
         if key == "ctrl+y":
@@ -1439,8 +1551,6 @@ class VxApp(_CommandBase):
     # -- submit ----------------------------------------------------------
 
     def _submit(self) -> None:
-        # The file list is "what this turn wrote", so it clears with the turn.
-        self._sidebar.touches.clear()
         self._sync_sidebar()
         if self._prompt is not None:
             prompt = self._prompt
@@ -1873,8 +1983,6 @@ class VxApp(_CommandBase):
                 usage = ev.assistant_message.usage
                 self._usage["in"] += usage.input_tokens
                 self._usage["out"] += usage.output_tokens
-                self._turn_usage["in"] += usage.input_tokens
-                self._turn_usage["out"] += usage.output_tokens
             return
         if isinstance(ev, AgentEndEvent):
             self._finish_live()
@@ -1918,12 +2026,12 @@ class VxApp(_CommandBase):
         with suppress(Exception):
             prefs.set_sidebar_pinned(True)
             prefs.set_sidebar_shown(self._show_sidebar)
-            prefs.set_sidebar_folds(self._sidebar.todos_open, self._sidebar.files_open)
+            prefs.set_sidebar_folds(self._sidebar.todos_open, self._sidebar.jobs_open)
 
     def _save_folds(self) -> None:
         """A folded section stays folded; the panel's presence is not ours to keep."""
         with suppress(Exception):
-            prefs.set_sidebar_folds(self._sidebar.todos_open, self._sidebar.files_open)
+            prefs.set_sidebar_folds(self._sidebar.todos_open, self._sidebar.jobs_open)
 
     def set_sidebar_shown(self, shown: bool) -> None:
         """``/settings``' way into the same switch ctrl+t throws."""
@@ -1932,9 +2040,8 @@ class VxApp(_CommandBase):
         self._save_sidebar()
 
     def _reset_sidebar(self) -> None:
-        """A new conversation has no plan and no files of its own yet."""
+        """A new conversation has no plan of its own yet."""
         self._sidebar.todos.clear()
-        self._sidebar.touches.clear()
         self._sync_sidebar()
 
     def _sync_sidebar(self) -> None:
@@ -1947,10 +2054,12 @@ class VxApp(_CommandBase):
             self.viewport.touch()
 
     def _note_result(self, result: Any, file_changes: Any = None) -> None:
-        """Fold a finished call into the sidebar: its plan, and its file counts.
+        """Fold a finished call into the sidebar's plan.
 
-        A tool result is the only honest source for either. The panel is a view
-        of what the tools reported, not a second guess at what happened.
+        A tool result is the only honest source for it. The panel is a view of
+        what the tools reported, not a second guess at what happened. The file
+        counts a turn wrote are not here: the turn's recap under the transcript
+        already carries them, and a list beside the plan said it twice.
         """
         if result is None:
             return
@@ -1961,24 +2070,7 @@ class VxApp(_CommandBase):
                 for item in ui_data["todos"]
                 if isinstance(item, dict) and item.get("text")
             ]
-        for change in file_changes or []:
-            self._bump_touch(change)
         self._sync_sidebar()
-
-    def _bump_touch(self, change: Any) -> None:
-        """One file's ``+N -M``, summed per path so a file edited twice is one row."""
-        path = str(getattr(change, "path", "") or "")
-        if not path:
-            return
-        added = int(getattr(change, "added", 0) or 0)
-        removed = int(getattr(change, "removed", 0) or 0)
-        for touch in self._sidebar.touches:
-            if touch.path == path:
-                touch.added += added
-                touch.removed += removed
-                break
-        else:
-            self._sidebar.touches.insert(0, sidebar.Touch(path, added, removed))
 
     def _stream_patch(
         self, tool_call_id: str, block: blocks.ApplyPatchToolStatus, args: dict[str, Any]
@@ -2024,19 +2116,13 @@ class VxApp(_CommandBase):
         self.viewport.touch()
 
     def _add_turn_summary(self) -> None:
-        """fx's recap under a turn: what it did, how long it took, its tokens."""
+        """fx's recap under a turn: what it did, and how long it took."""
         recap = _turn_recap(self._turn_calls)
         seconds = max(0.0, time.monotonic() - self._run_started) if self._run_started else 0.0
-        usage = self._turn_usage
         self._turn_calls = []
-        self._turn_usage = {"in": 0, "out": 0}
         if not recap:
             return
-        self.viewport.add(
-            blocks.TurnSummary(
-                recap=recap, seconds=seconds, tokens_in=usage["in"], tokens_out=usage["out"]
-            )
-        )
+        self.viewport.add(blocks.TurnSummary(recap=recap, seconds=seconds))
 
     def _thinking_elapsed(self) -> float | None:
         """Seconds the thought ran, for the folded header. None when unknown."""
@@ -2510,6 +2596,30 @@ class VxApp(_CommandBase):
             right=right,
         )
 
+    def _overlay(self, rows: list[str]) -> list[str]:
+        """Put the drawer over the transcript's columns, above the composer.
+
+        The band under the box is blanked to the transcript's width only: the
+        panel keeps its list, so another terminal is still one click away.
+        """
+        panel = self._terminal
+        if panel is None:
+            return rows
+        main = max(1, self._side_main)
+        width = min(panels.TerminalPanel.width(main), main)
+        height = panels.TerminalPanel.height(len(rows))
+        box = panel.rows(width, height)
+        left = max(0, (main - width) // 2)
+        top = max(0, len(rows) - height - 1)
+        self._drawer_rect = (left, top, width, height)
+        out = list(rows)
+        for index, line in enumerate(box):
+            y = top + index
+            if not 0 <= y < len(out):
+                continue
+            out[y] = " " * left + line + " " * max(0, main - left - ansi.width(line))
+        return out
+
     def _draw(self, *, force: bool = False) -> None:
         rows, cols = self.term.size()
         foot, caret = self._footer(cols, rows)
@@ -2518,6 +2628,10 @@ class VxApp(_CommandBase):
         self._body_rows = area
         # The panel gives way first: it is a summary, and a summary beside a
         # two-word-wide transcript is not worth the columns.
+        # The panel is a view of the registry, so it reports a job the moment it
+        # starts -- and the panel itself appears with it.
+        self._sidebar.jobs = _job_rows()
+        self._sync_sidebar()
         panel_cols = sidebar.sidebar_cols(cols, rows) if self._show_sidebar else 0
         main = cols - (panel_cols + sidebar.SIDEBAR_CHROME) if panel_cols else cols
         transcript = self.viewport.visible(main, area)
@@ -2526,6 +2640,10 @@ class VxApp(_CommandBase):
             # The gap above the footer is the natural place for the tooltip:
             # it points at the tail without covering the reader's transcript.
             transcript[-1] = footer.jump_to_latest_pill(main)
+        self._side_main = main
+        self._side_cols = panel_cols
+        if self._terminal is not None:
+            transcript = self._overlay(transcript)
         if panel_cols:
             rule = f"{theme.current().dim_style}\u2502{ansi.RESET} "
             panel = self._sidebar.rows(panel_cols, len(transcript))
@@ -2564,6 +2682,16 @@ class VxApp(_CommandBase):
 
 
 # -- helpers -----------------------------------------------------------------
+
+
+def _job_rows() -> list[sidebar.JobRow]:
+    """The registry as the panel draws it: four fields, no process."""
+    from vx.jobs import REGISTRY
+
+    return [
+        sidebar.JobRow(id=job.id, command=job.command, status=job.status, label=job.label())
+        for job in REGISTRY.all()
+    ]
 
 
 def _pad_to(row: str, width: int) -> str:

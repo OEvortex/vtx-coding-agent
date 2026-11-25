@@ -1,15 +1,16 @@
-"""The sidebar: two sections, real data, and the frame that holds it."""
+"""The sidebar: the plan and the terminals, real data, and the frame around it."""
 
 import asyncio
 from typing import cast
 
 import pytest
-from ctx.core.events import ToolResultEvent, ToolStartEvent
-from ctx.protocol.types import FileChanges, TextContent, ToolResultMessage
+from ctx.core.events import ToolResultEvent
+from ctx.protocol.types import TextContent, ToolResultMessage
 from vx import prefs
-from vx.app import VxApp
-from vx.tui import ansi, blocks, footer
-from vx.tui.sidebar import Sidebar, Todo, Touch, sidebar_cols
+from vx.app import VxApp, _job_rows
+from vx.jobs import REGISTRY, Job
+from vx.tui import ansi, blocks
+from vx.tui.sidebar import JobRow, Sidebar, Todo, sidebar_cols
 from vx.tui.terminal import Terminal
 
 
@@ -38,6 +39,16 @@ def _own_prefs(tmp_path, monkeypatch):
     monkeypatch.setattr(prefs, "prefs_path", lambda: tmp_path / "vx-prefs.json")
 
 
+@pytest.fixture(autouse=True)
+def _quiet_registry():
+    """A job another test started must not appear in this one's panel."""
+    REGISTRY.jobs.clear()
+    REGISTRY._next = 0
+    yield
+    REGISTRY.jobs.clear()
+    REGISTRY._next = 0
+
+
 def plain(rows: list[str]) -> list[str]:
     return [ansi.strip_ansi(row).rstrip() for row in rows]
 
@@ -56,15 +67,15 @@ def give_plan(app: VxApp, *todos: Todo) -> VxApp:
     return app
 
 
-def give_files(app: VxApp, *touches: Touch) -> VxApp:
-    app._sidebar.touches = list(touches)
+def give_jobs(app: VxApp, *rows: JobRow) -> VxApp:
+    app._sidebar.jobs = list(rows)
     app._sync_sidebar()
     return app
 
 
 def has_panel(app: VxApp) -> bool:
     app._draw(force=True)
-    return any("Tasks" in row for row in plain(app._frame))
+    return any(("PLAN" in row or "TERMINALS" in row) for row in plain(app._frame))
 
 
 # -- layout ----------------------------------------------------------------
@@ -84,7 +95,7 @@ def test_a_small_terminal_gets_no_panel_at_all():
 
 
 def test_the_panel_fills_exactly_the_height_it_is_given():
-    panel = Sidebar([Todo("read it", "done")], [Touch("a.py", 1, 1)])
+    panel = Sidebar([Todo("read it", "done")], [JobRow("j1", "npm run dev", label="3s")])
     for height in (3, 4, 7, 12, 30):
         assert len(panel.rows(30, height)) == height
     assert len(Sidebar().rows(30, 5)) == 5
@@ -92,14 +103,17 @@ def test_the_panel_fills_exactly_the_height_it_is_given():
 
 def test_no_row_is_wider_than_the_panel():
     todos = [Todo("a step " * 12, "active"), Todo("another step", "done")]
-    touches = [Touch("some/very/long/path/name" * 3 + ".py", 12, 3)]
+    jobs = [JobRow("j1", "npm run dev --host 0.0.0.0 " * 2, "running", "12s")]
     for width in (12, 18, 24, 30, 61):
         for height in range(3, 40):
             for todos_open in (True, False):
-                for files_open in (True, False):
-                    panel = Sidebar(todos, touches, todos_open, files_open)
+                for jobs_open in (True, False):
+                    panel = Sidebar(todos, jobs, todos_open, jobs_open)
                     for row in panel.rows(width, height):
                         assert ansi.width(row) <= max(width, 0), (width, height, row)
+
+
+# -- the plan --------------------------------------------------------------
 
 
 def test_the_plan_shows_status_glyphs_and_a_count():
@@ -111,40 +125,81 @@ def test_the_plan_shows_status_glyphs_and_a_count():
     assert "○ test" in text
 
 
+def test_the_header_is_a_grid_and_the_rail_spans_the_panel():
+    panel = Sidebar([Todo("read", "done"), Todo("write", "active")])
+    rows = plain(panel.rows(30, 12))
+    assert rows[0].startswith("▾ PLAN")
+    assert rows[0].endswith("1/2")
+    assert "━" in rows[1]
+
+
 def test_a_folded_plan_keeps_the_active_step():
     # Folded, the section still answers "what is it doing now".
     panel = Sidebar([Todo("read", "done"), Todo("write the panel", "active")], todos_open=False)
     rows = plain(panel.rows(30, 8))
-    assert "Tasks ▸" in rows[0]
-    assert "write the panel" in rows[2]
+    assert "▸ PLAN" in rows[0]
+    assert "write the panel" in rows[1]
     assert "read" not in "\n".join(rows)
 
 
-def test_the_file_list_says_what_the_turn_changed():
-    panel = Sidebar(touches=[Touch("a/b/app.py", 12, 3), Touch("x/sidebar.py", 40, 0)])
-    text = "\n".join(plain(panel.rows(30, 14)))
-    assert "Files ▾" in text
-    assert "+52 −3" in text  # the section total
-    assert "app.py" in text
-    assert "+12 −3" in text
-    assert "sidebar.py" in text
+def test_a_long_plan_says_how_much_is_cut_not_that_it_ended():
+    panel = Sidebar([Todo(f"step {i}") for i in range(12)])
+    text = "\n".join(plain(panel.rows(30, 12)))
+    assert "more…" in text
+    assert "12" not in text.split("more…")[0].splitlines()[-1]
 
 
-def test_a_file_edited_twice_is_one_row():
-    app = make_app()
-    app._bump_touch(FileChanges(path="a.py", added=3, removed=1))
-    app._bump_touch(FileChanges(path="b.py", added=1, removed=0))
-    app._bump_touch(FileChanges(path="a.py", added=2, removed=4))
-    got = [(touch.path, touch.added, touch.removed) for touch in app._sidebar.touches]
-    assert got == [("b.py", 1, 0), ("a.py", 5, 5)]
+# -- the terminals ---------------------------------------------------------
 
 
-def test_a_new_prompt_starts_the_file_list_over():
-    app = make_app()
-    app._bump_touch(FileChanges(path="a.py", added=3, removed=1))
-    assert app._sidebar.touches
-    app._submit()
-    assert app._sidebar.touches == []
+def test_the_terminals_header_counts_running_out_of_total():
+    panel = Sidebar(
+        [Todo("read", "active")],
+        [
+            JobRow("j1", "npm run dev", "running", "12s"),
+            JobRow("j2", "uv run pytest -q", "done", "4s"),
+            JobRow("j3", "make release", "failed", "2 · 11s"),
+        ],
+    )
+    rows = plain(panel.rows(30, 20))
+    assert "1/3" in "\n".join(rows)
+    assert "TERMINALS" in "\n".join(rows)
+
+
+def test_every_terminal_row_is_openable():
+    panel = Sidebar(
+        [], [JobRow("j1", "npm run dev", "running", "12s"), JobRow("j2", "pytest", "done", "4s")]
+    )
+    panel.rows(30, 20)
+    assert sorted(panel.job_hits.values()) == ["j1", "j2"]
+    for row in plain(panel.rows(30, 20)):
+        if "npm run dev" in row or "pytest" in row:
+            assert row.rstrip().endswith("›")
+
+
+def test_a_folded_section_keeps_its_header_only():
+    panel = Sidebar([], [JobRow("j1", "npm run dev", "running", "12s")], jobs_open=False)
+    rows = plain(panel.rows(30, 20))
+    assert any("▸ TERMINALS" in row for row in rows)
+    assert "npm run dev" not in "\n".join(rows)
+
+
+def test_finished_jobs_show_how_they_ended():
+    panel = Sidebar(
+        [],
+        [JobRow("j3", "make release", "failed", "2 · 11s"), JobRow("j1", "dev", "running", "9s")],
+    )
+    text = "\n".join(plain(panel.rows(30, 16)))
+    assert "2 · 11s" in text
+    assert "✕" in text
+    assert "●" in text
+
+
+def test_the_registry_is_what_the_panel_draws():
+    REGISTRY.jobs["j1"] = Job(id="j1", command="npm run dev", proc=None, group=None)
+    REGISTRY._next = 1
+    assert [row.id for row in _job_rows()] == ["j1"]
+    assert _job_rows()[0].status == "running"
 
 
 # -- the frame -------------------------------------------------------------
@@ -158,7 +213,7 @@ def test_the_panel_sits_beside_the_transcript_and_the_footer_spans_both():
     frame = app._frame
     assert len(frame) == 26
     assert all(ansi.width(row) <= 100 for row in frame)
-    assert "Tasks" in frame[0]
+    assert "PLAN" in frame[0]
     # The rule is one column past the transcript, on every body row.
     for row in frame[:20]:
         assert ansi.strip_ansi(row)[73] == "│"
@@ -178,11 +233,11 @@ def test_ctrl_t_puts_the_panel_away_and_brings_it_back():
 def test_ctrl_g_closes_both_sections():
     app = make_app(100, 26)
     app._sidebar.todos = [Todo("read", "active")]
-    app._sidebar.touches = [Touch("a.py", 1, 1)]
+    app._sidebar.jobs = [JobRow("j1", "dev", "running", "2s")]
     app._handle_key("ctrl+g")
-    assert not app._sidebar.todos_open and not app._sidebar.files_open
+    assert not app._sidebar.todos_open and not app._sidebar.jobs_open
     app._handle_key("ctrl+g")
-    assert app._sidebar.todos_open and app._sidebar.files_open
+    assert app._sidebar.todos_open and app._sidebar.jobs_open
 
 
 def test_a_small_terminal_hides_the_panel_without_losing_it():
@@ -200,28 +255,44 @@ def test_a_fresh_session_draws_no_panel():
     assert "│" not in ansi.strip_ansi(app._frame[1])
 
 
+# -- clicks ----------------------------------------------------------------
+
+
+def sidebar_x(app: VxApp) -> int:
+    return app._side_main + 2
+
+
+def test_clicking_a_terminal_row_opens_its_drawer():
+    app = make_app(100, 26)
+    REGISTRY.jobs["j1"] = Job(id="j1", command="npm run dev", proc=None, group=None)
+    REGISTRY._next = 1
+    give_jobs(app, JobRow("j1", "npm run dev", "running", "2s"))
+    app._draw(force=True)
+    row = next(iter(app._sidebar.job_hits))
+    app._mouse_key(f"mouse:left:{sidebar_x(app)}:{row + 1}")
+    assert app._terminal is not None
+    assert app._terminal.job is REGISTRY.jobs["j1"]
+
+
+def test_clicking_the_section_header_folds_it():
+    app = make_app(100, 26)
+    give_plan(app, Todo("read", "active"))
+    app._draw(force=True)
+    app._mouse_key(f"mouse:left:{sidebar_x(app)}:{cast(int, app._sidebar.tasks_header_row) + 1}")
+    assert not app._sidebar.todos_open
+    app._mouse_key(f"mouse:left:{sidebar_x(app)}:{cast(int, app._sidebar.tasks_header_row) + 1}")
+    assert app._sidebar.todos_open
+
+
+def test_a_click_in_the_transcript_is_not_a_panel_click():
+    app = make_app(100, 26)
+    give_plan(app, Todo("read", "active"))
+    app._draw(force=True)
+    app._mouse_key(f"mouse:left:10:{cast(int, app._sidebar.tasks_header_row) + 1}")
+    assert app._sidebar.todos_open
+
+
 # -- real events -----------------------------------------------------------
-
-
-def result_event(path: str, added: int, removed: int) -> ToolResultEvent:
-    return ToolResultEvent(
-        tool_call_id="c1",
-        tool_name="apply_patch",
-        result=ToolResultMessage(
-            tool_call_id="c1",
-            tool_name="apply_patch",
-            content=[TextContent(text="ok")],
-            file_changes=[FileChanges(path=path, added=added, removed=removed)],
-        ),
-        file_changes=[FileChanges(path=path, added=added, removed=removed)],
-    )
-
-
-def test_a_finished_patch_lands_in_the_panel():
-    app = make_app()
-    app._handle_event(ToolStartEvent(tool_call_id="c1", tool_name="apply_patch"))
-    app._handle_event(result_event("src/app.py", 40, 6))
-    assert [(t.path, t.added, t.removed) for t in app._sidebar.touches] == [("src/app.py", 40, 6)]
 
 
 def test_the_plan_comes_from_the_todo_tool():
@@ -249,7 +320,14 @@ def test_the_plan_comes_from_the_todo_tool():
     ]
 
 
-def test_a_replayed_session_gets_its_panel_back():
+def test_a_started_job_opens_the_panel_by_itself():
+    app = make_app(100, 26)
+    REGISTRY.jobs["j1"] = Job(id="j1", command="npm run dev", proc=None, group=None)
+    REGISTRY._next = 1
+    assert has_panel(app)
+
+
+def test_a_replayed_session_gets_its_plan_back():
     app = make_app()
     app._render_history_messages(
         [
@@ -258,17 +336,10 @@ def test_a_replayed_session_gets_its_panel_back():
                 tool_name="todo",
                 content=[TextContent(text="Plan")],
                 ui_data={"todos": [{"text": "read", "status": "done"}]},
-            ),
-            ToolResultMessage(
-                tool_call_id="p1",
-                tool_name="apply_patch",
-                content=[TextContent(text="ok")],
-                file_changes=[FileChanges(path="a.py", added=2, removed=1)],
-            ),
+            )
         ]
     )
     assert [t.text for t in app._sidebar.todos] == ["read"]
-    assert [(t.path, t.added) for t in app._sidebar.touches] == [("a.py", 2)]
 
 
 # -- the panel is a habit --------------------------------------------------
@@ -292,11 +363,18 @@ def test_a_pinned_panel_is_remembered_across_launches():
 
 
 def test_folded_sections_come_back_folded():
-    make_app(100, 26)._handle_key("ctrl+g")
+    give_plan(make_app(100, 26), Todo("read", "active"))._handle_key("ctrl+g")
     fresh = make_app(100, 26)
     assert not fresh._sidebar.todos_open
-    assert not fresh._sidebar.files_open
-    assert fresh._sidebar.rows(30, 10)[0].find("Tasks") >= 0
+    assert not fresh._sidebar.jobs_open
+    fresh._sidebar.todos = [Todo("read", "active")]
+    assert fresh._sidebar.rows(30, 10)[0].find("PLAN") >= 0
+
+
+def test_a_prefs_file_from_before_the_terminals_keeps_its_fold():
+    prefs.prefs_path().write_text('{"sidebar_files_open": false}', encoding="utf-8")
+    _plan, jobs_open = prefs.sidebar_folds()
+    assert jobs_open is False
 
 
 def test_the_preference_survives_a_corrupt_file():
@@ -316,144 +394,5 @@ def test_settings_names_what_is_folded():
     prefs.set_sidebar_folds(True, False)
     assert prefs.sidebar_label() == "auto"
     prefs.set_sidebar_shown(True)
-    assert prefs.sidebar_label() == "on · files folded"
+    assert prefs.sidebar_label() == "on · jobs folded"
     prefs.set_sidebar_shown(False)
-    assert prefs.sidebar_label() == "off"
-
-
-def test_settings_can_put_the_panel_away():
-    app = give_plan(make_app(100, 26), Todo("read", "active"))
-    app.set_sidebar_shown(False)
-    app._draw(force=True)
-    assert not any("Tasks" in row for row in plain(app._frame))
-    assert prefs.sidebar_shown() is False
-
-
-def test_the_settings_row_runs_the_same_switch():
-    app = give_plan(make_app(100, 26), Todo("read", "active"))
-    app._draw(force=True)
-    assert any("Tasks" in row for row in plain(app._frame))
-    # Slash commands are grafted onto the class on first use; do it here so the
-    # test drives the same path /settings does.
-    from vx.app import _graft_commands
-    from vx.commands import CommandsMixin
-
-    _graft_commands(type(app), CommandsMixin)
-    app._handle_settings_select(footer.MenuItem(label="sidebar", value="sidebar"))
-    app._draw(force=True)
-    assert not any("Tasks" in row for row in plain(app._frame))
-    assert prefs.sidebar_shown() is False
-    assert "│" not in ansi.strip_ansi(app._frame[0])
-
-
-# -- the panel belongs to the work -----------------------------------------
-
-
-def todo_result(*items: dict[str, str]) -> ToolResultEvent:
-    return ToolResultEvent(
-        tool_call_id="t9",
-        tool_name="todo",
-        result=ToolResultMessage(
-            tool_call_id="t9",
-            tool_name="todo",
-            content=[TextContent(text="Plan")],
-            ui_data={"todos": list(items)},
-        ),
-    )
-
-
-def test_a_plan_opens_the_panel():
-    app = make_app(100, 26)
-    assert not app._show_sidebar
-    app._handle_event(todo_result({"text": "read", "status": "active"}))
-    assert app._show_sidebar is True
-    assert has_panel(app)
-
-
-def test_a_written_file_opens_the_panel():
-    app = make_app(100, 26)
-    app._handle_event(ToolStartEvent(tool_call_id="c1", tool_name="apply_patch"))
-    app._handle_event(result_event("src/app.py", 40, 6))
-    assert app._show_sidebar is True
-    assert has_panel(app)
-
-
-def test_the_panel_closes_when_the_work_is_gone():
-    app = give_plan(make_app(100, 26), Todo("read", "active"))
-    assert app._show_sidebar is True
-    app._handle_event(todo_result())
-    app._submit()
-    assert app._show_sidebar is False
-    assert not has_panel(app)
-
-
-def test_a_plan_that_stays_keeps_the_panel_open_across_turns():
-    app = give_plan(make_app(100, 26), Todo("read", "active"))
-    app._handle_event(result_event("src/app.py", 1, 0))
-    app._submit()
-    assert app._show_sidebar is True
-
-
-def test_a_pinned_off_panel_ignores_new_work():
-    app = give_plan(make_app(100, 26), Todo("read", "active"))
-    app._handle_key("ctrl+t")
-    assert app._show_sidebar is False
-    app._handle_event(todo_result({"text": "more", "status": "pending"}))
-    assert app._show_sidebar is False
-    assert not has_panel(app)
-
-
-def test_a_pinned_on_panel_stays_on_with_nothing_in_it():
-    app = make_app(100, 26)
-    app._handle_key("ctrl+t")
-    assert app._show_sidebar is True
-    assert has_panel(app)
-    app._submit()
-    assert app._show_sidebar is True
-
-
-def test_folding_is_not_a_pin():
-    app = give_plan(make_app(100, 26), Todo("read", "active"))
-    app._handle_key("ctrl+g")
-    assert app._sidebar_auto is True
-    assert prefs.sidebar_pinned() is False
-    assert app._show_sidebar is True
-
-
-def test_settings_toggles_what_is_on_screen():
-    app = give_plan(make_app(100, 26), Todo("read", "active"))
-    from vx.app import _graft_commands
-    from vx.commands import CommandsMixin
-
-    _graft_commands(type(app), CommandsMixin)
-    app._handle_settings_select(footer.MenuItem(label="sidebar", value="sidebar"))
-    assert app._show_sidebar is False
-    assert app._sidebar_auto is False
-    app._handle_settings_select(footer.MenuItem(label="sidebar", value="sidebar"))
-    assert app._show_sidebar is True
-
-
-def test_a_replayed_session_reopens_the_panel():
-    app = make_app(100, 26)
-    assert not app._show_sidebar
-    app._render_history_messages(
-        [
-            ToolResultMessage(
-                tool_call_id="t1",
-                tool_name="todo",
-                content=[TextContent(text="Plan")],
-                ui_data={"todos": [{"text": "read", "status": "done"}]},
-            )
-        ]
-    )
-    assert app._show_sidebar is True
-
-
-def test_a_new_conversation_takes_the_panel_with_it():
-    app = give_plan(make_app(100, 26), Todo("read", "active"))
-    app._sidebar.touches = [Touch("a.py", 1, 0)]
-    app._reset_sidebar()
-    assert app._show_sidebar is False
-    assert app._sidebar.todos == []
-    assert app._sidebar.touches == []
-    assert not has_panel(app)
