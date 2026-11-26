@@ -396,3 +396,42 @@ def test_settings_names_what_is_folded():
     prefs.set_sidebar_shown(True)
     assert prefs.sidebar_label() == "on · jobs folded"
     prefs.set_sidebar_shown(False)
+
+
+def tall_app(cols: int = 140, rows: int = 30) -> VxApp:
+    """A transcript long enough to scroll, with the plan open."""
+    app = give_plan(make_app(cols, rows), Todo("wire the fix", "active"))
+    for index in range(40):
+        app.viewport.add(blocks.Assistant(text=f"row {index} " + "word " * 30))
+    app._draw(force=True)
+    return app
+
+
+def test_scrolling_uses_the_transcript_column_not_the_terminal_width():
+    """The scroll width must be the width the frame was painted at.
+
+    Scrolling at the terminal width rebuilt every block at a width no frame
+    used, and the rewrap delta landed in the scroll position: one wheel notch
+    moved the window dozens of rows and the whole transcript was re-rendered
+    twice per event.
+    """
+    app = tall_app()
+    assert 0 < app._side_main < 140
+    assert app._size()[0] == app._side_main
+
+
+def test_streaming_while_scrolled_back_holds_the_readers_row():
+    """A reply streaming in must not drag the window out from under a reader."""
+    app = tall_app()
+    live = blocks.Assistant(text="first line\n\n")
+    app.viewport.add(live)
+    app._draw(force=True)
+    app.viewport.scroll_by(6, *app._size())
+    app._draw()
+    top = app._frame[2]
+    for _ in range(30):
+        live.text += "another sentence that streams in while you read.\n\n"
+        app.viewport.touch()
+        app._draw()
+    assert app._frame[2] == top
+    assert app.viewport.unseen > 0

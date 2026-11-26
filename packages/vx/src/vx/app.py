@@ -987,14 +987,21 @@ class VxApp(_CommandBase):
             self._set_search(text[:cursor] + key + text[cursor:], cursor + 1)
 
     def _size(self) -> tuple[int, int]:
-        """The scrolling area: terminal columns and the transcript's rows.
+        """The scrolling area: the transcript's columns and its rows.
+
+        The transcript is drawn to the left of the sidebar's rule, so a width
+        taken from the terminal alone is a width no frame ever uses. Scrolling
+        at that width re-wrapped every block, and the reflow delta was then
+        read as content growth -- one wheel notch could move the window dozens
+        of rows. The width of the last painted frame is the only one whose rows
+        are already built, so that is the width to scroll in.
 
         The footer's height changes with the composer, menus and the approval
         panel, so a scroll bound taken from the terminal height alone lets the
         window drift past the top of the transcript and hide its first rows.
         """
         rows, cols = self.term.size()
-        return cols, self._body_rows or max(1, rows - 1)
+        return self._side_main or cols, self._body_rows or max(1, rows - 1)
 
     # -- composer editing ------------------------------------------------
 

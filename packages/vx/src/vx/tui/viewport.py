@@ -114,13 +114,19 @@ class Viewport:
 
     def _rebuild(self, width: int) -> None:
         rows, heights = self._build(width)
+        dropped = 0
         if self.history_rows and len(rows) > self.history_rows:
             # The fold marker is added by the prune, so it has to fit too.
             excess = len(rows) - self.history_rows + (0 if self.fold is not None else 2)
-            if self._prune(width, excess, heights):
+            dropped = self._prune(width, excess, heights)
+            if dropped:
                 rows, _ = self._build(width)
-        grown = len(rows) - len(self._rows)
-        if not self.follow:
+        reflowed = width != self._width
+        # Rows appended below the window are what moves the reader's text down;
+        # rows dropped above it shift every index but not what is on screen, so
+        # they are added back rather than counted as growth.
+        grown = len(rows) - len(self._rows) + dropped
+        if not self.follow and not reflowed:
             # Hold the reader's place: rows appended below the window would
             # otherwise slide the text they are looking at out from under them.
             self.scroll = max(0, self.scroll + grown)
@@ -143,8 +149,8 @@ class Viewport:
             index += 1
         return index
 
-    def _prune(self, width: int, excess: int, heights: list[int]) -> bool:
-        """Drop the oldest blocks until ``excess`` rows are gone."""
+    def _prune(self, width: int, excess: int, heights: list[int]) -> int:
+        """Drop the oldest blocks until ``excess`` rows are gone; rows dropped."""
         start = self._first_droppable()
         # The tail stays: it is where the running turn draws.
         cut = start
@@ -153,7 +159,7 @@ class Viewport:
             removed_rows += heights[cut]
             cut += 1
         if cut == start:
-            return False
+            return 0
         del self.blocks[start:cut]
         self.dropped_rows += removed_rows
         if self.fold is None:
@@ -161,7 +167,7 @@ class Viewport:
             self.blocks.insert(start, self.fold)
         else:
             self.fold.dropped = self.dropped_rows
-        return True
+        return removed_rows
 
     def lines(self, width: int) -> list[str]:
         if self._dirty or width != self._width:

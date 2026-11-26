@@ -199,3 +199,57 @@ class TestRemove:
         assert v.remove(second) is True
         assert v.blocks == [first]
         assert v.remove(second) is False
+
+
+@dataclass
+class Wrapped(blocks.Block):
+    """A block whose height depends on the width, the way prose does."""
+
+    kind: str = "assistant"
+    words: int = 60
+
+    def rows(self, width: int) -> list[str]:
+        return ansi.wrap("word " * self.words, max(8, width))
+
+
+class TestReflow:
+    def test_drawing_at_a_new_width_does_not_move_the_window(self):
+        """Scrolling at one width and painting at another must not jump.
+
+        The app used to scroll at the terminal width and paint at the transcript
+        width; the rewrap delta was read as new rows and one wheel notch moved
+        the window dozens of rows.
+        """
+        v = Viewport()
+        for _ in range(20):
+            v.add(Wrapped())
+        v.visible(60, 12)
+        v.scroll_by(3, 100, 12)  # a caller that scrolled at the terminal width
+        v.visible(60, 12)  # the frame is painted at the transcript width
+        assert v.scroll == 3
+
+    def test_growth_while_the_width_holds_still_anchors_the_reader(self):
+        v = Viewport()
+        for _ in range(20):
+            v.add(Wrapped())
+        v.visible(60, 12)
+        v.scroll_by(3, 60, 12)
+        top = v.visible(60, 12)[2]
+        v.add(Wrapped())
+        assert v.visible(60, 12)[2] == top
+
+
+class TestHistoryAnchor:
+    def test_pruning_above_the_window_leaves_the_reader_where_they_were(self):
+        """Rows dropped at the head shift every index but not the window."""
+        v = Viewport()
+        v.set_history_limit(100)
+        for i in range(60):
+            v.add(StubBlock(kind="assistant", lines=[f"row{i}"]))
+        v.visible(80, 14)
+        v.scroll_by(6, 80, 14)
+        top = v.visible(80, 14)[2]
+        for i in range(60, 65):
+            v.add(StubBlock(kind="assistant", lines=[f"row{i}"]))
+        assert v.dropped_rows > 0
+        assert v.visible(80, 14)[2] == top
