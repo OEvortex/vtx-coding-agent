@@ -6,7 +6,18 @@ import time
 
 import pytest
 from vx import pet as petmod
-from vx.pet import MOTIONS, ORDER, GifPet, Pet, Spritesheet, find_sheet
+from vx.pet import (
+    MOTIONS,
+    ORDER,
+    GenericPet,
+    GifPet,
+    Pet,
+    Spritesheet,
+    Still,
+    find_sheet,
+    key_flat_background,
+    looks_like_sheet,
+)
 from vx.tui.graphics import png
 from vx.tui.graphics.gif import Gif
 
@@ -168,3 +179,76 @@ def test_advance_uses_the_clock_when_none(tmp_path, small_sheet):
     pet = Pet(Spritesheet(path))
     pet._deadline = time.monotonic() - 1
     assert pet.advance()
+
+
+def test_flood_key_keeps_dark_details_that_global_key_would_erase():
+    w = h = 5
+    data = bytearray(w * h * 4)
+    for y in range(h):
+        for x in range(w):
+            o = (y * w + x) * 4
+            border = x in (0, w - 1) or y in (0, h - 1)
+            ring = x in (1, w - 2) or y in (1, h - 2)
+            colour = (1, 1, 1) if border else ((255, 0, 0) if ring else (5, 5, 5))
+            data[o : o + 4] = bytes((*colour, 255))
+    image = (w, h, bytes(data))
+    flood = key_flat_background(image, mode="flood")
+    global_key = key_flat_background(image, mode="global")
+    centre = (2 * w + 2) * 4 + 3
+    assert flood[2][centre] == 255  # dark detail survives
+    assert global_key[2][centre] == 0  # old behaviour erased it
+    assert flood[2][3] == 0  # border background is cleared
+
+
+def test_spritesheet_accepts_a_decoded_buffer(small_sheet):
+    image = (4, 5, bytes(4 * 5 * 4))
+    sheet = Spritesheet(image)
+    assert (sheet.width, sheet.height) == (4, 5)
+    assert sheet.cell(0, 0) == image
+
+
+def test_looks_like_sheet_requires_at_least_two_cells():
+    cw, ch = petmod.CELL_W, petmod.CELL_H
+    assert looks_like_sheet((cw * 8, ch * 11, b""))
+    assert not looks_like_sheet((cw, ch, b""))  # a single frame is a still
+    assert not looks_like_sheet((100, 100, b""))
+
+
+def test_sheet_accepts_a_custom_cell_size_and_row_major_index():
+    data = bytearray(4 * 4 * 4)
+    for i in range(16):
+        data[i * 4 : i * 4 + 4] = bytes((i * 16, 0, 0, 255))
+    sheet = Spritesheet((4, 4, bytes(data)), 2, 2)
+    assert (sheet.columns, sheet.rows) == (2, 2)
+    assert sheet.at(0) == sheet.cell(0, 0)
+    assert sheet.at(3) == sheet.cell(1, 1)
+    assert sheet.at(4) == sheet.cell(0, 0)  # wraps
+
+
+def test_generic_pet_cycles_every_cell():
+    data = bytes((255, 0, 0, 255)) * 16
+    sheet = Spritesheet((4, 4, data), 2, 2)
+    player = GenericPet(sheet, delay=0.01)
+    assert player.index == 0
+    assert player.advance(player._deadline + 0.01)
+    assert player.index == 1
+    assert "1,0" in player.motion.label
+    for _ in range(3):
+        player.advance(player._deadline + 0.01)
+    assert player.index == 2  # ping-pong, not a hard cut back to cell 0
+    assert player.rows(4, 4)
+    player.play("idle")  # no named motions
+    assert player.index == 2
+
+
+def test_still_player_shows_one_image():
+    image = (4, 4, bytes((255, 0, 0, 255)) * 16)
+    player = Still(image, "my cat")
+    assert player.motion.label == "my cat"
+    assert player.advance() is False
+    player.play("running-right")  # no-op
+    assert player.pixels() is image
+    assert player.scaled(2, 2)[:2] == (2, 2)
+    rows = player.rows(4, 4)
+    assert rows and rows[0]
+    assert player.rows(4, 4) is rows

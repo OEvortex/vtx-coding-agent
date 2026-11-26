@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -126,27 +127,45 @@ def find_sheet(pet: str = "hachiware") -> Path | None:
 class Spritesheet:
     """A decoded sheet plus a crop cache, so frames are cheap to re-read."""
 
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path)
-        self._image = png.load(str(self.path))
+    def __init__(
+        self, source: str | Path | RGBA, cell_w: int | None = None, cell_h: int | None = None
+    ) -> None:
+        # A decoded buffer is accepted too, for WebP/JPEG sheets that arrive
+        # through an external decoder (the TUI itself stays stdlib-only).
+        if isinstance(source, tuple):
+            self.path = Path("")
+            self._image = source
+        else:
+            self.path = Path(source)
+            self._image = png.load(str(self.path))
         self.width, self.height, _ = self._image
+        self.cell_w = cell_w or CELL_W
+        self.cell_h = cell_h or CELL_H
         self._crops: dict[tuple[int, int], RGBA] = {}
 
     @property
     def columns(self) -> int:
-        return max(1, self.width // CELL_W)
+        return max(1, self.width // self.cell_w)
 
     @property
     def rows(self) -> int:
-        return max(1, self.height // CELL_H)
+        return max(1, self.height // self.cell_h)
 
     def cell(self, col: int, row: int) -> RGBA:
         key = (col, row)
         cached = self._crops.get(key)
         if cached is None:
-            cached = png.crop(self._image, col * CELL_W, row * CELL_H, CELL_W, CELL_H)
+            cached = png.crop(
+                self._image, col * self.cell_w, row * self.cell_h, self.cell_w, self.cell_h
+            )
             self._crops[key] = cached
         return cached
+
+    def at(self, index: int) -> RGBA:
+        """Cell ``index`` in row-major order, wrapping around."""
+        total = self.columns * self.rows
+        index %= max(1, total)
+        return self.cell(index % self.columns, index // self.columns)
 
     def frame(self, motion: Motion, index: int) -> RGBA:
         col, row = motion.cell(index % motion.frames)
@@ -339,6 +358,239 @@ class GifPet:
                 cached = graphics.braille.rows(pixels, box_w, box_h, mode=mode)
             else:
                 cached = graphics.render(pixels, max_cols, max_rows, mode=mode, backend=backend)
+            self._rows[key] = cached
+        return cached
+
+    def fit(self, max_cols: int, max_rows: int) -> tuple[int, int]:
+        width, height, _ = self.pixels()
+        return blocks.fit(width, height, max_cols, max_rows)
+
+
+@dataclass(frozen=True)
+class StillMotion:
+    """A single image has one 'motion', used only for the title."""
+
+    name: str = "still"
+    label: str = ""
+
+
+class Still:
+    """Any decoded image, played as one static frame."""
+
+    def __init__(self, pixels: RGBA, label: str = "") -> None:
+        self._pixels = pixels
+        self.label = label or "image"
+        self.motion = StillMotion(label=self.label)
+        self._rows: dict[tuple[int, int, str, str], list[str]] = {}
+        self._scaled: dict[tuple[int, int], RGBA] = {}
+
+    def play(self, name: str) -> None:
+        """No animations to switch; steering keys are harmless no-ops."""
+
+    def advance(self, now: float | None = None) -> bool:
+        return False
+
+    def pixels(self) -> RGBA:
+        return self._pixels
+
+    def scaled(self, px_w: int, px_h: int) -> RGBA:
+        key = (px_w, px_h)
+        cached = self._scaled.get(key)
+        if cached is None:
+            cached = png.scale(self._pixels, px_w, px_h)
+            self._scaled[key] = cached
+        return cached
+
+    def rows(
+        self,
+        max_cols: int,
+        max_rows: int,
+        *,
+        mode: str = blocks.MODE_TRUE,
+        backend: str = "blocks",
+    ) -> list[str]:
+        key = (max_cols, max_rows, mode, backend)
+        cached = self._rows.get(key)
+        if cached is None:
+            cached = graphics.render(self._pixels, max_cols, max_rows, mode=mode, backend=backend)
+            self._rows[key] = cached
+        return cached
+
+    def fit(self, max_cols: int, max_rows: int) -> tuple[int, int]:
+        width, height, _ = self._pixels
+        return blocks.fit(width, height, max_cols, max_rows)
+
+
+def looks_like_sheet(pixels: RGBA, cell_w: int = CELL_W, cell_h: int = CELL_H) -> bool:
+    """True for an atlas of at least 2x2 cells of the given size."""
+    width, height, _ = pixels
+    return (
+        width >= cell_w * 2
+        and height >= cell_h * 2
+        and width % cell_w == 0
+        and height // cell_h >= 2
+    )
+
+
+def key_flat_background(pixels: RGBA, *, tolerance: int = 32, mode: str = "flood") -> RGBA:
+    """Make a flat dark atlas background transparent.
+
+    ``flood`` only clears near-background pixels connected to the image edge,
+    so dark hair, eyes and outlines in the interior survive. ``global`` is
+    the old threshold (faster, but it can punch holes in dark artwork).
+    ``off`` returns the image unchanged.
+    """
+    width, height, data = pixels
+    if mode == "off" or any(a != 255 for a in data[3::4]):
+        return pixels
+    cr, cg, cb = data[0], data[1], data[2]
+    if max(cr, cg, cb) > 24:
+        return pixels
+    out = bytearray(data)
+
+    def near_bg(o: int) -> bool:
+        return max(abs(data[o] - cr), abs(data[o + 1] - cg), abs(data[o + 2] - cb)) <= 8
+
+    if mode == "global":
+        for i in range(0, len(data), 4):
+            diff = max(abs(data[i] - cr), abs(data[i + 1] - cg), abs(data[i + 2] - cb))
+            if diff <= 8:
+                out[i + 3] = 0
+            elif diff < tolerance:
+                out[i + 3] = round((diff - 8) / (tolerance - 8) * 255)
+        return width, height, bytes(out)
+
+    seen = bytearray(width * height)
+    queue: deque[int] = deque()
+    for x in range(width):
+        queue.extend((x, (height - 1) * width + x))
+    for y in range(height):
+        queue.extend((y * width, y * width + width - 1))
+    while queue:
+        index = queue.popleft()
+        if seen[index] or not near_bg(index * 4):
+            continue
+        seen[index] = 1
+        out[index * 4 + 3] = 0
+        y, x = divmod(index, width)
+        if x:
+            queue.append(index - 1)
+        if x + 1 < width:
+            queue.append(index + 1)
+        if y:
+            queue.append(index - width)
+        if y + 1 < height:
+            queue.append(index + width)
+    # Soft edge: pixels just outside the flood get partial alpha instead of a
+    # hard jagged cut, but only when they touch the cleared background.
+    for index in range(width * height):
+        if seen[index]:
+            continue
+        o = index * 4
+        diff = max(abs(data[o] - cr), abs(data[o + 1] - cg), abs(data[o + 2] - cb))
+        if diff >= tolerance:
+            continue
+        y, x = divmod(index, width)
+        neighbours = (
+            (index - 1 if x else -1),
+            (index + 1 if x + 1 < width else -1),
+            (index - width if y else -1),
+            (index + width if y + 1 < height else -1),
+        )
+        if any(n >= 0 and seen[n] for n in neighbours):
+            out[o + 3] = round((diff - 8) / (tolerance - 8) * 255)
+    return width, height, bytes(out)
+
+
+@dataclass(frozen=True)
+class GenericMotion:
+    """A cell position, used as the title label of a generic atlas."""
+
+    name: str = "sheet"
+    label: str = ""
+
+
+class GenericPet:
+    """Cycle the non-empty cells of an arbitrary atlas as one animation.
+
+    Community sheets do not follow the Codex v2 motion rows, so there are no
+    named motions or published delays — just frames in row-major order. The
+    sequence ping-pongs by default so the loop point has no hard cut.
+    """
+
+    def __init__(
+        self,
+        sheet: Spritesheet,
+        *,
+        delay: float = 0.25,
+        start: int = 0,
+        count: int | None = None,
+        pingpong: bool = True,
+    ) -> None:
+        self.sheet = sheet
+        self.delay = max(0.02, delay)
+        total = max(1, sheet.columns * sheet.rows)
+        candidates = [(start + i) % total for i in range(min(count or total, total))]
+        # An empty atlas cell would transmit a fully transparent frame, which
+        # looks like a one-frame blink. Skip cells with no visible pixels.
+        self.indices = [
+            index for index in candidates if any(a >= 32 for a in sheet.at(index)[2][3::4])
+        ] or candidates
+        self.sequence = (
+            self.indices + self.indices[-2:0:-1]
+            if pingpong and len(self.indices) > 2
+            else list(self.indices)
+        )
+        self.index = self.sequence[0]
+        self._step = 0
+        self._deadline = time.monotonic() + self.delay
+        self._rows: dict[tuple[int, int, int, str, str], list[str]] = {}
+        self._scaled: dict[tuple[int, int, int], RGBA] = {}
+        self._label()
+
+    def _label(self) -> None:
+        col, row = self.index % self.sheet.columns, self.index // self.sheet.columns
+        self.motion = GenericMotion(
+            label=f"pose {self._step + 1}/{len(self.sequence)} · cell {col},{row}"
+        )
+
+    def play(self, name: str) -> None:
+        """No named motions; keys are harmless no-ops."""
+
+    def advance(self, now: float | None = None) -> bool:
+        if now is None:
+            now = time.monotonic()
+        if now < self._deadline:
+            return False
+        self._step = (self._step + 1) % len(self.sequence)
+        self.index = self.sequence[self._step]
+        self._deadline = now + self.delay
+        self._label()
+        return True
+
+    def pixels(self) -> RGBA:
+        return self.sheet.at(self.index)
+
+    def scaled(self, px_w: int, px_h: int) -> RGBA:
+        key = (self.index, px_w, px_h)
+        cached = self._scaled.get(key)
+        if cached is None:
+            cached = png.scale(self.pixels(), px_w, px_h)
+            self._scaled[key] = cached
+        return cached
+
+    def rows(
+        self,
+        max_cols: int,
+        max_rows: int,
+        *,
+        mode: str = blocks.MODE_TRUE,
+        backend: str = "blocks",
+    ) -> list[str]:
+        key = (self.index, max_cols, max_rows, mode, backend)
+        cached = self._rows.get(key)
+        if cached is None:
+            cached = graphics.render(self.pixels(), max_cols, max_rows, mode=mode, backend=backend)
             self._rows[key] = cached
         return cached
 

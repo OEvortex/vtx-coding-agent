@@ -4,10 +4,16 @@ Run it from this directory:
 
     cd packages/vx && uv run python demo.py
 
-Point ``VTX_PET_SHEET`` at a chiikawa-dots-pets spritesheet PNG (or install it
-into ``~/.codex/pets/hachiware/``) and it animates with the frame timings
-recorded in the released GIFs. A real ``.gif`` works too: its frames are decoded
-once and played at the delays stored inside the file.
+Point ``VTX_PET_SHEET`` at a Codex v2 spritesheet (8x11 cells of 192x208, from
+``codex-anime-pets`` or chiikawa-dots-pets) and it animates with the recorded
+frame timings. A real ``.gif`` works too: its frames are decoded once and played
+at the delays stored inside the file. Any other image — PNG, WebP, JPEG — is
+shown as a single static frame; WebP/JPEG are decoded through ``ffmpeg`` if
+available (the TUI itself stays stdlib-only). ``--still`` forces single-image
+mode even for a sheet. Community atlases with a different cell size work via
+``--cell WxH``; their cells cycle at ``--fps`` (default 2.5 — this is pose
+speed, not image quality), ping-ponging so the loop has no hard cut. ``--row N``
+animates one motion row as a sequence.
 
 Three things are being exercised here:
 
@@ -35,13 +41,25 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import time
 
-from vx.pet import ORDER, GifPet, Pet, Player, Spritesheet, find_sheet
+from vx.pet import (
+    ORDER,
+    GenericPet,
+    GifPet,
+    Pet,
+    Player,
+    Spritesheet,
+    Still,
+    find_sheet,
+    key_flat_background,
+    looks_like_sheet,
+)
 from vx.tui import ansi, graphics, keys, theme
 from vx.tui.canvas import Painter
-from vx.tui.graphics import blocks, gif
+from vx.tui.graphics import blocks, gif, png
 from vx.tui.terminal import Terminal
 
 FPS = 30
@@ -71,6 +89,32 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="pet width in cells, or 'auto' to fill the terminal (default)",
     )
     parser.add_argument("--pet", default="hachiware", help="pet directory name")
+    parser.add_argument("--still", action="store_true", help="show the image as one static frame")
+    parser.add_argument(
+        "--cell", default=None, help="atlas cell size, e.g. 108x108 (generic sheet mode)"
+    )
+    parser.add_argument(
+        "--fps",
+        type=float,
+        default=2.5,
+        help="pose cycle speed for generic sheets, not render quality (default 2.5)",
+    )
+    parser.add_argument(
+        "--start", type=int, default=0, help="first cell of a generic sheet (default 0)"
+    )
+    parser.add_argument(
+        "--count", type=int, default=0, help="number of cells to cycle (default: all)"
+    )
+    parser.add_argument("--row", type=int, default=None, help="animate one row of a generic sheet")
+    parser.add_argument(
+        "--no-pingpong", action="store_true", help="loop straight back to the first frame"
+    )
+    parser.add_argument(
+        "--key",
+        choices=("flood", "global", "off"),
+        default="flood",
+        help="how to remove a flat dark atlas background (default: flood)",
+    )
     parser.add_argument(
         "--gfx",
         default=os.environ.get("VTX_GFX", "auto"),
@@ -78,6 +122,46 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="force a graphics backend",
     )
     return parser.parse_args(argv)
+
+
+def load_image(path) -> tuple[int, int, bytes]:
+    """Decode PNG directly; hand other formats to ffmpeg as a PNG pipe.
+
+    The graphics package itself is stdlib-only. This is an optional bridge so
+    a WebP sheet or a JPEG screenshot can be tested without adding a Python
+    dependency; only non-PNG files need the external tool.
+    """
+    if path.suffix.lower() == ".png":
+        return png.load(str(path))
+    command = [
+        "ffmpeg",
+        "-loglevel",
+        "error",
+        "-i",
+        str(path),
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "png",
+        "-",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f"cannot decode {path}: install ffmpeg or use a PNG ({exc})") from exc
+    return png.decode(result.stdout)
+
+
+def parse_cell(value: str) -> tuple[int, int]:
+    try:
+        w, h = (int(part) for part in value.lower().replace("x", ":").split(":"))
+    except ValueError:
+        raise SystemExit(f"bad --cell {value!r}; use WxH, e.g. 108x108") from None
+    if w < 2 or h < 2:
+        raise SystemExit("--cell dimensions must be at least 2")
+    return w, h
 
 
 class Scene:
@@ -101,6 +185,7 @@ class Scene:
         self.paused = False
         self.wander = True
         self._last_move: float | None = None
+        self._last_payload: tuple[int, int, int, int] | None = None
 
     # -- story -------------------------------------------------------------
 
@@ -188,8 +273,9 @@ class Scene:
         top = 2
         left = self.place(cols - art_w)
 
+        name = getattr(self.pet, "label", "hachiware")
         title = (
-            f"{theme.current().tag_style}hachiware{ansi.RESET}"
+            f"{theme.current().tag_style}{name}{ansi.RESET}"
             f"{theme.current().dim_style} · {self.pet.motion.label or self.pet.motion.name}"
             f" · {art_w}x{art_h} cells · {self.backend}"
             f" · colour {self.mode}"
@@ -226,7 +312,13 @@ class Scene:
         else:
             body = graphics.protocols.paint(kind, self.pet.pixels(), art_w, art_h, image_id=1)
             if kind == "kitty":
-                body = graphics.protocols.kitty_delete(1) + move + body
+                # Deleting and recreating the image on every frame is what
+                # makes kitty flicker. Only do it when the box actually moves;
+                # a new transmission with the same id replaces it in place.
+                position = (art_w, art_h, top, left)
+                if position != self._last_payload:
+                    body = graphics.protocols.kitty_delete(1) + move + body
+                self._last_payload = position
         return f"{move}{body}{hide}" if body else ""
 
     def help_rows(self, cols: int) -> list[str]:
@@ -272,6 +364,7 @@ class Scene:
         options = list(self.caps.cycle_backends)
         position = options.index(self.backend) if self.backend in options else 0
         self.backend = options[(position + 1) % len(options)]
+        self._last_payload = None
         self.term.write(graphics.protocols.kitty_delete(1))
 
 
@@ -281,18 +374,44 @@ def main(argv: list[str] | None = None) -> int:
     sheet_path = find_sheet(args.pet)
     if sheet_path is None:
         print(
-            "no spritesheet found. Set VTX_PET_SHEET to the pet's spritesheet.png,\n"
-            "or install it under ~/.codex/pets/<pet>/spritesheet.png.",
+            "no image found. Set VTX_PET_SHEET to a PNG/WebP/JPEG sheet or any image,\n"
+            "or install a pet under ~/.codex/pets/<pet>/spritesheet.png.",
             file=sys.stderr,
         )
         return 2
 
     theme.apply_theme()
-    if sheet_path.suffix.lower() == ".gif":
+    if args.cell:
+        cw, ch = parse_cell(args.cell)
+        sheet = Spritesheet(key_flat_background(load_image(sheet_path), mode=args.key), cw, ch)
+        start, count = args.start, args.count or None
+        if args.row is not None:
+            start, count = args.row * sheet.columns, sheet.columns
+        pet = GenericPet(
+            sheet,
+            delay=1 / max(0.5, args.fps),
+            start=start,
+            count=count,
+            pingpong=not args.no_pingpong,
+        )
+    elif sheet_path.suffix.lower() == ".gif":
         animation = gif.load(sheet_path)
-        pet = GifPet(animation, f"{sheet_path.stem} · {len(animation.frames)} frames")
+        if args.still:
+            pet = Still(animation.frames[0][0], sheet_path.stem)
+        else:
+            pet = GifPet(animation, f"{sheet_path.stem} · {len(animation.frames)} frames")
     else:
-        pet = Pet(Spritesheet(sheet_path))
+        image = load_image(sheet_path)
+        if args.still or not looks_like_sheet(image):
+            if not args.still:
+                print(
+                    f"showing {sheet_path.name} as one still image; "
+                    "if it is an atlas, pass --cell WxH to animate it",
+                    file=sys.stderr,
+                )
+            pet = Still(image, sheet_path.stem)
+        else:
+            pet = Pet(Spritesheet(image))
     decoder = keys.KeyDecoder()
     painter = Painter()
 
