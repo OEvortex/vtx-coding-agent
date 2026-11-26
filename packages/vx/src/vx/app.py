@@ -154,9 +154,7 @@ class VxApp(_CommandBase):
         #: drift.
         self._sidebar = sidebar.Sidebar()
         #: The panel belongs to the work: it opens when the agent has a plan or
-        #: has written a file, and closes when it has neither. A toggle -- ctrl+t
-        #: or /settings -- pins it either way, and only that pin is remembered.
-        self._sidebar_auto = True
+        #: terminals, and closes when it has neither.
         self._show_sidebar = False
         #: The terminal drawer: one running job, open over the transcript until
         #: it is closed. Clicking a terminal in the panel opens its drawer.
@@ -171,8 +169,6 @@ class VxApp(_CommandBase):
             plan_open, jobs_open = prefs.sidebar_folds()
             self._sidebar.todos_open = plan_open
             self._sidebar.jobs_open = jobs_open
-            self._sidebar_auto = not prefs.sidebar_pinned()
-            self._show_sidebar = False if self._sidebar_auto else prefs.sidebar_shown()
         #: The diff drawn under a patch that is still being written.
         self._stream_diffs: dict[str, blocks.DiffOutput] = {}
         self._tool_started: dict[str, float] = {}
@@ -870,13 +866,6 @@ class VxApp(_CommandBase):
             return
         if key in ("ctrl+right", "alt+f"):
             self._cursor = self._word_end()
-            return
-        if key == "ctrl+t":
-            # An explicit toggle ends the automatic behaviour: from here the
-            # panel is the user's, not the work's.
-            self._sidebar_auto = False
-            self._show_sidebar = not self._show_sidebar
-            self._save_sidebar()
             return
         if key == "ctrl+g":
             fold = not (self._sidebar.todos_open or self._sidebar.jobs_open)
@@ -2194,23 +2183,10 @@ class VxApp(_CommandBase):
         finally:
             self._recap_task = None
 
-    def _save_sidebar(self) -> None:
-        """Remember a pinned panel, so a restart draws it the same way."""
-        with suppress(Exception):
-            prefs.set_sidebar_pinned(True)
-            prefs.set_sidebar_shown(self._show_sidebar)
-            prefs.set_sidebar_folds(self._sidebar.todos_open, self._sidebar.jobs_open)
-
     def _save_folds(self) -> None:
         """A folded section stays folded; the panel's presence is not ours to keep."""
         with suppress(Exception):
             prefs.set_sidebar_folds(self._sidebar.todos_open, self._sidebar.jobs_open)
-
-    def set_sidebar_shown(self, shown: bool) -> None:
-        """``/settings``' way into the same switch ctrl+t throws."""
-        self._sidebar_auto = False
-        self._show_sidebar = bool(shown)
-        self._save_sidebar()
 
     def _reset_sidebar(self) -> None:
         """A new conversation has no plan of its own yet."""
@@ -2218,9 +2194,7 @@ class VxApp(_CommandBase):
         self._sync_sidebar()
 
     def _sync_sidebar(self) -> None:
-        """Auto: the panel is there exactly when it has something to show."""
-        if not self._sidebar_auto:
-            return
+        """The panel is there exactly when it has something to show."""
         wanted = self._sidebar.has_content()
         if wanted != self._show_sidebar:
             self._show_sidebar = wanted

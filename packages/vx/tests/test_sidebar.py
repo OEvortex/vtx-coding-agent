@@ -221,11 +221,9 @@ def test_the_panel_sits_beside_the_transcript_and_the_footer_spans_both():
     assert ansi.width(frame[-1]) == 100
 
 
-def test_ctrl_t_puts_the_panel_away_and_brings_it_back():
+def test_ctrl_t_is_not_a_panel_toggle():
     app = give_plan(make_app(100, 26), Todo("read", "active"))
     assert has_panel(app)
-    app._handle_key("ctrl+t")
-    assert not has_panel(app)
     app._handle_key("ctrl+t")
     assert has_panel(app)
 
@@ -342,24 +340,20 @@ def test_a_replayed_session_gets_its_plan_back():
     assert [t.text for t in app._sidebar.todos] == ["read"]
 
 
-# -- the panel is a habit --------------------------------------------------
+# -- the panel follows the work --------------------------------------------
 
 
 def test_the_panel_follows_the_work_by_default():
-    assert prefs.sidebar_pinned() is False
-    assert prefs.sidebar_label() == "auto"
-    assert make_app(100, 26)._sidebar_auto is True
     assert make_app(100, 26)._show_sidebar is False
 
 
-def test_a_pinned_panel_is_remembered_across_launches():
+def test_stale_pin_preferences_are_ignored():
+    prefs.prefs_path().write_text(
+        '{"sidebar_pinned": true, "sidebar_shown": true}', encoding="utf-8"
+    )
     app = make_app(100, 26)
-    app._handle_key("ctrl+t")
-    assert app._show_sidebar is True
-    assert make_app(100, 26)._show_sidebar is True
-    assert make_app(100, 26)._sidebar_auto is False
-    make_app(100, 26)._handle_key("ctrl+t")
-    assert make_app(100, 26)._show_sidebar is False
+    assert app._show_sidebar is False
+    assert not has_panel(app)
 
 
 def test_folded_sections_come_back_folded():
@@ -377,25 +371,15 @@ def test_a_prefs_file_from_before_the_terminals_keeps_its_fold():
     assert jobs_open is False
 
 
-def test_the_preference_survives_a_corrupt_file():
+def test_fold_preferences_survive_a_corrupt_file():
     prefs.prefs_path().write_text("{not json", encoding="utf-8")
-    assert prefs.sidebar_pinned() is False
-    app = make_app(100, 26)
-    assert app._sidebar_auto is True
-    assert app._show_sidebar is False
+    assert prefs.sidebar_folds() == (True, True)
+    assert make_app(100, 26)._show_sidebar is False
 
 
-def test_a_non_boolean_pref_falls_back_to_the_default():
-    prefs.prefs_path().write_text('{"sidebar_pinned": "yes"}', encoding="utf-8")
-    assert prefs.sidebar_pinned() is False
-
-
-def test_settings_names_what_is_folded():
-    prefs.set_sidebar_folds(True, False)
-    assert prefs.sidebar_label() == "auto"
-    prefs.set_sidebar_shown(True)
-    assert prefs.sidebar_label() == "on · jobs folded"
-    prefs.set_sidebar_shown(False)
+def test_a_non_boolean_fold_pref_falls_back_to_the_default():
+    prefs.prefs_path().write_text('{"sidebar_plan_open": "yes"}', encoding="utf-8")
+    assert prefs.sidebar_folds() == (True, True)
 
 
 # -- scrolling beside the panel ---------------------------------------------

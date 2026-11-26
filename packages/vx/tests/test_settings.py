@@ -37,6 +37,9 @@ class TestRecapIdleLabel:
 
 
 class TestSettingsRows:
+    def test_there_is_no_sidebar_setting(self):
+        assert "sidebar" not in rows()
+
     def test_the_recap_can_be_turned_off_from_the_picker(self):
         assert rows()["recap"] == ("on" if config.recap.enabled else "off")
 

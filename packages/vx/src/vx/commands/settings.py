@@ -368,7 +368,6 @@ class SettingsCommands(CommandSupport):
                 detail=recap_idle_label(config.recap.idle_seconds),
                 value="recap-idle",
             ),
-            footer.MenuItem(label="sidebar", detail=prefs.sidebar_label(), value="sidebar"),
             footer.MenuItem(
                 label="show-shortcuts",
                 detail="on" if config.ui.show_welcome_shortcuts else "off",
@@ -431,12 +430,6 @@ class SettingsCommands(CommandSupport):
         elif value == "history":
             self._select_history_rows()
             return
-        elif value == "sidebar":
-            # Flip what is on screen, the way ctrl+t does; the row then says the
-            # panel is pinned rather than following the work.
-            shown = not self._show_sidebar
-            self.set_sidebar_shown(shown)
-            self._ok(f"sidebar turned {'on' if shown else 'off'}", topic="settings")
         elif value == "git-context":
             enabled = not config.llm.system_prompt.git_context
             set_git_context(enabled)

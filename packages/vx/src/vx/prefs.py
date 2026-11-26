@@ -10,9 +10,8 @@ a session and dropping it should be a choice, not an accident.
 
 The sidebar is here for the same reason. Its *shape* -- which sections are
 folded -- is a habit. Its *presence* is not a setting at all: the panel belongs
-to the work, so it opens when the agent has a plan or a command running and
-closes when it has neither. A toggle (ctrl+t, ``/settings``) pins it either way,
-and that pin is the habit we keep.
+to the work, so it opens when the agent has a plan or terminals and closes when
+it has neither.
 """
 
 from __future__ import annotations
@@ -66,29 +65,6 @@ def _flag(value: Any, default: bool) -> bool:
     return value if isinstance(value, bool) else default
 
 
-def sidebar_shown() -> bool:
-    """Whether a pinned panel is open. Only means anything once it is pinned."""
-    return _flag(_read().get("sidebar_shown"), True)
-
-
-def set_sidebar_shown(shown: bool) -> None:
-    data = _read()
-    data["sidebar_shown"] = bool(shown)
-    data["sidebar_pinned"] = True
-    _write(data)
-
-
-def sidebar_pinned() -> bool:
-    """Whether the user has decided the panel's fate, or left it to the work."""
-    return _flag(_read().get("sidebar_pinned"), False)
-
-
-def set_sidebar_pinned(pinned: bool) -> None:
-    data = _read()
-    data["sidebar_pinned"] = bool(pinned)
-    _write(data)
-
-
 def sidebar_folds() -> tuple[bool, bool]:
     """``(plan_open, jobs_open)``: a folded section stays folded."""
     data = _read()
@@ -103,19 +79,6 @@ def set_sidebar_folds(plan_open: bool, jobs_open: bool) -> None:
     data["sidebar_plan_open"] = bool(plan_open)
     data["sidebar_jobs_open"] = bool(jobs_open)
     _write(data)
-
-
-def sidebar_label() -> str:
-    """``auto``, or ``on``/``off`` plus what is folded."""
-    if not sidebar_pinned():
-        return "auto"
-    if not sidebar_shown():
-        return "off"
-    plan_open, jobs_open = sidebar_folds()
-    if plan_open and jobs_open:
-        return "on"
-    folded = [name for name, open_ in (("plan", plan_open), ("jobs", jobs_open)) if not open_]
-    return f"on · {', '.join(folded)} folded"
 
 
 def history_rows() -> int:

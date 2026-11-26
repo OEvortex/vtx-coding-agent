@@ -95,10 +95,10 @@ class Sidebar:
         out.extend(self._terminals(width, jobs_h, base=len(out)))
         while len(out) < height - 1:
             out.append("")
-        hint = "ctrl+t pin \u00b7 ctrl+g fold \u00b7 click \u203a"
+        hint = "ctrl+g fold \u00b7 click \u203a"
         if ansi.width(hint) > width:
-            # A narrow panel says the two keys and leaves the rest to the chevron.
-            hint = "ctrl+t pin \u00b7 ctrl+g fold"
+            # A narrow panel says the key and leaves the rest to the chevron.
+            hint = "ctrl+g fold"
         out.append(f"{t.dim_style}{ansi.clip_ellipsis(hint, width)}{ansi.RESET}")
         return out[:height]
 
