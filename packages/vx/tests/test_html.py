@@ -1,7 +1,7 @@
 """HTML rendering: tag tree, inline styling and width-aware blocks."""
 
 from vx.tui import ansi
-from vx.tui.html import render
+from vx.tui.html import CSS, HTML, b, link, mark, raw, render
 
 
 def plain_rows(html: str, cols: int = 80) -> list[str]:
@@ -104,6 +104,16 @@ class TestPreAndTable:
         assert "def f():" in text
         assert "    return 1" in text
 
+    def test_pre_without_class_uses_code_label(self):
+        rows = plain_rows("<pre>plain\n  indented</pre>")
+        text = "\n".join(rows)
+        assert "─ code " in text
+        assert "plain" in text and "  indented" in text
+
+    def test_pre_uses_class_as_label(self):
+        rows = plain_rows('<pre class="highlight">body</pre>')
+        assert "─ highlight " in "\n".join(rows)
+
     def test_table_renders_cells_and_header_rule(self):
         rows = plain_rows(
             "<table><tr><th>Name</th><th>Value</th></tr><tr><td>cpu</td><td>72</td></tr></table>"
@@ -111,6 +121,31 @@ class TestPreAndTable:
         text = "\n".join(rows)
         assert "Name" in text and "cpu" in text and "72" in text
         assert "┼" in text
+
+    def test_table_has_markdown_shape(self):
+        rows = plain_rows(
+            "<table><tr><th>Name</th><th>Value</th></tr><tr><td>cpu</td><td>72</td></tr></table>"
+        )
+        assert rows[0].startswith("Name")
+        assert not rows[0].startswith("│") and not rows[0].endswith("│")
+        assert rows[1].count("┼") == 1
+
+    def test_table_right_alignment(self):
+        rows = plain_rows(
+            "<table><tr><th>Name</th><th>Value</th></tr>"
+            "<tr><td>cpu</td><td align='right'>72</td></tr></table>",
+            40,
+        )
+        assert rows[-1].rstrip().endswith("72")
+
+    def test_table_center_alignment_via_css(self):
+        rows = plain_rows(
+            "<table><tr><th>Long name here</th></tr>"
+            "<tr><td style='text-align:center'>cpu</td></tr></table>",
+            30,
+        )
+        assert rows[-1].startswith(" ")
+        assert rows[-1].rstrip().endswith("cpu")
 
     def test_table_shrinks_to_width(self):
         rows = plain_rows(
@@ -127,3 +162,147 @@ class TestWidth:
 
     def test_empty_html(self):
         assert render("", 80) == []
+
+
+class TestCSS:
+    def test_style_block_is_not_rendered_as_text(self):
+        rows = plain_rows("<style>p { color: red }</style><p>ok</p>")
+        text = "\n".join(rows)
+        assert "ok" in text
+        assert "color: red" not in text
+
+    def test_class_selector(self):
+        html = "<style>.warn { color: red; font-weight: bold }</style><p class='warn'>watch</p>"
+        joined = "".join(render(html, 60))
+        assert "\x1b[38;2;255;107;107m" in joined
+        assert "\x1b[1m" in joined
+
+    def test_id_beats_class(self):
+        html = "<style>.x { color: red } #y { color: green }</style><p id='y' class='x'>v</p>"
+        joined = "".join(render(html, 60))
+        assert "\x1b[38;2;81;207;102m" in joined
+        assert "\x1b[38;2;255;107;107m" not in joined
+
+    def test_inline_style_beats_css(self):
+        html = "<style>.x { color: red }</style><p class='x' style='color:blue'>v</p>"
+        assert "\x1b[38;2;92;156;255m" in "".join(render(html, 60))
+
+    def test_important_beats_inline_style(self):
+        html = "<style>p { color: red !important }</style><p style='color:blue'>v</p>"
+        joined = "".join(render(html, 60))
+        assert "\x1b[38;2;255;107;107m" in joined
+        assert "\x1b[38;2;92;156;255m" not in joined
+
+    def test_css_variables_and_fallback(self):
+        html = (
+            "<style>:root { --accent: #ff922b }</style>"
+            "<p><span style='color:var(--accent)'>a</span>"
+            "<span style='color:var(--missing, green)'>b</span></p>"
+        )
+        joined = "".join(render(html, 60))
+        assert "\x1b[38;2;255;146;43m" in joined
+        assert "\x1b[38;2;81;207;102m" in joined
+
+    def test_inline_custom_property(self):
+        html = "<p style='--c: red; color: var(--c)'>v</p>"
+        assert "\x1b[38;2;255;107;107m" in "".join(render(html, 60))
+
+    def test_descendant_selector(self):
+        html = (
+            "<style>ul li { font-style: italic }</style><ul><li>one</li></ul><ol><li>two</li></ol>"
+        )
+        joined = "".join(render(html, 60))
+        assert "\x1b[3mone" in joined
+        assert "\x1b[3mtwo" not in joined
+
+    def test_comma_selector_list(self):
+        html = "<style>h1, .x { color: purple }</style><h1>a</h1><p class='x'>b</p>"
+        assert "".join(render(html, 60)).count("\x1b[38;2;177;151;252m") >= 2
+
+    def test_text_transform(self):
+        text = "\n".join(
+            plain_rows(
+                "<p style='text-transform:uppercase'>shout</p>"
+                "<p style='text-transform:capitalize'>each word</p>"
+            )
+        )
+        assert "SHOUT" in text and "Each Word" in text
+
+    def test_text_align_center(self):
+        rows = plain_rows("<div style='text-align:center'>hi</div>", 20)
+        assert rows[0].startswith(" ")
+
+    def test_css_argument(self):
+        rows = render("<p class='w'>x</p>", 60, css=".w { color: red }")
+        assert "\x1b[38;2;255;107;107m" in "".join(rows)
+
+    def test_unknown_property_is_ignored(self):
+        rows = render("<style>p { display: flex; color: red }</style><p>ok</p>", 60)
+        assert "\x1b[38;2;255;107;107m" in "".join(rows)
+
+
+class TestBuilders:
+    def test_heading_and_paragraph_without_markup(self):
+        page = HTML(width=60).h1("Title").p("Hello", bold="world", code="f()")
+        rows = page.render()
+        text = "\n".join(ansi.strip_ansi(row) for row in rows)
+        assert "Title" in text and "Hello world f()" in text
+        assert "\x1b[1m" in "".join(rows)
+
+    def test_sections_in_constructor(self):
+        page = HTML(width=60, h1="Title", p=["one", "two"], ul=["a", "b"])
+        text = "\n".join(ansi.strip_ansi(row) for row in page.render())
+        assert "Title" in text and "one" in text and "two" in text
+        assert "• a" in text and "• b" in text
+
+    def test_lists_nested_and_table(self):
+        page = (
+            HTML(width=60)
+            .ul(["first", {"text": "parent", "children": ["child"]}])
+            .table(["Name", "Lines"], [["html.py", 385], ["ansi.py", 7]], align={"Lines": "right"})
+        )
+        text = "\n".join(ansi.strip_ansi(row) for row in page.render())
+        assert "first" in text and "child" in text
+        assert "Name" in text and "html.py" in text and "┼" in text
+        assert "│   385" in text
+
+    def test_code_quote_hr_and_inline_helpers(self):
+        page = (
+            HTML(width=60)
+            .code("def f():\n    return 1", lang="python")
+            .quote(mark("quoted"))
+            .hr()
+            .p(markup=f"{b('bold')} and {link('docs', 'https://x.com')}")
+        )
+        text = "\n".join(ansi.strip_ansi(row) for row in page.render())
+        assert "python" in text and "return 1" in text
+        assert "│ quoted" in text and "bold and docs" in text
+        assert any("─" in row for row in text.splitlines())
+
+    def test_css_attaches_to_html_block(self):
+        css = CSS().add("h1", color="red", font_weight="bold")
+        page = HTML(width=60).h1("Hi").css(css)
+        joined = "".join(page.render())
+        assert "\x1b[38;2;255;107;107m" in joined
+        assert "\x1b[1m" in joined
+
+    def test_css_variables_and_attach_method(self):
+        css = CSS(accent="#ff922b").add("h1", color="var(--accent)")
+        page = HTML(width=60).h1("Hi")
+        css.attach(page)
+        assert "\x1b[38;2;255;146;43m" in "".join(page.render())
+
+    def test_escaping_and_raw_escape_hatch(self):
+        safe = HTML(width=60).p("<script>&").text()
+        assert "<script>&" in safe
+        assert "script" in safe
+        loose = HTML(width=60).add(raw("<p>trusted</p>")).text()
+        assert "trusted" in loose
+
+    def test_unknown_section_is_rejected(self):
+        try:
+            HTML(width=60, bogus="x")
+        except ValueError as error:
+            assert "bogus" in str(error)
+        else:
+            raise AssertionError("expected ValueError")
