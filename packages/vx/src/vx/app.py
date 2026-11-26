@@ -42,6 +42,10 @@ else:
 
 MAX_INPUT_LINES = 8
 
+#: Rows one wheel notch or arrow press moves the transcript. Small enough to
+#: read back through a reply line by line, large enough not to crawl.
+SCROLL_STEP = 3
+
 #: Bound in ``run``: importing asyncio before the first frame would put ~85 ms
 #: of module loading in front of the keyboard.
 asyncio: Any = None
@@ -205,6 +209,13 @@ class VxApp(_CommandBase):
         self._search_cursor = 0
         #: The last painted frame, for hit-testing OSC 8 links under the mouse.
         self._frame: list[str] = []
+        #: A read of stdin is handled as one batch: keys are applied to state
+        #: first, then a single frame is painted for the whole burst. A trackpad
+        #: sends a dozen wheel reports per gesture, and painting between them was
+        #: most of the stutter.
+        self._batching = False
+        self._draw_wanted = False
+        self._draw_force = False
 
         self._exiting = False
         self._ticker_task: asyncio.Task | None = None
@@ -562,9 +573,23 @@ class VxApp(_CommandBase):
             events = self.decoder.feed(data)
         except Exception:
             return
-        for ev in events:
-            with suppress(Exception):
-                self._handle_key(ev)
+        self._batching = True
+        try:
+            for ev in events:
+                with suppress(Exception):
+                    self._handle_key(ev)
+        finally:
+            self._batching = False
+        self._flush_draw()
+
+    def _flush_draw(self) -> None:
+        """Paint the frame a batch of keys asked for, once."""
+        if not self._draw_wanted:
+            return
+        force = self._draw_force
+        self._draw_wanted = False
+        self._draw_force = False
+        self._draw(force=force)
 
     def _on_resize(self) -> None:
         self.painter.reset()
@@ -576,7 +601,7 @@ class VxApp(_CommandBase):
         parts = key.split(":")
         action = parts[1] if len(parts) > 1 else ""
         if action in ("wheelup", "wheeldown"):
-            step = 3 if action == "wheelup" else -3
+            step = SCROLL_STEP if action == "wheelup" else -SCROLL_STEP
             panel = self._terminal
             if panel is not None and len(parts) >= 4 and self._over_drawer(int(parts[3])):
                 panel.scroll = max(0, min(panel.max_scroll(), panel.scroll - step))
@@ -890,7 +915,11 @@ class VxApp(_CommandBase):
             elif self._is_running and self._pending_queue:
                 self._recall_queued()
             else:
-                self.viewport.page(1, *self._size())
+                # A line at a time, like the wheel: paging the whole screen on
+                # an arrow key is what made reading back during a run feel like
+                # a series of shoves. pgup still pages.
+                self.viewport.scroll_by(SCROLL_STEP, *self._size())
+                self._draw()
             return
         if key == "down":
             if self._move_input_line(1):
@@ -898,7 +927,8 @@ class VxApp(_CommandBase):
             if self._history_idx is not None:
                 self._history_move(1)
             else:
-                self.viewport.page(-1, *self._size())
+                self.viewport.scroll_by(-SCROLL_STEP, *self._size())
+                self._draw()
             return
         if key == "tab":
             self._complete()
@@ -2578,7 +2608,10 @@ class VxApp(_CommandBase):
     async def _ticker(self) -> None:
         try:
             while not self._exiting:
-                await asyncio.sleep(0.05)
+                # 60 fps while a turn streams, which is where the text has to
+                # keep up with the eye; 20 fps otherwise, where a redraw only
+                # exists to carry the clock and the panel.
+                await asyncio.sleep(1 / 60 if self._is_running else 1 / 20)
                 self._drain_events()
                 self._refresh_stats()
                 self._maybe_recap()
@@ -2769,6 +2802,12 @@ class VxApp(_CommandBase):
         return out
 
     def _draw(self, *, force: bool = False) -> None:
+        if self._batching:
+            # Keys mutate state; the frame waits for the batch to end so a burst
+            # of wheel reports costs one layout pass instead of one each.
+            self._draw_wanted = True
+            self._draw_force = self._draw_force or force
+            return
         rows, cols = self.term.size()
         foot, caret = self._footer(cols, rows)
         foot = foot[-max(1, rows - 1) :]

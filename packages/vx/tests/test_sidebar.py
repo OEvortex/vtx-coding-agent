@@ -398,6 +398,9 @@ def test_settings_names_what_is_folded():
     prefs.set_sidebar_shown(False)
 
 
+# -- scrolling beside the panel ---------------------------------------------
+
+
 def tall_app(cols: int = 140, rows: int = 30) -> VxApp:
     """A transcript long enough to scroll, with the plan open."""
     app = give_plan(make_app(cols, rows), Todo("wire the fix", "active"))
@@ -418,6 +421,26 @@ def test_scrolling_uses_the_transcript_column_not_the_terminal_width():
     app = tall_app()
     assert 0 < app._side_main < 140
     assert app._size()[0] == app._side_main
+
+
+def test_one_wheel_notch_moves_three_rows():
+    app = tall_app()
+    app.viewport.bottom()
+    app._mouse_key("mouse:wheelup:10:3")
+    assert app.viewport.scroll == 3
+    app._mouse_key("mouse:wheeldown:10:3")
+    assert app.viewport.scroll == 0
+
+
+def test_an_arrow_scrolls_a_few_lines_rather_than_a_screen():
+    app = tall_app()
+    app.viewport.bottom()
+    app._handle_key("up")
+    assert app.viewport.scroll == 3
+    app._handle_key("down")
+    assert app.viewport.scroll == 0
+    app._handle_key("pageup")
+    assert app.viewport.scroll > 3
 
 
 def test_streaming_while_scrolled_back_holds_the_readers_row():

@@ -51,15 +51,24 @@ def strip_ansi(text: str) -> str:
 
 
 def char_width(ch: str) -> int:
-    if unicodedata.combining(ch):
-        return 0
+    code = ord(ch)
+    if code < 0x0300:
+        # Every double-width code point starts at U+1100 (Hangul Jamo), and no
+        # combining mark comes before U+0300, so Latin text needs no lookups.
+        return 1
+    if code < 0x1100:
+        return 0 if unicodedata.combining(ch) else 1
     return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
 
 
 def width(text: str) -> int:
     """Visible cells of ``text`` ignoring SGR/OSC sequences."""
+    plain = text if "\x1b" not in text else strip_ansi(text)
+    if plain.isascii():
+        # The overwhelmingly common row: no escapes, one cell per character.
+        return len(plain)
     total = 0
-    for ch in strip_ansi(text):
+    for ch in plain:
         total += char_width(ch)
     return total
 
@@ -71,6 +80,12 @@ def clip(text: str, limit: int) -> str:
     """Keep at most ``limit`` cells of styled text, cutting on a unit boundary."""
     if limit <= 0:
         return ""
+    if "\x1b" not in text and text.isascii():
+        return text if len(text) <= limit else text[:limit]
+    if width(text) <= limit:
+        # A row that already fits -- the common case when painting -- costs one
+        # width scan instead of a per-unit walk.
+        return text
     out: list[str] = []
     used = 0
     i = 0

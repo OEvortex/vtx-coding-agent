@@ -27,11 +27,13 @@ class Painter:
         height = len(rows)
         parts: list[str] = []
         full = height != self._rows or cols != self._cols or not self._last
+        padded: list[str] = []
         for index, row in enumerate(rows):
             # Always emit exactly one full-width row. A separate 2K first would
             # briefly blank the line, and a screenshot (or a busy terminal)
             # catches that gap as a solid bar through the picture.
             clipped = ansi.pad(ansi.clip(row, cols), cols) if row else " " * cols
+            padded.append(clipped)
             previous = self._last[index] if index < len(self._last) else None
             if full or previous != clipped:
                 parts.append(f"\x1b[{index + 1};1H")
@@ -42,7 +44,7 @@ class Painter:
                 parts.append("\x1b[?25h")
         else:
             parts.append("\x1b[?25l")
-        self._last = [ansi.pad(ansi.clip(r, cols), cols) if r else " " * cols for r in rows]
+        self._last = padded
         self._rows = height
         self._cols = cols
         self._cursor = cursor

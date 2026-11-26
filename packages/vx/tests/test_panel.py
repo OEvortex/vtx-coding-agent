@@ -228,3 +228,49 @@ def test_the_wheel_over_the_drawer_scrolls_the_job():
     y = rect[1] + 2
     app._mouse_key(f"mouse:wheeldown:20:{y + 1}")
     assert panel.scroll > 0
+
+
+# -- frames ----------------------------------------------------------------
+
+
+class CountingTerminal(StubTerminal):
+    """A terminal that remembers what it was written."""
+
+    def __init__(self, cols: int = 100, rows: int = 26) -> None:
+        super().__init__(cols, rows)
+        self.writes: list[str] = []
+
+    def write(self, data: str) -> None:
+        self.writes.append(data)
+
+
+def counting_app(cols: int = 100, rows: int = 26) -> tuple[VxApp, CountingTerminal]:
+    term = CountingTerminal(cols, rows)
+    app = VxApp(cwd="/tmp", terminal=cast(Terminal, term))
+    app._ready = asyncio.Event()
+    app._ready.set()
+    for index in range(40):
+        app.viewport.add(blocks.Assistant(text=f"row {index} " + "word " * 30))
+    app._draw(force=True)
+    term.writes.clear()
+    return app, term
+
+
+def test_a_burst_of_wheel_reports_paints_one_frame():
+    """A trackpad sends a dozen reports per gesture; that is one repaint."""
+    app, term = counting_app()
+    app._batching = True
+    try:
+        for _ in range(12):
+            app._mouse_key("mouse:wheelup:10:3")
+    finally:
+        app._batching = False
+    assert term.writes == []
+    app._flush_draw()
+    assert len(term.writes) == 1
+
+
+def test_a_key_outside_a_batch_still_paints_at_once():
+    app, term = counting_app()
+    app._mouse_key("mouse:wheelup:10:3")
+    assert len(term.writes) == 1
