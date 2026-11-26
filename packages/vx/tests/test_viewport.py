@@ -239,6 +239,87 @@ class TestReflow:
         assert v.visible(60, 12)[2] == top
 
 
+class TestPaintCache:
+    def _counting(self) -> tuple[Viewport, list[int], blocks.Block]:
+        seen: list[int] = []
+
+        @dataclass
+        class Counter(blocks.Block):
+            text: str = "first"
+            kind: str = "assistant"
+
+            def rows(self, width: int) -> list[str]:
+                seen.append(width)
+                return [self.text]
+
+        block = Counter()
+        v = Viewport()
+        v.add(block)
+        return v, seen, block
+
+    def test_a_clean_frame_does_not_re_render_any_block(self):
+        v, seen, _ = self._counting()
+        v.visible(80, 6)
+        v.touch()
+        v.visible(80, 6)
+        assert seen == [80]
+
+    def test_a_changed_block_re_renders_alone(self):
+        v, seen, block = self._counting()
+        v.add(Wrapped())
+        v.visible(80, 6)
+        seen.clear()
+        block.text = "second"
+        v.touch()
+        v.visible(80, 6)
+        assert seen == [80]
+
+    def test_a_width_change_re_renders(self):
+        v, seen, _ = self._counting()
+        v.visible(80, 6)
+        v.visible(40, 6)
+        assert seen == [80, 40]
+
+    def test_invalidate_re_renders_every_block(self):
+        v, seen, _ = self._counting()
+        v.visible(80, 6)
+        seen.clear()
+        v.invalidate()
+        v.visible(80, 6)
+        assert seen == [80]
+
+    def test_a_group_follows_its_children(self):
+        call = blocks.ReadToolStatus(path="a.py", total_lines=3)
+        group = blocks.ToolGroup(calls=[call])
+        v = Viewport()
+        v.add(group)
+        first = v.visible(80, 6)
+        call.status = "ok"
+        v.touch()
+        seen = v.visible(80, 6)
+        assert seen != first
+
+    def test_rows_drawn_from_a_clock_are_never_frozen(self):
+        seen: list[int] = []
+
+        @dataclass
+        class Clock(blocks.Block):
+            kind: str = "assistant"
+
+            def cacheable(self) -> bool:
+                return False
+
+            def rows(self, width: int) -> list[str]:
+                seen.append(width)
+                return [str(len(seen))]
+
+        v = Viewport()
+        v.add(Clock())
+        v.visible(80, 6)
+        v.touch()
+        assert v.visible(80, 6)[0].endswith("2")
+
+
 class TestHistoryAnchor:
     def test_pruning_above_the_window_leaves_the_reader_where_they_were(self):
         """Rows dropped at the head shift every index but not the window."""

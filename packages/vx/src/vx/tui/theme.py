@@ -11,6 +11,8 @@ import contextlib
 import os
 from dataclasses import dataclass
 
+from vx.tui import cache
+
 
 @dataclass(frozen=True)
 class SyntaxPalette:
@@ -326,4 +328,7 @@ def selected_theme() -> Theme:
 def apply_theme(theme: Theme | None = None) -> Theme:
     global _active
     _active = theme or selected_theme()
+    # Every block's rows carry the styles of the theme they were built with, so
+    # switching palettes has to invalidate all of them, not just repaint.
+    cache.bump_generation()
     return _active

@@ -8,7 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 
 from vx.brand import ITALIC_BRAND
-from vx.tui import ansi, markdown
+from vx.tui import ansi, cache, markdown
 from vx.tui import theme as _theme
 
 #: fx's assistant gutter: two columns of breathing room on every reply row.
@@ -36,7 +36,12 @@ _expanded = False
 def set_expanded(flag: bool) -> None:
     """ctrl+o unfolds a `!cmd`'s output, fx's full-transcript view."""
     global _expanded
+    if flag == _expanded:
+        return
     _expanded = flag
+    # Every block's rows were built under the old expansion, so the cache has
+    # to miss for all of them, not just for the ones that read ``_expanded``.
+    cache.bump_generation()
 
 
 def expanded() -> bool:
@@ -49,11 +54,23 @@ def _gutter(rows: list[str], width: int) -> list[str]:
 
 
 @dataclass
-class Block:
+class Block(cache.Revisioned):
     kind: str = "notice"
 
     def rows(self, width: int) -> list[str]:
         raise NotImplementedError
+
+    def parts(self) -> tuple[cache.Revisioned, ...]:
+        """Nested values whose mutations change this block's rows."""
+        return ()
+
+    def cacheable(self) -> bool:
+        """False for rows that follow a clock rather than the block's fields."""
+        return True
+
+    def signature(self) -> tuple:
+        """This block's own revision, and its children's, for the row cache."""
+        return (self._rev, tuple(part.signature() for part in self.parts()))
 
 
 @dataclass
@@ -368,7 +385,7 @@ class AskChoice:
 
 
 @dataclass
-class AskItem:
+class AskItem(cache.Revisioned):
     """One question of an ``ask_user`` call with the answer it got (if any)."""
 
     question: str = ""
@@ -377,6 +394,11 @@ class AskItem:
     custom: bool = False
     multi: bool = False
     checked: list[int] = field(default_factory=list)
+
+    def signature(self) -> tuple:
+        # ``checked`` is toggled in place as the reader picks answers, so the
+        # revision alone would miss it; the values make the change visible.
+        return (self._rev, tuple(self.checked), len(self.options))
 
 
 @dataclass
@@ -402,6 +424,14 @@ class AskUser(Block):
     @property
     def waiting(self) -> bool:
         return not self.skipped and self.at < len(self.items)
+
+    def parts(self) -> tuple[cache.Revisioned, ...]:
+        return tuple(self.items)
+
+    def cacheable(self) -> bool:
+        # Finished or still waiting draws a fixed clock; a cancelled call that
+        # never reported an end keeps counting, so it must not be frozen.
+        return self.waiting or self.ended is not None or self.started is None
 
     def current(self) -> AskItem | None:
         return self.items[self.at] if 0 <= self.at < len(self.items) else None

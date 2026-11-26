@@ -10,6 +10,7 @@ from typing import Any
 from vx.tui import ansi, markdown
 from vx.tui import theme as _theme
 from vx.tui.blocks.base import Block, _duration, _elapsed_label, _short, expanded
+from vx.tui.cache import Revisioned
 
 _TOOL_VERBS = {
     "bash": "Ran",
@@ -341,6 +342,11 @@ class ToolGroup(Block):
     calls: list[ToolStatusBlock] = field(default_factory=list)
     details: list[Block] = field(default_factory=list)
     kind: str = "tool"
+
+    def parts(self) -> tuple[Revisioned, ...]:
+        # A group is its calls: append, remove and status changes all live on
+        # the children, so the group's own revision never moves.
+        return (*self.calls, *self.details)
 
     def rows(self, width: int) -> list[str]:
         out: list[str] = []

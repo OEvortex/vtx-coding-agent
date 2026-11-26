@@ -53,6 +53,11 @@ class RecapCard(Block):
             return f"{t.dim_style}{FRAMES[index]}{ansi.RESET} recap"
         return f"{t.tag_style}✦{ansi.RESET} {ansi.BOLD}recap{ansi.RESET}"
 
+    def cacheable(self) -> bool:
+        # The drafting box turns a spinner on the clock, so it cannot be held
+        # still by the row cache; the settled card can.
+        return not self.drafting
+
     def _facts(self) -> str:
         """``edited 2 files · +130 -20``: the totals, in a diff's two colours."""
         if not self.files:

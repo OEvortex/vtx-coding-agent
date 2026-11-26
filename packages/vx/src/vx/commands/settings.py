@@ -413,6 +413,7 @@ class SettingsCommands(CommandSupport):
         elif value == "colored-tool-badge":
             enabled = not config.ui.colored_tool_badge
             set_colored_tool_badge(enabled)
+            self.viewport.invalidate()
             self._ok(f"colored tool badge turned {'on' if enabled else 'off'}", topic="settings")
         elif value == "recap":
             enabled = not config.recap.enabled
@@ -489,6 +490,8 @@ class SettingsCommands(CommandSupport):
 
     def _select_thinking_lines(self, lines: str) -> None:
         set_thinking_lines(cast(ThinkingLinesOption, lines))
+        # Finished thoughts fold to this budget, so their cached rows are stale.
+        self.viewport.invalidate()
         label = (
             "no truncation" if lines == "none" else f"{lines} line{'s' if lines != '1' else ''}"
         )

@@ -6,7 +6,20 @@ same split is applied here, so the brand line never leaves the screen.
 
 from __future__ import annotations
 
-from vx.tui import ansi, blocks
+from dataclasses import dataclass
+
+from vx.tui import ansi, blocks, cache
+
+
+@dataclass
+class _CachedRows:
+    """One block's rendered rows, and what they were rendered from."""
+
+    block: blocks.Block
+    width: int
+    generation: int
+    signature: tuple
+    rows: list[str]
 
 
 class Viewport:
@@ -27,6 +40,9 @@ class Viewport:
         self.fold: blocks.HistoryFold | None = None
         self._width = 0
         self._rows: list[str] = []
+        #: Rendered rows per block, keyed by ``id()`` and validated by identity:
+        #: an id can be reused once its block is dropped.
+        self._cache: dict[int, _CachedRows] = {}
         self._dirty = True
         self._pinned_rows = 2
         #: ``scroll == 0`` means the tail is on screen. Scrolling up sets this
@@ -63,6 +79,7 @@ class Viewport:
         for index, existing in enumerate(self.blocks):
             if existing is block:
                 del self.blocks[index]
+                self._cache.pop(id(block), None)
                 self._dirty = True
                 return True
         return False
@@ -70,6 +87,7 @@ class Viewport:
     def clear(self) -> None:
         self.blocks.clear()
         self._rows = []
+        self._cache.clear()
         self.scroll = 0
         self.dropped_rows = 0
         self.fold = None
@@ -89,18 +107,58 @@ class Viewport:
     def touch(self) -> None:
         self._dirty = True
 
+    def invalidate(self) -> None:
+        """Re-render every block, for a change no block's fields record.
+
+        The theme and the ctrl+o expansion are globals the blocks read while
+        drawing, so a repaint that kept their cached rows would show them in a
+        palette the user already left. The generation bump makes every entry
+        a miss; a plain ``touch()`` only rebuilds the window from the cache.
+        """
+        cache.bump_generation()
+        self._dirty = True
+
     def tail(self) -> blocks.Block | None:
         return self.blocks[-1] if self.blocks else None
 
     # -- measurement -------------------------------------------------------
 
     def _build(self, width: int) -> tuple[list[str], list[int]]:
-        """Rows, and how many rows each block (plus its gap) took."""
+        """Rows, and how many rows each block (plus its gap) took.
+
+        Rows are reused from the cache while the block's signature, the width
+        and the paint generation all still match, so a streamed token re-renders
+        one block instead of the whole transcript: the same deal a ratatui or
+        Textual widget gets from its own buffer.
+        """
         rows: list[str] = []
         heights: list[int] = []
         previous: str | None = None
+        generation = cache.generation()
+        live: set[int] = set()
+        cacheable = 0
         for block in self.blocks:
-            block_rows = block.rows(width)
+            key = id(block)
+            live.add(key)
+            cached = block.cacheable()
+            cacheable += 1 if cached else 0
+            signature = block.signature()
+            entry = self._cache.get(key)
+            if (
+                cached
+                and entry is not None
+                and entry.block is block
+                and entry.width == width
+                and entry.generation == generation
+                and entry.signature == signature
+            ):
+                block_rows = entry.rows
+            else:
+                block_rows = block.rows(width)
+                if cached:
+                    self._cache[key] = _CachedRows(block, width, generation, signature, block_rows)
+                else:
+                    self._cache.pop(key, None)
             if not block_rows:
                 heights.append(0)
                 continue
@@ -110,6 +168,10 @@ class Viewport:
                 rows.append("")
             rows.extend(block_rows)
             previous = block.kind
+        if len(self._cache) != cacheable:
+            # Blocks that left (a prune, a replaced recap) take their rows with
+            # them; the sweep is rare enough to be free when it is a no-op.
+            self._cache = {key: entry for key, entry in self._cache.items() if key in live}
         return rows, heights
 
     def _rebuild(self, width: int) -> None:
@@ -160,6 +222,8 @@ class Viewport:
             cut += 1
         if cut == start:
             return 0
+        for block in self.blocks[start:cut]:
+            self._cache.pop(id(block), None)
         del self.blocks[start:cut]
         self.dropped_rows += removed_rows
         if self.fold is None:
