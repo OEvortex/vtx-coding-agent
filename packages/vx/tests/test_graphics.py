@@ -15,7 +15,14 @@ import tty
 
 import pytest
 from vx.tui import graphics
-from vx.tui.graphics import blocks, palette, png, protocols
+from vx.tui.graphics import blocks, braille, gif, palette, png, protocols, quadrants
+
+
+def tiny_gif() -> bytes:
+    """Three 4x4 frames: 100/200/300 ms, loop twice, index 0 transparent."""
+    return base64.b64decode(
+        "R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwECAAAh+QQJCgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQIFAAAACwAAAAABAAEAIEA/wAAAAAAAAAAAAAICQABCBxIsCCAgAAh+QQIHgAAACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7"
+    )
 
 
 def canvas(width: int = 8, height: int = 8) -> png.RGBA:
@@ -76,6 +83,29 @@ def test_crop_and_scale():
     sw, sh, small = png.scale((width, height, data), 4, 4)
     assert (sw, sh) == (4, 4)
     assert len(small) == 4 * 4 * 4
+
+
+# -- gif ---------------------------------------------------------------------
+
+
+def test_gif_decode_keeps_frames_delays_and_loop():
+    animation = gif.decode(tiny_gif())
+    assert (animation.width, animation.height) == (4, 4)
+    assert animation.loop == 2
+    assert animation.delays == (100, 200, 300)
+    assert len(animation.frames) == 3
+
+
+def test_gif_decode_honours_transparency_and_palette():
+    frames = gif.decode(tiny_gif()).frames
+    assert frames[0][0][2][3] == 0  # transparent index on the first frame
+    assert frames[1][0][2][:4] == bytes((0, 255, 0, 255))
+    assert frames[2][0][2][:4] == bytes((0, 0, 255, 255))
+
+
+def test_gif_rejects_other_formats():
+    with pytest.raises(gif.GIFError):
+        gif.decode(b"not a gif")
 
 
 # -- palette -----------------------------------------------------------------
@@ -204,6 +234,84 @@ def test_blocks_box_preserves_aspect():
 def test_empty_image_has_no_rows():
     blank = (4, 4, bytes(4 * 4 * 4))
     assert blocks.rows(blank, 4, 4) == []
+
+
+# -- quadrants ---------------------------------------------------------------
+
+
+def test_quadrant_box_doubles_horizontal_resolution():
+    assert quadrants.box(192, 208, 24, 40) == (48, 26)
+    assert quadrants.fit(192, 208, 24, 40) == (24, 13)
+    # A short box wins: six pixel rows leave only twelve subpixel columns.
+    assert quadrants.box(192, 208, 200, 3) == (12, 6)
+
+
+def test_quadrant_full_cell_is_one_solid_glyph():
+    red = bytes((255, 0, 0, 255))
+    assert quadrants.rows((2, 2, red * 4), 2, 2) == ["\x1b[38;2;255;0;0m█\x1b[0m"]
+
+
+def test_quadrant_transparent_subpixels_use_the_theme_background():
+    data = bytearray(2 * 2 * 4)
+    data[0:4] = bytes((255, 0, 0, 255))
+    row = quadrants.rows((2, 2, bytes(data)), 2, 2)[0]
+    # ▘ paints only the top-left quadrant; the other three must not be painted
+    # with the sprite's red, or the sprite edge grows coloured specks.
+    assert "▘" in row
+    assert "\x1b[49m" in row
+
+
+def test_quadrant_seams_blend_into_the_majority_colour():
+    # Three white quadrants and one dark pixel: the cell background should be
+    # white so the font's hairline gaps do not draw a dark grid across the hair.
+    white, dark = bytes((255, 255, 255, 255)), bytes((0, 0, 0, 255))
+    row = quadrants.rows((2, 2, white * 3 + dark), 2, 2)[0]
+    assert "▗" in row
+    assert "\x1b[48;2;255;255;255m" in row
+
+
+def test_quadrant_256_mode_uses_the_palette():
+    red = bytes((255, 0, 0, 255))
+    assert "\x1b[38;5;" in quadrants.rows((2, 2, red * 4), 2, 2, mode=blocks.MODE_256)[0]
+
+
+def test_quadrant_empty_image_has_no_rows():
+    assert quadrants.rows((4, 4, bytes(4 * 4 * 4)), 4, 4) == []
+
+
+def test_render_dispatches_to_quadrants():
+    red = bytes((255, 0, 0, 255))
+    pixels = (2, 2, red * 4)
+    assert graphics.render(pixels, 1, 1, backend="quadrants") == quadrants.render(pixels, 1, 1)
+
+
+# -- braille -----------------------------------------------------------------
+
+
+def test_braille_box_uses_two_by_four_subpixels():
+    assert braille.box(192, 208, 24, 40) == (48, 52)
+    assert braille.fit(192, 208, 24, 40) == (24, 13)
+
+
+def test_braille_uniform_cell_uses_a_solid_block():
+    red = bytes((255, 0, 0, 255))
+    assert braille.rows((2, 4, red * 8), 2, 4) == ["\x1b[38;2;255;0;0m█\x1b[0m"]
+
+
+def test_braille_single_dot_keeps_the_theme_background():
+    data = bytearray(2 * 4 * 4)
+    data[0:4] = bytes((255, 0, 0, 255))
+    row = braille.rows((2, 4, bytes(data)), 2, 4)[0]
+    assert "⠁" in row  # U+2801, dot 1 only
+    assert "\x1b[49m" in row
+
+
+def test_braille_render_dispatch_and_selection():
+    red = bytes((255, 0, 0, 255))
+    pixels = (2, 4, red * 8)
+    assert graphics.render(pixels, 1, 1, backend="braille") == braille.render(pixels, 1, 1)
+    assert graphics.Caps().cycle_backends == ("blocks", "quadrants", "braille")
+    assert graphics.detect(env={"VTX_GFX": "braille"}).best() == "braille"
 
 
 # -- sixel -------------------------------------------------------------------
@@ -348,10 +456,21 @@ def test_detect_from_environment():
     caps = graphics.detect(env={"TERM": "xterm-256color", "TERM_PROGRAM": "WezTerm"})
     assert caps.best() == "kitty"
     caps = graphics.detect(env={"TERM": "xterm-256color"})
-    assert caps.backends == ("blocks",) and caps.best() == "blocks"
+    assert caps.backends == ("blocks", "quadrants", "braille") and caps.best() == "blocks"
     # VS Code needs a setting we cannot read, so it must not be guessed.
     caps = graphics.detect(env={"TERM": "xterm-256color", "TERM_PROGRAM": "vscode"})
     assert caps.best() == "blocks"
+
+
+def test_cycle_backends_only_toggles_cell_backends():
+    caps = graphics.detect(env={"TERM": "xterm-256color"})
+    assert caps.best() == "blocks"
+    assert caps.cycle_backends == ("blocks", "quadrants", "braille")
+
+
+def test_detect_honours_sixel_term_hint():
+    caps = graphics.detect(env={"TERM": "xterm-sixel", "TERM_PROGRAM": "vscode"})
+    assert caps.sixel and caps.best() == "sixel" and caps.source == "env"
 
 
 def test_detect_honours_tmux_and_override():
@@ -361,6 +480,8 @@ def test_detect_honours_tmux_and_override():
     assert not caps.sixel and not caps.kitty
     caps = graphics.detect(env={"TERM": "xterm-256color", "VTX_GFX": "sixel"})
     assert caps.best() == "sixel" and caps.source == "forced"
+    caps = graphics.detect(env={"TERM": "xterm-256color", "VTX_GFX": "quadrants"})
+    assert caps.best() == "quadrants" and caps.source == "forced"
 
 
 def test_detect_parses_a_probe_reply():

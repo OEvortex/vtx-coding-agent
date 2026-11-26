@@ -346,16 +346,22 @@ def dominant(
     return w, h, bytes(out)
 
 
-def scale(src: RGBA, w: int, h: int) -> RGBA:
+def scale(src: RGBA, w: int, h: int, *, gamma: float = 1.0) -> RGBA:
     """Box-filtered downscale (nearest for upscale) — good enough for cells.
 
     Terminal cells are 1-2px wide targets, so averaging a whole source block
     is both faster and cleaner than sampling a single pixel: pixel art keeps
-    its edges instead of dropping rows.
+    its edges instead of dropping rows. ``gamma > 1`` averages in linear light
+    instead of sRGB, which keeps highlights from being dragged down by the
+    surrounding dark pixels in photographic frames.
     """
     sw, sh, pixels = src
     if w == sw and h == sh:
         return src
+    linear = (
+        [min(255, round((i / 255) ** gamma * 255)) for i in range(256)] if gamma != 1.0 else []
+    )
+    srgb = [round((i / 255) ** (1 / gamma) * 255) for i in range(256)] if gamma != 1.0 else []
     out = bytearray(w * h * 4)
     for dy in range(h):
         sy0 = dy * sh // h
@@ -369,15 +375,20 @@ def scale(src: RGBA, w: int, h: int) -> RGBA:
                 for sx in range(sx0, sx1):
                     o = base + (sx - sx0) * 4
                     pa = pixels[o + 3]
-                    r += pixels[o] * pa
-                    g += pixels[o + 1] * pa
-                    b += pixels[o + 2] * pa
+                    r += (linear[pixels[o]] if linear else pixels[o]) * pa
+                    g += (linear[pixels[o + 1]] if linear else pixels[o + 1]) * pa
+                    b += (linear[pixels[o + 2]] if linear else pixels[o + 2]) * pa
                     a += pa
                     n += 1
             o = (dy * w + dx) * 4
             if a:
-                out[o] = min(255, r // a)
-                out[o + 1] = min(255, g // a)
-                out[o + 2] = min(255, b // a)
+                if srgb:
+                    out[o] = srgb[min(255, r // a)]
+                    out[o + 1] = srgb[min(255, g // a)]
+                    out[o + 2] = srgb[min(255, b // a)]
+                else:
+                    out[o] = min(255, r // a)
+                    out[o + 1] = min(255, g // a)
+                    out[o + 2] = min(255, b // a)
             out[o + 3] = a // n if n else 0
     return w, h, bytes(out)

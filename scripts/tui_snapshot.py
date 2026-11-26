@@ -55,6 +55,30 @@ BRIGHT = (
 )
 _WHICH = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@\\]^_`{|}~"
 
+#: Quadrant block glyphs (U+2596-U+259F) as TL/TR/BL/BR bit masks, used by the
+#: quadrant graphics backend. Without these branches they would be drawn as
+#: text with the default font and show up as tofu boxes in the snapshot.
+_QUAD_MASKS = {
+    "▀": 0b1100,
+    "▄": 0b0011,
+    "▌": 0b1010,
+    "▐": 0b0101,
+    "▘": 0b1000,
+    "▝": 0b0100,
+    "▖": 0b0010,
+    "▗": 0b0001,
+    "▚": 0b1001,
+    "▞": 0b0110,
+    "▛": 0b1110,
+    "▜": 0b1101,
+    "▙": 0b1011,
+    "▟": 0b0111,
+    "█": 0b1111,
+}
+
+#: Braille dot bits, by (row, column) inside a cell (U+2800 base).
+_BRAILLE_DOTS = ((0x01, 0x08), (0x02, 0x10), (0x04, 0x20), (0x40, 0x80))
+
 
 def xterm256(index: int) -> tuple[int, int, int]:
     if index < 16:
@@ -230,8 +254,34 @@ def raster(screen: Screen, cell_w: int, cell_h: int) -> Image.Image:
                 draw.rectangle(
                     [ox, oy + cell_h // 2, ox + cell_w - 1, oy + cell_h - 1], fill=cell.fg
                 )
-            elif cell.ch == "█":
-                draw.rectangle([ox, oy, ox + cell_w - 1, oy + cell_h - 1], fill=cell.fg)
+            elif cell.ch in _QUAD_MASKS:
+                mask = _QUAD_MASKS[cell.ch]
+                hw, hh = cell_w // 2, cell_h // 2
+                for bit, bx, by, bw, bh in (
+                    (8, 0, 0, hw, hh),
+                    (4, hw, 0, cell_w - hw, hh),
+                    (2, 0, hh, hw, cell_h - hh),
+                    (1, hw, hh, cell_w - hw, cell_h - hh),
+                ):
+                    if mask & bit:
+                        draw.rectangle(
+                            [ox + bx, oy + by, ox + bx + bw - 1, oy + by + bh - 1], fill=cell.fg
+                        )
+            elif 0x2800 <= ord(cell.ch) <= 0x28FF:
+                mask = ord(cell.ch) - 0x2800
+                bw, bh = cell_w // 2, cell_h // 4
+                for row, dots in enumerate(_BRAILLE_DOTS):
+                    for col, bit in enumerate(dots):
+                        if mask & bit:
+                            draw.rectangle(
+                                [
+                                    ox + col * bw + 1,
+                                    oy + row * bh + 1,
+                                    ox + (col + 1) * bw - 1,
+                                    oy + (row + 1) * bh - 1,
+                                ],
+                                fill=cell.fg,
+                            )
             elif cell.ch != " ":
                 draw.text((ox, oy), cell.ch, fill=cell.fg)
     return out

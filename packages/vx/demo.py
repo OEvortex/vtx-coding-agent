@@ -4,23 +4,31 @@ Run it from this directory:
 
     cd packages/vx && uv run python demo.py
 
-It needs a chiikawa-dots-pets spritesheet. Point ``VTX_PET_SHEET`` at the PNG
-(or install the pet into ``~/.codex/pets/hachiware/``) and it animates with the
-frame timings recorded in the released GIFs.
+Point ``VTX_PET_SHEET`` at a chiikawa-dots-pets spritesheet PNG (or install it
+into ``~/.codex/pets/hachiware/``) and it animates with the frame timings
+recorded in the released GIFs. A real ``.gif`` works too: its frames are decoded
+once and played at the delays stored inside the file.
 
 Three things are being exercised here:
 
 * ``vx.tui.graphics.blocks`` — half blocks, one cell = two pixels. Works in
   VS Code, GNOME Terminal, tmux, everywhere. This is what you will see unless
   your terminal speaks sixel or the kitty graphics protocol.
+* ``vx.tui.graphics.quadrants`` — four pixels per cell, twice the horizontal
+  resolution for fonts that draw the quadrant block glyphs cleanly.
+* ``vx.tui.graphics.braille`` — eight dots (2x4) per cell, the sharpest
+  text-only path; needs a font with braille glyphs (FreeMono is a safe fallback).
 * ``vx.tui.graphics.protocols`` — the same pet drawn as real pixels, chosen by
-  the capability probe. Press ``g`` to cycle backends by hand.
+  the capability probe (DA1 sixel, ``CSI ?u`` kitty, env for iTerm2). Press
+  ``g`` to cycle backends by hand. In VS Code, turn on
+  ``terminal.integrated.enableImages`` so DA1 advertises sixel, then this is
+  picked automatically; ``TERM=xterm-sixel`` is a fallback hint.
 * ``vx.pet`` — sprite-sheet playback, so a "block" is just a block that owns a
   ``Pet`` and asks it for rows.
 
 Keys: ``←``/``→`` run left/right · ``space`` next motion · ``1``-``9``/``0`` jump
-to a motion · ``g`` cycle backend · ``p`` pause · ``+``/``-`` resize · ``w``
-wander · ``q`` quit.
+to a motion · ``g`` cycle backend · ``t`` colour · ``s`` GIF crossfade · ``p``
+pause · ``+``/``-`` resize · ``w`` wander · ``q`` quit.
 """
 
 from __future__ import annotations
@@ -30,13 +38,16 @@ import os
 import sys
 import time
 
-from vx.pet import ORDER, Pet, Spritesheet, find_sheet
+from vx.pet import ORDER, GifPet, Pet, Player, Spritesheet, find_sheet
 from vx.tui import ansi, graphics, keys, theme
 from vx.tui.canvas import Painter
-from vx.tui.graphics import blocks
+from vx.tui.graphics import blocks, gif
 from vx.tui.terminal import Terminal
 
 FPS = 30
+#: Cells per second while running. Time-based so the pet does not speed up or
+#: stagger when a frame takes longer than the 30 fps budget.
+WALK_SPEED = 21.0
 #: Motion sequence the pet follows on its own when it is not being steered.
 SCRIPT = (
     "idle",
@@ -63,7 +74,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--gfx",
         default=os.environ.get("VTX_GFX", "auto"),
-        choices=("auto", "blocks", "sixel", "kitty", "iterm"),
+        choices=("auto", "blocks", "quadrants", "braille", "sixel", "kitty", "iterm"),
         help="force a graphics backend",
     )
     return parser.parse_args(argv)
@@ -72,7 +83,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 class Scene:
     """Places the pet in the frame and paints either cells or real pixels."""
 
-    def __init__(self, term: Terminal, pet: Pet, caps: graphics.Caps, size: int | None) -> None:
+    def __init__(self, term: Terminal, pet: Player, caps: graphics.Caps, size: int | None) -> None:
         self.term = term
         self.pet = pet
         self.caps = caps
@@ -89,30 +100,49 @@ class Scene:
         self.manual = False
         self.paused = False
         self.wander = True
+        self._last_move: float | None = None
 
     # -- story -------------------------------------------------------------
 
-    def update(self, now: float, cols: int) -> None:
+    def update(self, now: float, rows: int, cols: int) -> None:
         """Advance the sprite and, unless the user is steering, the motion."""
         if self.paused:
             return
         self.pet.advance(now)
+        room = max(0, cols - self.geometry(rows, cols)[0])
         if self.manual:
             if now < self.hold_until:
+                # A steered run must keep travelling; only the automatic
+                # motion picker takes a break while the key is held.
+                if self.pet.motion.name in RUN:
+                    self.slide(room, now)
                 return
             self.manual = False
         if self.wander:
-            self.scripted(now, max(0, cols - self.width(cols)))
+            self.scripted(now, room)
+
+    def slide(self, room: int, now: float) -> None:
+        """Move one frame's worth of cells, bouncing at the edges."""
+        dt = 0.0 if self._last_move is None else min(0.1, max(0.0, now - self._last_move))
+        self._last_move = now
+        self.x += WALK_SPEED * dt * self.direction
+        if room <= 0:
+            # No horizontal room: run in place instead of flipping direction
+            # (and restarting the animation) on every single frame.
+            self.x = 0.0
+            return
+        # Only bounce when this step actually crosses an edge. A run that
+        # starts at x=0 heading right must not flip on its very first frame.
+        if (self.direction > 0 and self.x >= room) or (self.direction < 0 and self.x <= 0):
+            self.x = min(max(self.x, 0.0), room)
+            self.direction *= -1
+            self.pet.play("running-left" if self.direction < 0 else "running-right")
 
     def scripted(self, now: float, room: int) -> None:
         """Pick motions on a timer; running hooks slide the pet across."""
         name = self.pet.motion.name
         if name in RUN:
-            self.x += 0.7 * self.direction
-            if self.x <= 0 or self.x >= room:
-                self.x = min(max(self.x, 0.0), room)
-                self.direction *= -1
-                self.pet.play("running-left" if self.direction < 0 else "running-right")
+            self.slide(room, now)
             return
         if now < self._next_motion:
             return
@@ -121,11 +151,18 @@ class Scene:
         if name in RUN:
             self.direction = 1 if name == "running-right" else -1
             self.x = 0.0 if self.direction > 0 else room
+            self._last_move = now
         self.pet.play(name)
         self._next_motion = now + 3.0
 
     def steer(self, name: str) -> None:
         self.pet.play(name)
+        if name in RUN:
+            rows, cols = self.term.size()
+            room = max(0, cols - self.geometry(rows, cols)[0])
+            self.direction = 1 if name == "running-right" else -1
+            self.x = 0.0 if self.direction > 0 else float(room)
+            self._last_move = None
         self.manual = True
         self.hold_until = time.monotonic() + 4.0
 
@@ -161,9 +198,10 @@ class Scene:
         )
         out = [ansi.clip(title, cols), ""]
         # Pixel backends draw over blank cells, so only the boxes matter here.
+        cell_backend = self.backend in ("blocks", "quadrants", "braille")
         art = (
-            self.pet.rows(art_w, art_h, mode=self.mode)
-            if self.backend == "blocks"
+            self.pet.rows(art_w, art_h, mode=self.mode, backend=self.backend)
+            if cell_backend
             else [""] * art_h
         )
         shape = art + [""] * (art_h - len(art))
@@ -174,7 +212,7 @@ class Scene:
         out.extend(self.help_rows(cols))
         out.extend("" for _ in range(max(0, rows - len(out))))
         payload = ""
-        if self.backend != "blocks":
+        if not cell_backend:
             payload = self.payload(art_w, art_h, top, left)
         return out[:rows], payload
 
@@ -194,8 +232,8 @@ class Scene:
     def help_rows(self, cols: int) -> list[str]:
         dim = theme.current().dim_style
         hint = (
-            "←/→ run · space next · 1-9,0 pick · g backend · t colour · p pause · "
-            "+/- size · w wander · q quit"
+            "←/→ run · space next · 1-9,0 pick · g backend (blocks/quadrants/braille) · "
+            "t colour · s smooth · p pause · +/- size · w wander · q quit"
         )
         return ansi.wrap(f"{dim}{hint}{ansi.RESET}", cols)
 
@@ -213,6 +251,8 @@ class Scene:
             self.size = max(6, self.width(self.term.size()[1]) - 2)
         elif event in ("w",):
             self.wander = not self.wander
+        elif event in ("s",) and isinstance(self.pet, GifPet):
+            self.pet.smooth = not self.pet.smooth
         elif event in ("g",):
             self.cycle_backend()
         elif event in ("t",):
@@ -220,17 +260,16 @@ class Scene:
         elif event in ("left", "right"):
             self.steer("running-left" if event == "left" else "running-right")
         elif event in ("space", "n"):
-            self.steer(ORDER[(ORDER.index(self.pet.motion.name) + 1) % len(ORDER)])
+            if self.pet.motion.name in ORDER:
+                self.steer(ORDER[(ORDER.index(self.pet.motion.name) + 1) % len(ORDER)])
         elif event.isdigit():
             index = (int(event) - 1) % 10
-            if index < len(ORDER):
+            if self.pet.motion.name in ORDER and index < len(ORDER):
                 self.steer(ORDER[index])
         return True
 
     def cycle_backend(self) -> None:
-        options = list(self.caps.backends)
-        if "blocks" not in options:
-            options.append("blocks")
+        options = list(self.caps.cycle_backends)
         position = options.index(self.backend) if self.backend in options else 0
         self.backend = options[(position + 1) % len(options)]
         self.term.write(graphics.protocols.kitty_delete(1))
@@ -249,8 +288,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     theme.apply_theme()
-    sheet = Spritesheet(sheet_path)
-    pet = Pet(sheet)
+    if sheet_path.suffix.lower() == ".gif":
+        animation = gif.load(sheet_path)
+        pet = GifPet(animation, f"{sheet_path.stem} · {len(animation.frames)} frames")
+    else:
+        pet = Pet(Spritesheet(sheet_path))
     decoder = keys.KeyDecoder()
     painter = Painter()
 
@@ -268,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
         while running:
             rows, cols = term.size()
             now = time.monotonic()
-            scene.update(now, cols)
+            scene.update(now, rows, cols)
             for event in decoder.feed(term.read_available()):
                 running = scene.key(event)
                 if not running:

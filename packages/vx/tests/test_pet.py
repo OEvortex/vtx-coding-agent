@@ -6,8 +6,9 @@ import time
 
 import pytest
 from vx import pet as petmod
-from vx.pet import MOTIONS, ORDER, Pet, Spritesheet, find_sheet
+from vx.pet import MOTIONS, ORDER, GifPet, Pet, Spritesheet, find_sheet
 from vx.tui.graphics import png
+from vx.tui.graphics.gif import Gif
 
 
 def sheet_png(cols: int = 8, rows: int = 11) -> bytes:
@@ -141,6 +142,24 @@ def test_rows_are_clipped_to_the_requested_box(tmp_path, small_sheet):
     assert len(rows) <= 4
     for row in rows:
         assert petmod.blocks.ansi.width(row) == 5
+
+
+def test_gif_pet_plays_recorded_delays_and_caches_rows():
+    animation = Gif(
+        2,
+        2,
+        (((2, 2, bytes((255, 0, 0, 255)) * 4), 100), ((2, 2, bytes((0, 0, 255, 255)) * 4), 200)),
+        0,
+    )
+    player = GifPet(animation, smooth=False)
+    assert not player.advance(player.started + 0.05)
+    assert player.advance(player.started + 0.1)
+    assert player.index == 1
+    assert player.advance(player.started + 0.3)
+    assert player.index == 0
+    first = player.rows(4, 4)
+    assert player.rows(4, 4) is first
+    assert first == petmod.blocks.render(player.pixels(), 4, 4)
 
 
 def test_advance_uses_the_clock_when_none(tmp_path, small_sheet):
