@@ -11,8 +11,7 @@ Three ways to run something:
   watchers; ``daemon=True`` marks one that is meant to outlive the turn.
 
 And four actions on the jobs and terminals those produced, in agy's vocabulary:
-``status``, ``list``, ``send_input``, ``kill``. ``job="j1"`` and ``kill=True``
-still work as the old spellings of ``status`` and ``kill``.
+``status``, ``list``, ``send_input``, ``kill``.
 
 Everything a job has to say before it is asked — finished, stalled on a prompt,
 or still running — arrives as a ``<job-notification>`` block at the head of the
@@ -28,8 +27,9 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Any
 
 from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
@@ -56,8 +56,6 @@ _EXIT_POLL_SECONDS = 0.02
 _IS_WINDOWS: bool = sys.platform == "win32"
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]")
 
-#: The actions the tool answers to besides running a command.
-ACTIONS = ("", "status", "list", "send_input", "kill")
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
@@ -165,6 +163,10 @@ def _truncate_tail(text: str) -> TruncationResult:
     return TruncationResult("\n".join(output_lines), True, len(output_lines), total_lines)
 
 
+def _elided(dropped: int, body: str) -> str:
+    return f"<truncated {dropped} lines>\n{body}"
+
+
 def _agy_body(text: str) -> tuple[str, bool]:
     """The output block as agy writes it: the elision marker, then the tail.
 
@@ -175,7 +177,7 @@ def _agy_body(text: str) -> tuple[str, bool]:
     if not trunc.truncated:
         return trunc.content, False
     dropped = trunc.total_lines - trunc.lines_kept
-    return f"<truncated {dropped} lines>\n{trunc.content}", True
+    return _elided(dropped, trunc.content), True
 
 
 def _exit_block(exit_code: int | None, output: str) -> str:
@@ -224,6 +226,25 @@ async def _kill_process_tree(proc: asyncio.subprocess.Process, group: int | None
         pass
     with contextlib.suppress(Exception):
         await _wait_exit(proc, timeout=2.0)
+
+
+async def _cancel_all(tasks: Iterable[asyncio.Task]) -> None:
+    for task in tasks:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+async def _drain_comm(comm_task: asyncio.Task) -> None:
+    """Give a finished command's pipes a moment, then cancel whatever is left."""
+    if comm_task.done():
+        return
+    with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+        await asyncio.wait_for(asyncio.shield(comm_task), _SUBPROCESS_DRAIN_TIMEOUT_SECONDS)
+    if not comm_task.done():
+        comm_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await comm_task
 
 
 def _write_full_output_to_temp(output: str) -> str:
@@ -281,11 +302,6 @@ class BashParams(BaseModel):
         default="", description="Task or terminal id a status/kill/send_input acts on."
     )
     input: str = Field(default="", description="Text to deliver to a task or terminal.")
-    job: str = Field(default="", description="Legacy spelling of task_id (implies status).")
-    wait: int = Field(
-        default=0, description="Legacy spelling of wait_ms in seconds, for status polls."
-    )
-    kill: bool = Field(default=False, description="Legacy spelling of action='kill'.")
     sandbox: bool = Field(
         default=False,
         description=(
@@ -311,17 +327,11 @@ class BashParams(BaseModel):
     )
 
     def resolved_action(self) -> str:
-        """The action after the legacy spellings are folded in."""
-        if self.kill:
-            return "kill"
-        if self.action:
-            return self.action.strip().lower()
-        if self.job and not self.command:
-            return "status"
-        return ""
+        """The action, normalized; empty means run ``command``."""
+        return self.action.strip().lower()
 
     def target(self) -> str:
-        return (self.task_id or self.job).strip()
+        return self.task_id.strip()
 
 
 class BashTool(BaseTool):
@@ -389,11 +399,11 @@ class BashTool(BaseTool):
         if action == "list":
             return self._list()
         if action not in ("status", "kill", "send_input"):
-            msg = f"Unknown action “{action}”; use status, list, send_input or kill"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-        if not params.target() and action != "list":
-            msg = f"The {action} action needs a task_id"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            return self._fail(f"Unknown action “{action}”; use status, list, send_input or kill")
+        if action == "send_input" and not params.input:
+            return self._fail("send_input needs input")
+        if not params.target():
+            return self._fail(f"The {action} action needs a task_id")
         from vx.jobs import REGISTRY
         from vx.terminals import TERMINALS
 
@@ -414,11 +424,7 @@ class BashTool(BaseTool):
         for job in REGISTRY.all():
             blocks.append(self._job_status_block(job, tail=0))
         for terminal in TERMINALS.all():
-            blocks.append(
-                f"Terminal: {terminal.id}\n"
-                f"Status: {terminal.status_word()}\n"
-                f"Running for: {terminal.elapsed():.0f}s"
-            )
+            blocks.append(self._terminal_status_block(terminal))
         if not blocks:
             msg = "No running tasks."
             return ToolResult(success=True, result=self._with_notices(msg), ui_summary="no tasks")
@@ -434,8 +440,9 @@ class BashTool(BaseTool):
         from vx.terminals import TERMINALS
 
         known = ", ".join([job.id for job in REGISTRY.all()] + [t.id for t in TERMINALS.all()])
-        msg = f'No task “{target}”; known: {known or "none"}. Use bash(action="list").'
-        return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+        return self._fail(
+            f'No task “{target}”; known: {known or "none"}. Use bash(action="list").'
+        )
 
     async def _job_action(self, action: str, job, params: BashParams) -> ToolResult:
         from vx.jobs import REGISTRY
@@ -453,12 +460,8 @@ class BashTool(BaseTool):
                 success=True, result=self._with_notices(body), ui_summary=f"[yellow]{msg}[/yellow]"
             )
         if action == "send_input":
-            if not params.input:
-                msg = "send_input needs input"
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
             if not job.send_input(params.input):
-                msg = f"Task “{job.id}” is not running, so it cannot take input"
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+                return self._fail(f"Task “{job.id}” is not running, so it cannot take input")
             msg = f'Input sent to task "{job.id}".'
             return ToolResult(
                 success=True, result=self._with_notices(msg), ui_summary=f"{job.id} · input sent"
@@ -470,8 +473,6 @@ class BashTool(BaseTool):
 
         if params.wait_ms:
             await REGISTRY.wait_for(job, params.wait_ms / 1000.0)
-        elif params.wait:
-            await REGISTRY.wait_for(job, float(params.wait))
         lines = job.take_unread()
         dropped = 0
         if len(lines) > JOB_READ_LINES:
@@ -479,7 +480,7 @@ class BashTool(BaseTool):
             lines = lines[-JOB_READ_LINES:]
         body = "\n".join(lines)
         if dropped:
-            body = f"<truncated {dropped} lines>\n{body}"
+            body = _elided(dropped, body)
         if not body:
             body = "(no new output)"
         result = self._job_status_block(job, tail=0, body=body)
@@ -513,13 +514,9 @@ class BashTool(BaseTool):
                 success=True, result=self._with_notices(msg), ui_summary=f"[yellow]{msg}[/yellow]"
             )
         if action == "send_input":
-            if not params.input:
-                msg = "send_input needs input"
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
             text = params.input if params.input.endswith("\n") else params.input + "\n"
             if not terminal.write(text):
-                msg = f'Terminal "{terminal.id}" is closed'
-                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+                return self._fail(f'Terminal "{terminal.id}" is closed')
             msg = f'Input sent to terminal "{terminal.id}".'
             return ToolResult(
                 success=True,
@@ -528,17 +525,24 @@ class BashTool(BaseTool):
             )
         out = await terminal.read_new(wait_ms=params.wait_ms)
         body = out.text or "(no new output)"
-        result = (
-            f"Terminal: {terminal.id}\n"
-            f"Status: {terminal.status_word()}\n"
-            f"Running for: {terminal.elapsed():.0f}s\n"
-            f"Log output:\n{body}"
-        )
+        result = self._terminal_status_block(terminal, body=body)
         return ToolResult(
             success=True,
             result=self._with_notices(result),
             ui_summary=f"{terminal.id} · {terminal.status_word().lower()}",
         )
+
+    @staticmethod
+    def _terminal_status_block(terminal, *, body: str | None = None) -> str:
+        """The terminal's status block: identity, state, and output when given."""
+        out = (
+            f"Terminal: {terminal.id}\n"
+            f"Status: {terminal.status_word()}\n"
+            f"Running for: {terminal.elapsed():.0f}s"
+        )
+        if body:
+            out += f"\nLog output:\n{body}"
+        return out
 
     # -- agentap ------------------------------------------------------------
 
@@ -546,12 +550,10 @@ class BashTool(BaseTool):
         from vx.terminals import TERMINALS
 
         if _IS_WINDOWS:
-            msg = "terminal reuse needs a pty; not available on Windows"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            return self._fail("terminal reuse needs a pty; not available on Windows")
         terminal = await TERMINALS.get_or_create(params.terminal)
         if terminal is None:
-            msg = "No shell to open a terminal with"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            return self._fail("No shell to open a terminal with")
         out = await terminal.run(params.command, wait_ms=params.wait_ms, timeout=params.timeout)
         body, cut = _agy_body(out.text)
         if cut:
@@ -577,12 +579,15 @@ class BashTool(BaseTool):
             ui_summary=summary if out.exit_code == 0 else f"[red]{summary}[/red]",
         )
 
-    async def _start_task(self, params: BashParams) -> ToolResult:
+    async def _start_job(self, params: BashParams) -> tuple[Any, bool] | ToolResult:
+        """Validate, sandbox-decide and start the registry job.
+
+        Returns ``(job, sandbox_requested)`` or the refusal ``ToolResult``.
+        """
         from vx.jobs import REGISTRY
 
         if not params.command.strip():
-            msg = "Command cannot be empty"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            return self._fail("Command cannot be empty")
         sandbox_requested, refusal = self._sandbox_decision(params)
         if refusal is not None:
             return refusal
@@ -595,8 +600,14 @@ class BashTool(BaseTool):
             timeout_notify=params.timeout_notify or None,
         )
         if job is None:
-            msg = "No shell to run the command in"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            return self._fail("No shell to run the command in")
+        return job, sandbox_requested
+
+    async def _start_task(self, params: BashParams) -> ToolResult:
+        started = await self._start_job(params)
+        if isinstance(started, ToolResult):
+            return started
+        job, sandbox_requested = started
         kind = "Daemon" if params.daemon else "Task"
         result = (
             f"Started {job.id}: {params.command}\n"
@@ -619,22 +630,10 @@ class BashTool(BaseTool):
         """agy's WaitMsBeforeAsync: wait, then hand back the task that is still going."""
         from vx.jobs import REGISTRY
 
-        if not params.command.strip():
-            msg = "Command cannot be empty"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
-        sandbox_requested, refusal = self._sandbox_decision(params)
-        if refusal is not None:
-            return refusal
-        job = await REGISTRY.start(
-            params.command,
-            sandbox=sandbox_requested,
-            network=params.sandbox_network,
-            wait_ms=params.wait_ms,
-            timeout_notify=params.timeout_notify or None,
-        )
-        if job is None:
-            msg = "No shell to run the command in"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+        started = await self._start_job(params)
+        if isinstance(started, ToolResult):
+            return started
+        job, _sandboxed = started
         deadline = time.monotonic() + params.wait_ms / 1000.0
         while time.monotonic() < deadline:
             if cancel_event is not None and cancel_event.is_set():
@@ -685,7 +684,7 @@ class BashTool(BaseTool):
         if support.available:
             return True, None
         msg = f"The sandboxed run is not available here: {support.reason}"
-        return False, ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+        return False, self._fail(msg)
 
     async def _run_foreground(
         self,
@@ -696,8 +695,7 @@ class BashTool(BaseTool):
         on_output: Callable[[str], None] | None,
     ) -> ToolResult:
         if not params.command.strip():
-            msg = "Command cannot be empty"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            return self._fail("Command cannot be empty")
 
         command = params.command
         cwd = Path.cwd()
@@ -717,8 +715,7 @@ class BashTool(BaseTool):
             if sandbox_requested:
                 shell = _get_shell()
                 if shell is None:
-                    msg = "No shell to run the command in"
-                    return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+                    return self._fail("No shell to run the command in")
                 argv = sandbox_mod.build_argv(
                     command, cwd, shell=shell, network=params.sandbox_network
                 )
@@ -818,37 +815,20 @@ class BashTool(BaseTool):
                     )
 
                     if not done:
-                        for task in pending:
-                            task.cancel()
-                            with contextlib.suppress(asyncio.CancelledError):
-                                await task
+                        await _cancel_all(pending)
                         await _kill_process_tree(proc, group)
-                        return ToolResult(
-                            success=False,
-                            ui_summary=f"[red]Command timed out after {params.timeout}s[/red]",
-                        )
+                        return self._timeout(params)
 
                     if cancel_wait in done and cancel_event.is_set():
                         await _kill_process_tree(proc, group)
-                        if not comm_task.done():
-                            with contextlib.suppress(asyncio.CancelledError, TimeoutError):
-                                await asyncio.wait_for(
-                                    asyncio.shield(comm_task), _SUBPROCESS_DRAIN_TIMEOUT_SECONDS
-                                )
-                            if not comm_task.done():
-                                comm_task.cancel()
-                                with contextlib.suppress(asyncio.CancelledError):
-                                    await comm_task
+                        await _drain_comm(comm_task)
                         return ToolResult(
                             success=False,
                             result="Command aborted",
                             ui_summary="[yellow]Command aborted by user[/yellow]",
                         )
 
-                    for task in pending:
-                        task.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await task
+                    await _cancel_all(pending)
 
                     stdout_bytes, stderr_bytes = comm_task.result()
                 else:
@@ -858,19 +838,8 @@ class BashTool(BaseTool):
 
             except TimeoutError:
                 await _kill_process_tree(proc, group)
-                if comm_task is not None and not comm_task.done():
-                    with contextlib.suppress(asyncio.CancelledError, TimeoutError):
-                        await asyncio.wait_for(
-                            asyncio.shield(comm_task), _SUBPROCESS_DRAIN_TIMEOUT_SECONDS
-                        )
-                    if not comm_task.done():
-                        comm_task.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await comm_task
-                return ToolResult(
-                    success=False,
-                    ui_summary=f"[red]Command timed out after {params.timeout}s[/red]",
-                )
+                await _drain_comm(comm_task)
+                return self._timeout(params)
 
             stdout_raw = stdout_bytes.decode("utf-8", errors="replace")
             stderr_raw = stderr_bytes.decode("utf-8", errors="replace")
@@ -921,14 +890,23 @@ class BashTool(BaseTool):
             )
 
         except Exception as e:
-            msg = f"Error running command: {e}"
-            return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+            return self._fail(f"Error running command: {e}")
         finally:
             if proc is not None:
                 with contextlib.suppress(Exception):
                     await _kill_process_tree(proc, group)
 
     # -- results ------------------------------------------------------------
+
+    @staticmethod
+    def _fail(msg: str) -> ToolResult:
+        return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
+
+    @staticmethod
+    def _timeout(params: BashParams) -> ToolResult:
+        return ToolResult(
+            success=False, ui_summary=f"[red]Command timed out after {params.timeout}s[/red]"
+        )
 
     @staticmethod
     def _summary_for(exit_code: int | None, body: str) -> str:

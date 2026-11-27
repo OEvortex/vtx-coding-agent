@@ -116,11 +116,11 @@ class TestActions:
         assert "needs input" in (result.result or "")
 
     @pytest.mark.asyncio
-    async def test_legacy_job_and_kill_spellings_still_work(self):
+    async def test_status_and_kill_actions(self):
         await BashTool().execute(BashParams(command="sleep 5", background=True))
-        status = await BashTool().execute(BashParams(job="j1"))
+        status = await BashTool().execute(BashParams(action="status", task_id="j1"))
         assert "Task: j1" in (status.result or "")
-        killed = await BashTool().execute(BashParams(job="j1", kill=True))
+        killed = await BashTool().execute(BashParams(action="kill", task_id="j1"))
         assert "cancelled" in (killed.result or "")
 
     @pytest.mark.asyncio
