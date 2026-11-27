@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 
 from vx.tui import theme as _theme
 
@@ -343,6 +344,33 @@ def hard_wrap(text: str, limit: int) -> list[str]:
         cur_w += cw
     rows.append("".join(cur))
     return rows
+
+
+# -- memoized variants ---------------------------------------------------------
+#
+# Streaming re-renders the same finished lines on every token: a paragraph that
+# closed two deltas ago wraps identically again. The caches key on the styled
+# text itself, so a theme change produces different keys rather than stale rows.
+
+
+@lru_cache(maxsize=16384)
+def _wrap_cached(text: str, limit: int) -> tuple[str, ...]:
+    return tuple(wrap(text, limit))
+
+
+@lru_cache(maxsize=16384)
+def _hard_wrap_cached(text: str, limit: int) -> tuple[str, ...]:
+    return tuple(hard_wrap(text, limit))
+
+
+def wrap_cached(text: str, limit: int) -> tuple[str, ...]:
+    """``wrap`` memoized; callers treat the result as read-only."""
+    return _wrap_cached(text, limit)
+
+
+def hard_wrap_cached(text: str, limit: int) -> tuple[str, ...]:
+    """``hard_wrap`` memoized; callers treat the result as read-only."""
+    return _hard_wrap_cached(text, limit)
 
 
 # -- ctx rich markup ---------------------------------------------------------

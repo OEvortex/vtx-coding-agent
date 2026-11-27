@@ -18,7 +18,7 @@ class _CachedRows:
     block: blocks.Block
     width: int
     generation: int
-    signature: tuple
+    signature: tuple | int
     rows: list[str]
 
 
@@ -137,12 +137,19 @@ class Viewport:
         generation = cache.generation()
         live: set[int] = set()
         cacheable = 0
+        block_type = blocks.Block
         for block in self.blocks:
             key = id(block)
             live.add(key)
             cached = block.cacheable()
             cacheable += 1 if cached else 0
-            signature = block.signature()
+            cls = type(block)
+            if cls.parts is block_type.parts and cls.signature is block_type.signature:
+                # A leaf block's rows depend only on its revision; the int
+                # stands in for the ``(rev,)`` tuple ``signature()`` builds.
+                signature = block._rev
+            else:
+                signature = block.signature()
             entry = self._cache.get(key)
             if (
                 cached

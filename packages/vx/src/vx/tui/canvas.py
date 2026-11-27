@@ -13,7 +13,9 @@ Two things matter beyond correctness, and they are what a GPU-rendered terminal
   terminals is a composite.
 * **A frame is one atomic repaint.** The rows are wrapped in synchronized output
   (DEC 2026) so the terminal shows the finished frame instead of the half-written
-  one, and the caret is only ever placed where it already is not.
+  one. The caret is placed in the same frame as the rows it belongs to: a
+  repaint that left it alone would hand the cursor to whichever row was written
+  last.
 
 Autowrap is turned off for the session by :class:`vx.tui.terminal.Terminal`, so a
 row padded to the full width ends in a plain last cell rather than the terminal's
@@ -21,6 +23,8 @@ pending-wrap state.
 """
 
 from __future__ import annotations
+
+from functools import lru_cache
 
 from vx.tui import ansi
 
@@ -31,6 +35,22 @@ _SYNC_OFF = "\x1b[?2026l"
 
 _HIDE_CURSOR = "\x1b[?25l"
 _SHOW_CURSOR = "\x1b[?25h"
+
+
+@lru_cache(maxsize=16384)
+def _fit(row: str, cols: int) -> str:
+    """One full-width painted row; memoized because frames repeat rows.
+
+    A quiet frame still walks every row, and ``clip``+``pad`` each measure the
+    text -- twice for styled rows. The frame's rows are the same strings frame
+    after frame, so the measurement is paid once per distinct row, not per
+    frame. The cache is keyed on the row itself, so a theme change (which
+    rewrites the escapes inside the row) misses rather than serving stale
+    styling.
+    """
+    if not row:
+        return " " * cols
+    return ansi.pad(ansi.clip(row, cols), cols)
 
 
 class Painter:
@@ -62,12 +82,21 @@ class Painter:
             # Always emit exactly one full-width row. A separate 2K first would
             # briefly blank the line, and a screenshot (or a busy terminal)
             # catches that gap as a solid bar through the picture.
-            clipped = ansi.pad(ansi.clip(row, cols), cols) if row else " " * cols
+            clipped = _fit(row, cols)
             padded.append(clipped)
             previous = self._last[index] if index < len(self._last) else None
             if full or previous != clipped:
                 body.append(f"\x1b[{index + 1};1H")
                 body.append(clipped)
+
+        if cursor is not None:
+            # A row is written padded to the full width, so every row write
+            # leaves the cursor on that row's last cell. The caret has to be
+            # placed again whenever anything was repainted -- not only when it
+            # moved -- or it is dragged along with the rows and ends up sitting
+            # on the last cell of the last dirty row, which is a solid block
+            # over the footer's last character.
+            cursor = (min(cursor[0], height - 1), min(cursor[1], max(0, cols - 1)))
 
         tail: list[str] = []
         if cursor is None:
@@ -78,7 +107,7 @@ class Painter:
             if self._hidden:
                 tail.append(_SHOW_CURSOR)
                 self._hidden = False
-            if full or self._cursor != cursor:
+            if body or self._cursor != cursor:
                 tail.append(f"\x1b[{cursor[0] + 1};{cursor[1] + 1}H")
 
         self._last = padded

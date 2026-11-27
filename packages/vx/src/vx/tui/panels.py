@@ -66,7 +66,16 @@ class TerminalPanel:
         return max(20, min(cols - 2, 88))
 
     def body(self) -> list[str]:
-        return [_strip(line) for line in self.job.tail(2000)]
+        # ``rows`` asks for the body, then ``first_line`` asks again; the strip
+        # is the expensive half, so it is paid once per batch of output. ``total``
+        # moves on every appended line, which makes it a safe freshness key.
+        total = getattr(self.job, "total", -1)
+        cached = self.__dict__.get("_body_cache")
+        if cached is not None and cached[0] == total:
+            return cached[1]
+        lines = [_strip(line) for line in self.job.tail(2000)]
+        self._body_cache = (total, lines)
+        return lines
 
     def first_line(self, body_h: int) -> int:
         """Where the visible window starts: the tail while following."""

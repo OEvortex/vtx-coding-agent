@@ -554,7 +554,7 @@ class QuestionView:
         t = _theme.current()
         rows: list[str] = []
         question = self.question.strip() or "Question"
-        for line in ansi.wrap(question, max(1, cols - 2)):
+        for line in ansi.wrap_cached(question, max(1, cols - 2)):
             rows.append(f"  {ansi.BOLD}{line}{ansi.DIM_OFF}")
         rows.append("")
         for index, option in enumerate(self.options):

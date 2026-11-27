@@ -6,6 +6,7 @@ import sys
 import time
 from contextlib import suppress
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from vx.brand import ITALIC_BRAND
 from vx.tui import ansi, cache, markdown
@@ -70,7 +71,10 @@ class Block(cache.Revisioned):
 
     def signature(self) -> tuple:
         """This block's own revision, and its children's, for the row cache."""
-        return (self._rev, tuple(part.signature() for part in self.parts()))
+        parts = self.parts()
+        if not parts:
+            return (self._rev,)
+        return (self._rev, tuple(part.signature() for part in parts))
 
 
 @dataclass
@@ -132,6 +136,18 @@ class Assistant(Block):
         return _gutter(rendered, width)
 
 
+@lru_cache(maxsize=8192)
+def _strip_thought(line: str) -> str:
+    """ctx's collapsed-thinking flattening, memoized per finished line."""
+    with suppress(Exception):
+        # ctx flattens the markup in folded thinking, so vx shows the
+        # same words it does instead of raw ``**emphasis**``.
+        from ctx.term.formatting import strip_markdown_for_collapsed_text
+
+        return strip_markdown_for_collapsed_text(line)
+    return line
+
+
 def thinking_line_budget() -> int | None:
     """How many rows a finished thought keeps, from ctx's ``ui.thinking_lines``.
 
@@ -173,13 +189,7 @@ class Thinking(Block):
             line = line.strip()
             if not line:
                 continue
-            with suppress(Exception):
-                # ctx flattens the markup in folded thinking, so vx shows the
-                # same words it does instead of raw ``**emphasis**``.
-                from ctx.term.formatting import strip_markdown_for_collapsed_text
-
-                line = strip_markdown_for_collapsed_text(line)
-            out.extend(ansi.wrap(line, body_width))
+            out.extend(ansi.wrap_cached(_strip_thought(line), body_width))
         return out
 
     def rows(self, width: int) -> list[str]:

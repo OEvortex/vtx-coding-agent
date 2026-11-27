@@ -28,6 +28,23 @@ class TestPainter:
         assert "\x1b[1;6H" in moved
         assert moved.count("\x1b[") == 3  # sync on, move, sync off
 
+    def test_repaint_re_places_an_unmoved_caret(self):
+        # Rows are written padded to the full width, so the last row write
+        # leaves the cursor on its final cell. A frame that repainted a row has
+        # to put the caret back even when it did not move, or the block viewer
+        # cursor is dragged onto the footer's last character.
+        p = Painter()
+        p.paint(["a", "b"], 10, cursor=(0, 2))
+        out = p.paint(["a", "B"], 10, cursor=(0, 2))
+        assert "\x1b[2;1H" in out
+        assert out.index("\x1b[1;3H") > out.index("\x1b[2;1H")
+
+    def test_caret_is_clamped_inside_the_frame(self):
+        p = Painter()
+        out = p.paint(["a", "b"], 10, cursor=(5, 40))
+        assert "\x1b[2;10H" in out
+        assert "\x1b[6;41H" not in out
+
     def test_changed_row_rewritten(self):
         p = Painter()
         p.paint(["a", "b"], 10)

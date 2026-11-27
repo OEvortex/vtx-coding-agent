@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import signal
+import threading
 import time
 from collections import deque
 from contextlib import suppress
@@ -3339,21 +3340,41 @@ def _skill_source(path: str, cwd: str) -> str:
     return f"{scope} skills/"
 
 
-#: (cwd, second) -> branch label. Status runs on every frame otherwise, and a
-#: large tree makes that visible as lag; a two-second window is plenty fresh.
-_BRANCH_CACHE: dict[tuple[str, int], str | None] = {}
+#: cwd -> (label, monotonic fetch time). The last good label survives a
+#: refresh: ``git status`` takes tens of ms, and blanking the hint row for that
+#: long every couple of seconds is a visible flicker in the bottom bar.
+_BRANCH_STATE: dict[str, tuple[str | None, float]] = {}
+_BRANCH_PENDING: set[str] = set()
+_BRANCH_TTL = 2.0
 
 
 def _git_branch(cwd: str) -> str | None:
     """The branch name, with ``*`` when the working tree has uncommitted work."""
-    bucket = (os.path.abspath(cwd), int(time.monotonic() // 2))
-    if bucket in _BRANCH_CACHE:
-        return _BRANCH_CACHE[bucket]
-    label = _read_git_branch(cwd)
-    if len(_BRANCH_CACHE) > 64:
-        _BRANCH_CACHE.clear()
-    _BRANCH_CACHE[bucket] = label
-    return label
+    key = os.path.abspath(cwd)
+    state = _BRANCH_STATE.get(key)
+    now = time.monotonic()
+    if state is not None and now - state[1] < _BRANCH_TTL:
+        return state[0]
+    if key not in _BRANCH_PENDING:
+        _BRANCH_PENDING.add(key)
+        threading.Thread(target=_fetch_branch, args=(key,), daemon=True).start()
+    return state[0] if state is not None else None
+
+
+def _fetch_branch(cwd: str) -> None:
+    try:
+        label = _read_git_branch(cwd)
+    finally:
+        _BRANCH_PENDING.discard(cwd)
+    prior = _BRANCH_STATE.get(cwd)
+    # A failed read keeps the last good label rather than blinking the hint row;
+    # the timestamp still refreshes so the next try comes a TTL later.
+    if label is not None or prior is None:
+        _BRANCH_STATE[cwd] = (label, time.monotonic())
+    else:
+        _BRANCH_STATE[cwd] = (prior[0], time.monotonic())
+    if len(_BRANCH_STATE) > 64:
+        _BRANCH_STATE.clear()
 
 
 def _read_git_branch(cwd: str) -> str | None:

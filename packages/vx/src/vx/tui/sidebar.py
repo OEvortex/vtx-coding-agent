@@ -148,7 +148,7 @@ class Sidebar:
             # what the run is doing now. The count is already in the header.
             active = next((todo for todo in self.todos if todo.status == "active"), None)
             if active is not None and height >= 3:
-                first = ansi.wrap(active.text, max(4, width - 4))[0]
+                first = ansi.wrap_cached(active.text, max(4, width - 4))[0]
                 out.append(
                     ansi.clip(
                         f" {t.tag_style}▸{ansi.RESET} {t.hint_style}{first}{ansi.RESET}", width
@@ -163,7 +163,7 @@ class Sidebar:
         def chunk_for(todo: Todo) -> list[str]:
             glyph, style = marks.get(todo.status, ("○", t.dim_style))
             label_style = t.hint_style if todo.status == "active" else t.dim_style
-            lines = ansi.wrap(todo.text, max(4, width - 4))
+            lines = ansi.wrap_cached(todo.text, max(4, width - 4))
             rows: list[str] = []
             for index, line in enumerate(lines):
                 if index:

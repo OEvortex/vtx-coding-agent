@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import re
 from contextlib import suppress
+from functools import lru_cache
 from typing import Any
 
-from vx.tui import ansi
+from vx.tui import ansi, cache
 from vx.tui import theme as _theme
 
 _FENCE_RE = re.compile(r"^(?P<indent>[ ]{0,3})(?P<marker>`{3,}|~{3,})(?P<info>.*)$")
@@ -83,6 +84,22 @@ def _link_label(text: str, start: int) -> int | None:
 
 
 def _inline(text: str) -> str:
+    """Inline markdown to ANSI, memoized per paint generation.
+
+    A streamed token re-renders the whole reply, but every finished paragraph,
+    heading and table cell produces the same styled text again -- the cache
+    turns those repeats into dict lookups. The generation is part of the key
+    because the output embeds the active theme's escapes.
+    """
+    return _inline_cached(text, cache.generation())
+
+
+@lru_cache(maxsize=16384)
+def _inline_cached(text: str, generation: int) -> str:
+    return _inline_impl(text)
+
+
+def _inline_impl(text: str) -> str:
     """Inline markdown to ANSI (code, links/images, emphasis, autolinks)."""
     t = _theme.current()
     out: list[str] = []
@@ -222,7 +239,7 @@ def _checkbox(indent: int, mark: str, body: str, done: bool, cols: int) -> list[
     tail = ansi.RESET if done else ""
     marker = f"{t.dim_style}{mark}{ansi.RESET} "
     prefix_w = indent + ansi.width(mark) + 1
-    rows = ansi.wrap(body, max(1, cols - prefix_w))
+    rows = ansi.wrap_cached(body, max(1, cols - prefix_w))
     out: list[str] = []
     for index, row in enumerate(rows):
         if index == 0:
@@ -238,7 +255,7 @@ def _bullet(indent: int, body: str, cols: int) -> list[str]:
     marker_text = f"{task} " if task else "• "
     marker = f"{ansi.dim()}{marker_text}{ansi.RESET}"
     prefix_w = indent + ansi.width(marker_text)
-    rows = ansi.wrap(body, max(1, cols - prefix_w))
+    rows = ansi.wrap_cached(body, max(1, cols - prefix_w))
     out = []
     for i, r in enumerate(rows):
         if i == 0:
@@ -255,7 +272,7 @@ def _ordered(indent: int, number: str, body: str, cols: int) -> list[str]:
     pad = " " * (field - len(marker_text))
     marker = f"{pad}{ansi.dim()}{marker_text}{ansi.RESET}"
     prefix_w = indent + field + 1
-    rows = ansi.wrap(body, max(1, cols - prefix_w))
+    rows = ansi.wrap_cached(body, max(1, cols - prefix_w))
     out = []
     for i, r in enumerate(rows):
         if i == 0:
@@ -436,7 +453,7 @@ def render(text: str, cols: int) -> list[str]:
                 if rows and rows[-1] != "":
                     rows.append("")
                 continue
-            rows.extend(ansi.wrap(_inline(chunk), cols) or [""])
+            rows.extend(ansi.wrap_cached(_inline(chunk), cols) or [""])
 
     def flush_table() -> None:
         nonlocal table_rows
@@ -483,7 +500,7 @@ def render(text: str, cols: int) -> list[str]:
             if is_table_sep and not table_rows:
                 # Orphan separator without a header row; render as plain text.
                 flush_paragraph()
-                rows.extend(ansi.wrap(_inline(stripped), cols) or [""])
+                rows.extend(ansi.wrap_cached(_inline(stripped), cols) or [""])
                 continue
             flush_paragraph()
             table_rows.append(line)
@@ -517,7 +534,7 @@ def render(text: str, cols: int) -> list[str]:
                 styled = f"{ansi.BOLD}{ansi.UNDERLINE}{body}{ansi.UNDERLINE_OFF}{ansi.DIM_OFF}"
             else:
                 styled = f"{ansi.BOLD}{body}{ansi.DIM_OFF}"
-            rows.extend(ansi.wrap(styled, cols))
+            rows.extend(ansi.wrap_cached(styled, cols))
             continue
 
         if _RULE_RE.match(line) or _HR_HTML_RE.match(line.strip()):
@@ -607,7 +624,7 @@ def code_panel(body: list[str], language: str, cols: int) -> list[str]:
         return []
     rows: list[str] = [_panel_header(language, panel)]
     for line in code or [""]:
-        for chunk in ansi.hard_wrap(line.expandtabs(4), max(1, cols - 2)) if line else [""]:
+        for chunk in ansi.hard_wrap_cached(line.expandtabs(4), max(1, cols - 2)) if line else [""]:
             rows.append(_highlight(chunk, _theme.current()))
     rows.append(f"{ansi.dim()}{'─' * panel}{ansi.RESET}")
     return rows
@@ -699,6 +716,15 @@ def highlight_line(line: str, t: Any | None = None) -> str:
 
 def _highlight(line: str, t) -> str:
     """A quiet fx-style highlight: comments dim, strings and numbers lighter."""
+    return _highlight_cached(line, t)
+
+
+@lru_cache(maxsize=16384)
+def _highlight_cached(line: str, t) -> str:
+    return _highlight_impl(line, t)
+
+
+def _highlight_impl(line: str, t) -> str:
     stripped = line.lstrip()
     indent = line[: len(line) - len(stripped)]
     if stripped.startswith(_COMMENT_PREFIXES):
