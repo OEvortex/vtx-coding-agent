@@ -1,7 +1,7 @@
-"""Background commands: a job is a name to poll and a terminal to open.
+"""Background commands: a name to poll and a terminal to open.
 
 The model starts one with ``bash(background=True)``, reads it by name with
-``bash(job="j1")`` and stops it with ``bash(job="j1", kill=True)``. One ``Job``
+``bash(action="status")`` and stops it with ``bash(action="kill")``. One ``Job``
 object feeds every view -- the panel's terminal list, the drawer's output and
 the model's poll -- so there is no second copy of a job's state to disagree
 with.
@@ -9,21 +9,38 @@ with.
 A job is not a transcript row: a dev server runs for hours, and rows that age
 the moment they land are history, not work in progress. The panel says it is
 running; the drawer shows what it is saying.
+
+Alongside the buffer every job also writes a log file, because a status reply is
+a window onto a job and the model eventually needs the whole thing -- the same
+reason agy keeps ``.system_generated/tasks/task-N.log`` per task.
 """
 
 from __future__ import annotations
 
 import asyncio
+import codecs
 import contextlib
+import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+from vx import sandbox as sandbox_mod
+from vx.notifications import (
+    FINISHED,
+    INPUT_REQUIRED,
+    NOTICES,
+    STILL_RUNNING,
+    JobNotice,
+    looks_like_a_prompt,
+)
 from vx.tools.bash import (
     _IS_WINDOWS,
     _STREAM_LIMIT_BYTES,
     _get_env,
+    _get_shell,
     _get_spawn_argv,
     _kill_process_tree,
     _sanitize_output,
@@ -34,6 +51,8 @@ from vx.tools.bash import (
 MAX_LINES = 2000
 #: How often a poll looks for new output before it gives up waiting.
 _POLL_SECONDS = 0.05
+#: Where a job's full output lands. One file per job, appended as it speaks.
+LOG_DIR = Path(tempfile.gettempdir()) / "vx-jobs"
 
 
 def _shell_code(code: int | None) -> int | None:
@@ -64,6 +83,17 @@ class Job:
     #: The tail of whichever stream is mid-line, per stream, so a partial write
     #: is completed rather than printed twice.
     partial: dict[str, str] = field(default_factory=dict)
+    #: Where the full output goes, and the handle writing it.
+    log_path: Path | None = None
+    _log: Any = None
+    #: How this job was started, so a status reply can say what it ran under.
+    sandboxed: bool = False
+    daemon: bool = False
+    wait_ms: int = 0
+    #: Set once the job has been reported as waiting for input.
+    asked_for_input: str | None = None
+    #: The raw tail of everything the streams said, for the prompt heuristic.
+    _recent: str = ""
 
     # -- what every view asks ------------------------------------------------
 
@@ -85,6 +115,19 @@ class Job:
             return f"exited 0 · {seconds}"
         return f"exit {self.exit_code} · {seconds}"
 
+    def status_word(self) -> str:
+        """The status a tool reply prints, in agy's vocabulary."""
+        return {
+            "running": "RUNNING",
+            "done": "COMPLETED",
+            "failed": "FAILED",
+            "stopped": "STOPPED",
+        }.get(self.status, self.status.upper())
+
+    def head(self, count: int) -> list[str]:
+        """The first lines ever written, for the head/tail elision."""
+        return list(self.lines)[:count]
+
     def tail(self, count: int) -> list[str]:
         if count <= 0:
             return []
@@ -102,10 +145,18 @@ class Job:
 
     # -- writing ------------------------------------------------------------
 
+    def _log_write(self, text: str) -> None:
+        if self._log is None or not text:
+            return
+        with contextlib.suppress(Exception):
+            self._log.write(text)
+            self._log.flush()
+
     def write(self, stream: str, text: str) -> None:
         """Append what a stream said, completing any line it left half-written."""
         if not text:
             return
+        self._log_write(text)
         buf = self.partial.get(stream, "") + text
         parts = buf.split("\n")
         partial = parts.pop()
@@ -113,6 +164,33 @@ class Job:
             self.lines.append(line.rstrip("\r"))
             self.total += 1
         self.partial[stream] = partial
+        self._recent = (self._recent + text)[-400:]
+        self._note_input_request()
+
+    def _note_input_request(self) -> None:
+        """One notice, ever, when the job's output turns into a question.
+
+        Scanned over the raw tail rather than over complete lines: a prompt asks
+        its question and then waits, so the line carrying it is precisely the
+        one that never gets its newline.
+        """
+        if self.status != "running" or self.asked_for_input is not None:
+            return
+        hint = looks_like_a_prompt(self._recent)
+        if hint is None:
+            return
+        self.asked_for_input = hint
+        NOTICES.post(
+            JobNotice(
+                kind=INPUT_REQUIRED,
+                job_id=self.id,
+                text=(
+                    f"Task {self.id} is waiting for input: {hint}\n"
+                    f'Answer it with bash(action="send_input", task_id="{self.id}", '
+                    f'input="..."), or stop it with action="kill".'
+                ),
+            )
+        )
 
     def flush(self) -> None:
         """Keep a last line that never got its newline."""
@@ -125,6 +203,37 @@ class Job:
     def note(self, text: str) -> None:
         self.lines.append(text)
         self.total += 1
+        self._log_write(text + "\n")
+
+    def open_log(self, path: Path) -> None:
+        self.log_path = path
+        with contextlib.suppress(Exception):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._log = path.open("w", encoding="utf-8", errors="replace")
+
+    def close_log(self) -> None:
+        if self._log is not None:
+            with contextlib.suppress(Exception):
+                self._log.close()
+            self._log = None
+
+    # -- input --------------------------------------------------------------
+
+    def can_take_input(self) -> bool:
+        return self.status == "running" and getattr(self.proc, "stdin", None) is not None
+
+    def send_input(self, text: str) -> bool:
+        """Write raw keystrokes to a running command's stdin. True if written."""
+        if not self.can_take_input():
+            return False
+        if not text.endswith("\n"):
+            text += "\n"
+        try:
+            self.proc.stdin.write(text.encode())
+            self.note(f"[vx] input sent: {text.rstrip()}")
+            return True
+        except Exception:
+            return False
 
 
 class JobRegistry:
@@ -156,17 +265,27 @@ class JobRegistry:
 
     # -- lifecycle -----------------------------------------------------------
 
-    async def start(self, command: str, owner: str = "") -> Job | None:
+    async def start(
+        self,
+        command: str,
+        owner: str = "",
+        *,
+        sandbox: bool = False,
+        network: bool = False,
+        daemon: bool = False,
+        wait_ms: int = 0,
+        timeout_notify: float | None = None,
+    ) -> Job | None:
         """Spawn ``command`` as a job. None when the shell could not be found."""
         job_id = self.new_id()
-        spawn_argv = _get_spawn_argv(command)
-        if spawn_argv is None:
+        argv = self._argv(command, sandbox=sandbox, network=network)
+        if argv is None:
             return None
         proc = await asyncio.create_subprocess_exec(
-            *spawn_argv,
+            *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.DEVNULL,
+            stdin=asyncio.subprocess.PIPE,
             env=_get_env(),
             start_new_session=not _IS_WINDOWS,
             limit=_STREAM_LIMIT_BYTES,
@@ -177,19 +296,37 @@ class JobRegistry:
             proc=proc,
             group=None if _IS_WINDOWS else proc.pid,
             owner=owner,
+            sandboxed=sandbox,
+            daemon=daemon,
+            wait_ms=wait_ms,
         )
+        job.open_log(LOG_DIR / f"{job_id}.log")
         self.jobs[job_id] = job
-        self._watchers[job_id] = asyncio.create_task(self._watch(job))
+        self._watchers[job_id] = asyncio.create_task(self._watch(job, timeout_notify))
         return job
 
-    async def _watch(self, job: Job) -> None:
+    @staticmethod
+    def _argv(command: str, *, sandbox: bool, network: bool) -> list[str] | None:
+        shell = _get_shell()
+        if shell is None:
+            return None
+        if sandbox:
+            return sandbox_mod.build_argv(command, Path.cwd(), shell=shell, network=network)
+        return _get_spawn_argv(command)
+
+    async def _watch(self, job: Job, timeout_notify: float | None = None) -> None:
         readers = [
             asyncio.create_task(self._read(job, "out", job.proc.stdout)),
             asyncio.create_task(self._read(job, "err", job.proc.stderr)),
         ]
+        reporter = None
+        if timeout_notify:
+            reporter = asyncio.create_task(self._report_still_running(job, timeout_notify))
         try:
             code = await job.proc.wait()
         except asyncio.CancelledError:
+            if reporter is not None:
+                reporter.cancel()
             for reader in readers:
                 reader.cancel()
             raise
@@ -201,23 +338,69 @@ class JobRegistry:
                 reader.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await reader
+        if reporter is not None:
+            reporter.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reporter
         job.flush()
         job.exit_code = _shell_code(code)
         job.ended = time.monotonic()
         if job.status != "stopped":
             job.status = "done" if code == 0 else "failed"
+            NOTICES.post(
+                JobNotice(
+                    kind=FINISHED,
+                    job_id=job.id,
+                    text=(
+                        f"Task {job.id} finished with status {job.status_word()} "
+                        f"(exit {job.exit_code}) after {job.elapsed():.0f}s: {job.command}\n"
+                        + "\n".join(job.tail(5))
+                    ).rstrip(),
+                )
+            )
+        # The footer is for the log file: a status reply is about the command's
+        # own output, not about vx narrating its bookkeeping.
+        job._log_write(f"\n[vx] {job.id} {job.status} · exit {job.exit_code}\n")
+        job.close_log()
+
+    async def _report_still_running(self, job: Job, seconds: float) -> None:
+        """agy's ``Background command is still running after %ds`` notice."""
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.sleep(seconds)
+        if job.status != "running" or job.daemon:
+            return
+        NOTICES.post(
+            JobNotice(
+                kind=STILL_RUNNING,
+                job_id=job.id,
+                text=(
+                    f"Background command is still running after {seconds:.0f}s: "
+                    f"{job.command}\n"
+                    f'Read it with bash(action="status", task_id="{job.id}"), stop it '
+                    f'with bash(action="kill", task_id="{job.id}").'
+                ),
+            )
+        )
 
     async def _read(self, job: Job, stream: str, reader: Any) -> None:
         if reader is None:
             return
+        # ``read`` rather than ``readline``: a prompt is a line that never gets
+        # its newline, and that is exactly the line the input-needed notice is
+        # about. Decoding is incremental so a split multibyte character is not
+        # turned into a replacement glyph mid-stream.
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
         while True:
             try:
-                chunk = await reader.readline()
+                chunk = await reader.read(4096)
             except (asyncio.LimitOverrunError, ValueError):
                 chunk = await reader.read(1 << 16)
             if not chunk:
+                tail = decoder.decode(b"", True)
+                if tail:
+                    job.write(stream, _sanitize_output(tail))
                 return
-            job.write(stream, _sanitize_output(chunk.decode("utf-8", errors="replace")))
+            job.write(stream, _sanitize_output(decoder.decode(chunk)))
 
     async def kill(self, job: Job) -> None:
         """Stop a job's whole process group and record how it went."""
@@ -233,6 +416,7 @@ class JobRegistry:
         if job.exit_code is None:
             job.exit_code = _shell_code(job.proc.returncode) or 143
         job.note(f"[vx] {job.id} terminated · exit {job.exit_code}")
+        job.close_log()
 
     async def _settle(self, job: Job) -> None:
         """Give the watcher a moment to record the exit it is about to see."""

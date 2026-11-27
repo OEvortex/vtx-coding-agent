@@ -474,6 +474,19 @@ class Agent:
             self.session.append_message(synthetic)
         return out
 
+    def interject(self, text: str) -> None:
+        """Queue a message the engine delivers before the next model call.
+
+        This is how a long-running side effect (a background command that
+        finished, a job that stalled on a prompt) reaches the model mid-run
+        instead of waiting for the user to say something. The message is
+        delivered between tool execution and the next model call, so it never
+        cuts an in-flight stream.
+        """
+        if not text:
+            return
+        self._pending_queue.append(UserMessage(content=text))
+
     def _drain_injection_messages(self) -> list[UserMessage]:
         """Return and clear queued follow-up messages for the engine.
 

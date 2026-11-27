@@ -18,6 +18,16 @@ class TestMouseReporting:
     def test_sgr_mouse_coordinates(self):
         assert "?1006h" in terminal._MOUSE_ON  # SGR 1006 for x;y coords
 
+    def test_autowrap_is_off_while_the_frame_owns_the_screen(self):
+        # Every painted row is padded to the terminal width, and a GPU-rendered
+        # terminal that resolves the pending-wrap state by scrolling turns a
+        # repaint into a scroll. Off on enter, back on before leaving.
+        assert terminal._NO_WRAP_OFF in terminal._ALTERNATE_SCREEN_ON
+        assert terminal._NO_WRAP_ON in terminal._ALTERNATE_SCREEN_OFF
+        assert terminal._ALTERNATE_SCREEN_OFF.index(
+            terminal._NO_WRAP_ON
+        ) < terminal._ALTERNATE_SCREEN_OFF.index("?1049l")
+
     def test_signal_cleanup_restores_terminal(self):
         called = False
 

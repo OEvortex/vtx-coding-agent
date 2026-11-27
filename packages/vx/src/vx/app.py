@@ -264,7 +264,9 @@ class VxApp(_CommandBase):
             # still holding a port after the panel is gone.
             with suppress(Exception):
                 from vx.jobs import REGISTRY
+                from vx.terminals import TERMINALS
 
+                await TERMINALS.close_all()
                 await REGISTRY.kill_all()
             self.term.exit()
         return 0
@@ -1759,6 +1761,7 @@ class VxApp(_CommandBase):
         asyncio.get_running_loop().create_task(self._run_agent(agent, prompt, images))
 
     async def _run_agent(self, agent: Any, prompt: str, images: list[Any] | None = None) -> None:
+        pump = asyncio.get_running_loop().create_task(self._pump_notices(agent))
         try:
             async for event in agent.run(
                 prompt, images=images or None, cancel_event=self._cancel_event, steer_event=None
@@ -1771,7 +1774,26 @@ class VxApp(_CommandBase):
 
             self._events.put_nowait(ErrorEvent(error=str(e)))
         finally:
+            pump.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await pump
             self._events.put_nowait(_RunDone())
+
+    async def _pump_notices(self, agent: Any) -> None:
+        """Hand a background job's news to the model while the turn runs.
+
+        The bash tool drains the same queue at the head of its own result, so a
+        notice is never lost to a race: whichever gets there first delivers it,
+        and the queue delivers each one once.
+        """
+        from vx.notifications import NOTICES, format_notice
+
+        while True:
+            for notice in NOTICES.drain():
+                with suppress(Exception):
+                    agent.interject(format_notice(notice))
+                self._notice(f"{notice.job_id}: {notice.kind.replace('_', ' ')}", topic="tasks")
+            await asyncio.sleep(0.5)
 
     def _interrupt(self) -> None:
         if self._cancel_event is not None:
@@ -2848,11 +2870,22 @@ class VxApp(_CommandBase):
 def _job_rows() -> list[sidebar.JobRow]:
     """The registry as the panel draws it: four fields, no process."""
     from vx.jobs import REGISTRY
+    from vx.terminals import TERMINALS
 
-    return [
+    rows = [
         sidebar.JobRow(id=job.id, command=job.command, status=job.status, label=job.label())
         for job in REGISTRY.all()
     ]
+    rows += [
+        sidebar.JobRow(
+            id=terminal.id,
+            command=f"terminal · {terminal.cwd}",
+            status="running" if terminal.status_word() == "RUNNING" else "stopped",
+            label=f"{terminal.elapsed():.0f}s",
+        )
+        for terminal in TERMINALS.all()
+    ]
+    return rows
 
 
 def _pad_to(row: str, width: int) -> str:

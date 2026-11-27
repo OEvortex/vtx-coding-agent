@@ -21,8 +21,15 @@ from typing import Any
 _MOUSE_ON = "\x1b[?1000h\x1b[?1006h"
 _MOUSE_OFF = "\x1b[?1006l\x1b[?1000l"
 
-_ALTERNATE_SCREEN_ON = "\x1b[?1049h\x1b[?25l\x1b[?2004h" + _MOUSE_ON
-_ALTERNATE_SCREEN_OFF = _MOUSE_OFF + "\x1b[?2004l\x1b[?25h\x1b[?1049l"
+#: Autowrap off for the session: every frame writes rows padded to the full
+#: width, and on a terminal with wrapping still on, the last cell of such a row
+#: leaves the cursor in the pending-wrap state. A GPU-rendered terminal that
+#: resolves that state by scrolling turns a repaint into a scroll.
+_NO_WRAP_OFF = "\x1b[?7l"
+_NO_WRAP_ON = "\x1b[?7h"
+
+_ALTERNATE_SCREEN_ON = "\x1b[?1049h\x1b[?25l\x1b[?2004h" + _MOUSE_ON + _NO_WRAP_OFF
+_ALTERNATE_SCREEN_OFF = _MOUSE_OFF + "\x1b[?2004l" + "\x1b[?25h" + _NO_WRAP_ON + "\x1b[?1049l"
 
 _ACTIVE_TERMINALS: set[Terminal] = set()
 _SIGNALS_HOOKED = False

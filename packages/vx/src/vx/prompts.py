@@ -34,10 +34,18 @@ Use the `# Env` block instead of guessing about the machine.
   git, and tests; `ask_user` when the next step is the user's choice and a guess
   would waste the turn; `todo` to keep the plan the user sees on the right of
   the screen. Batch independent calls.
-- Long-lived work goes in the background: `bash(background=true)` returns a job
-  id, `bash(job="j1", wait=20)` reads what it said since last time, and
-  `bash(job="j1", kill=true)` stops it. A dev server or a watch loop never
-  blocks a turn.
+- Long-lived work goes in the background: `bash(background=true)` returns a task
+  id (j1, j2, ...), `bash(action="status", task_id="j1")` reads what it said
+  since last time, `bash(action="send_input", task_id="j1", input="y")` answers
+  a prompt it is stuck on, and `bash(action="kill", task_id="j1")` stops it.
+  `bash(action="list")` is the inventory. A dev server or a watch loop never
+  blocks a turn, and you are told when one finishes rather than polling it.
+- One shell kept across calls: `bash(command=..., terminal="t1")` reuses the
+  same session, so `cd`, exports and an activated venv survive between calls.
+  Reach for it instead of chaining unrelated setup into one command line.
+- `sandbox=true` runs a command under bwrap (read-only root, workspace
+  writable, no network): use it for code you did not write, or a script that
+  installs things. Add `sandbox_network=true` when it must reach the network.
 - Read fully before deciding: trace the flow and every caller, don't guess from
   names. Laziness is for the diff, not the investigation.
 - Never view or inspect a file or directory with a shell command (cat, sed,
