@@ -33,15 +33,9 @@ class ReadParams(BaseModel):
             "File or directory path — absolute, ~/, $VAR, or relative to the working directory"
         )
     )
-    start_line: int | None = Field(
-        default=None, description="First line to read (1-based). Omit to start at line 1."
-    )
+    start_line: int | None = Field(default=None, description="First line (1-based; default 1)")
     end_line: int | None = Field(
-        default=None,
-        description=(
-            "Last line to read, inclusive. Omit to read to the end of the file "
-            "(capped at 2000 lines per call — page with start_line/end_line)."
-        ),
+        default=None, description="Last line, inclusive (default end of file; 2000 lines max)"
     )
 
 

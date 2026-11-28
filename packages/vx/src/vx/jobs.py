@@ -28,14 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from vx import sandbox as sandbox_mod
-from vx.notifications import (
-    FINISHED,
-    INPUT_REQUIRED,
-    NOTICES,
-    STILL_RUNNING,
-    JobNotice,
-    looks_like_a_prompt,
-)
+from vx.notifications import FINISHED, INPUT_REQUIRED, NOTICES, JobNotice, looks_like_a_prompt
 from vx.tools.bash import (
     _IS_WINDOWS,
     _STREAM_LIMIT_BYTES,
@@ -88,7 +81,6 @@ class Job:
     _log: Any = None
     #: How this job was started, so a status reply can say what it ran under.
     sandboxed: bool = False
-    daemon: bool = False
     wait_ms: int = 0
     #: Set once the job has been reported as waiting for input.
     asked_for_input: str | None = None
@@ -266,19 +258,11 @@ class JobRegistry:
     # -- lifecycle -----------------------------------------------------------
 
     async def start(
-        self,
-        command: str,
-        owner: str = "",
-        *,
-        sandbox: bool = False,
-        network: bool = False,
-        daemon: bool = False,
-        wait_ms: int = 0,
-        timeout_notify: float | None = None,
+        self, command: str, owner: str = "", *, sandbox: bool = False, wait_ms: int = 0
     ) -> Job | None:
         """Spawn ``command`` as a job. None when the shell could not be found."""
         job_id = self.new_id()
-        argv = self._argv(command, sandbox=sandbox, network=network)
+        argv = self._argv(command, sandbox=sandbox)
         if argv is None:
             return None
         proc = await asyncio.create_subprocess_exec(
@@ -297,36 +281,30 @@ class JobRegistry:
             group=None if _IS_WINDOWS else proc.pid,
             owner=owner,
             sandboxed=sandbox,
-            daemon=daemon,
             wait_ms=wait_ms,
         )
         job.open_log(LOG_DIR / f"{job_id}.log")
         self.jobs[job_id] = job
-        self._watchers[job_id] = asyncio.create_task(self._watch(job, timeout_notify))
+        self._watchers[job_id] = asyncio.create_task(self._watch(job))
         return job
 
     @staticmethod
-    def _argv(command: str, *, sandbox: bool, network: bool) -> list[str] | None:
+    def _argv(command: str, *, sandbox: bool) -> list[str] | None:
         shell = _get_shell()
         if shell is None:
             return None
         if sandbox:
-            return sandbox_mod.build_argv(command, Path.cwd(), shell=shell, network=network)
+            return sandbox_mod.build_argv(command, Path.cwd(), shell=shell, network=False)
         return _get_spawn_argv(command)
 
-    async def _watch(self, job: Job, timeout_notify: float | None = None) -> None:
+    async def _watch(self, job: Job) -> None:
         readers = [
             asyncio.create_task(self._read(job, "out", job.proc.stdout)),
             asyncio.create_task(self._read(job, "err", job.proc.stderr)),
         ]
-        reporter = None
-        if timeout_notify:
-            reporter = asyncio.create_task(self._report_still_running(job, timeout_notify))
         try:
             code = await job.proc.wait()
         except asyncio.CancelledError:
-            if reporter is not None:
-                reporter.cancel()
             for reader in readers:
                 reader.cancel()
             raise
@@ -338,10 +316,6 @@ class JobRegistry:
                 reader.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await reader
-        if reporter is not None:
-            reporter.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reporter
         job.flush()
         job.exit_code = _shell_code(code)
         job.ended = time.monotonic()
@@ -362,25 +336,6 @@ class JobRegistry:
         # own output, not about vx narrating its bookkeeping.
         job._log_write(f"\n[vx] {job.id} {job.status} · exit {job.exit_code}\n")
         job.close_log()
-
-    async def _report_still_running(self, job: Job, seconds: float) -> None:
-        """agy's ``Background command is still running after %ds`` notice."""
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.sleep(seconds)
-        if job.status != "running" or job.daemon:
-            return
-        NOTICES.post(
-            JobNotice(
-                kind=STILL_RUNNING,
-                job_id=job.id,
-                text=(
-                    f"Background command is still running after {seconds:.0f}s: "
-                    f"{job.command}\n"
-                    f'Read it with bash(action="status", task_id="{job.id}"), stop it '
-                    f'with bash(action="kill", task_id="{job.id}").'
-                ),
-            )
-        )
 
     async def _read(self, job: Job, stream: str, reader: Any) -> None:
         if reader is None:

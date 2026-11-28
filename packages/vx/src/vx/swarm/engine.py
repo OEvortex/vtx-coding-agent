@@ -1093,13 +1093,16 @@ def worker_tools(engine: SwarmEngine, member: str) -> list[Any]:
     """The tool surface a worker gets: coding tools plus this swarm's board."""
     from ctx.agent.tools import get_tool
 
+    from vx.tools.bash import BashTool
     from vx.tools.swarm import board_tools, worker_swarm_tool
 
     names = ("read", "search", "apply_patch", "bash", "web", "skill", "todo")
     catalog: list[Any] | None = None
     tools: list[Any] = []
     for name in names:
-        tool = get_tool(name)
+        # A worker gets its own shell: bash keeps cwd and exports between calls,
+        # and two agents sharing one shell would take turns moving each other.
+        tool = BashTool() if name == "bash" else get_tool(name)
         if tool is None:
             # Headless runs build the tool list without registering it globally;
             # fall back to vx's own catalog so a worker always has its hands.

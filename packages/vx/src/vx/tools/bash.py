@@ -1,14 +1,15 @@
 """Bash tool for vx — run shell commands, and manage the ones still running.
 
-Three ways to run something:
+Two ways to run something:
 
-* ``bash(command=...)`` — a fresh process tree, blocked on until it exits or
-  ``timeout`` runs out. Unchanged, and still what most calls want.
-* ``bash(command=..., wait_ms=N)`` — the same thing, but the caller stops waiting
-  after N ms and gets a task id back (agy's ``WaitMsBeforeAsync``). The command is
-  already a background job by then; the sync call was only a wait on it.
+* ``bash(command=...)`` — one persistent shell per agent, blocked on until the
+  command exits or ``timeout`` runs out. Because the shell is the same one every
+  time, ``cd``, exports and an activated venv survive between calls.
 * ``bash(command=..., background=True)`` — a job immediately, for dev servers and
-  watchers; ``daemon=True`` marks one that is meant to outlive the turn.
+  watchers that must not hold a shell.
+
+``sandbox=true`` is the exception that spawns fresh, because a sandbox wraps one
+process. ``wait_ms`` stops waiting after N ms and hands back the task id.
 
 And four actions on the jobs and terminals those produced, in agy's vocabulary:
 ``status``, ``list``, ``send_input``, ``kill``.
@@ -20,6 +21,7 @@ next tool result.
 
 import asyncio
 import contextlib
+import itertools
 import os
 import re
 import signal
@@ -36,7 +38,7 @@ from ctx.protocol.types import ToolResult
 from pydantic import BaseModel, Field
 
 from vx import sandbox as sandbox_mod
-from vx.notifications import FINISHED, NOTICES, drain_text
+from vx.notifications import drain_text
 
 DEFAULT_TIMEOUT = 180
 MAX_OUTPUT_BYTES = 50 * 1024
@@ -265,64 +267,36 @@ class BashParams(BaseModel):
     action: str = Field(
         default="",
         description=(
-            "What to do. Empty runs `command`. 'status' reads a task (its new output and "
-            "how it is doing), 'list' reports the tasks and terminals this session has, "
-            "'send_input' answers a task waiting on a prompt, 'kill' stops one."
+            "Empty runs `command`. 'status' reads a task, 'list' names them, 'send_input' "
+            "answers a waiting one, 'kill' stops it."
         ),
     )
-    command: str = Field(
-        default="", description="Command line string to execute (required unless action is set)"
-    )
+    command: str = Field(default="", description="The command line; required unless action is set")
     timeout: int = Field(
         description=f"Timeout in seconds (default {DEFAULT_TIMEOUT})", default=DEFAULT_TIMEOUT
     )
     wait_ms: int = Field(
         default=0,
         description=(
-            "Wait this long, then hand the command back as a task id instead of blocking. "
-            "0 (default) waits until it exits or `timeout`. Commands that outlive the wait "
-            "keep running as tasks and notify you when they finish."
+            "Wait this long, then hand back a task id; 0 blocks until it exits or `timeout`. "
+            "A command that outlives the wait keeps running and notifies you."
         ),
     )
     background: bool = Field(
         default=False,
         description=(
-            "Start the command as a task (j1, j2, ...) and return at once. For dev "
-            "servers, watchers and anything longer than a prompt."
-        ),
-    )
-    daemon: bool = Field(
-        default=False,
-        description=(
-            "With background: a support process meant to run indefinitely (dev server, "
-            "file watcher, tunnel). Never reports 'still running'."
+            "Start as a task (j1, j2…) and return at once: dev servers, watchers, anything slow."
         ),
     )
     task_id: str = Field(
-        default="", description="Task or terminal id a status/kill/send_input acts on."
+        default="", description="Task or terminal id status/kill/send_input act on"
     )
-    input: str = Field(default="", description="Text to deliver to a task or terminal.")
+    input: str = Field(default="", description="Text to deliver to that task or terminal.")
     sandbox: bool = Field(
         default=False,
         description=(
-            "Run under bwrap: root read-only, workspace writable, private /tmp, no "
-            "network unless sandbox_network is set. Falls back with an error if the host "
-            "cannot sandbox."
-        ),
-    )
-    sandbox_network: bool = Field(
-        default=False, description="Let a sandboxed command use the network."
-    )
-    timeout_notify: int = Field(
-        default=0,
-        description="For a task: tell me if it is still running after this many seconds.",
-    )
-    terminal: str = Field(
-        default="",
-        description=(
-            "Run in a persistent shell (t1, t2, ...) instead of a fresh process: cwd, "
-            "exports and venvs survive between calls. action='status' reads it, "
-            "action='send_input' types into it, action='kill' closes it."
+            "bwrap: root read-only, workspace writable, private /tmp, no network. Errors if "
+            "the host cannot sandbox."
         ),
     )
 
@@ -334,22 +308,26 @@ class BashParams(BaseModel):
         return self.task_id.strip()
 
 
+#: Shell names, one per bash tool: t1 is this agent's, t2 the next agent's.
+_SHELL_IDS = itertools.count(1)
+
+
 class BashTool(BaseTool):
     name = "bash"
     tool_icon = "$"
     params = BashParams
     mutating = True
+    #: The persistent shell this instance drives (``t1``), allocated on first use.
+    _terminal: str | None = None
     description = (
-        "Run a shell command in the cwd (builds, tests, git, package managers). "
+        "Run a shell command (builds, tests, git, package managers) in one persistent shell "
+        "per agent, so cd, exports and an activated venv survive between calls. "
         f"Output truncated to last {MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB "
         "(full saved to a log). Not for reading/listing (use read), searching "
         "(use search), editing (use apply_patch), or fetching URLs (use web). "
-        "Long-lived work goes in the background: background=true returns a task id, "
-        'bash(action="status", task_id="j1") reads what it has said since last time, '
-        'bash(action="send_input", task_id="j1", input="y") answers a prompt, '
-        'bash(action="kill", task_id="j1") stops it, bash(action="list") reports them. '
-        'terminal="t1" reuses one shell so cd and exports survive between calls; '
-        "sandbox=true runs under bwrap with the workspace writable and no network."
+        "Long-lived work goes in the background: background=true returns a task id, then "
+        "action=status/send_input/kill reads, answers or stops it, and action=list reports "
+        "them. The fields below carry the rest."
     )
 
     def format_call(self, params: BashParams) -> str:
@@ -360,11 +338,7 @@ class BashTool(BaseTool):
             extra = f" · {params.input}" if params.input else ""
             return f"{action} {params.target()}{extra}".strip()
         prefix = ""
-        if params.terminal:
-            prefix = f"{params.terminal} · "
-        elif params.daemon:
-            prefix = "daemon: "
-        elif params.background:
+        if params.background:
             prefix = "background: "
         elif params.sandbox:
             prefix = "sandbox: "
@@ -383,15 +357,15 @@ class BashTool(BaseTool):
         action = params.resolved_action()
         if action:
             return await self._dispatch(action, params)
-        if params.terminal:
-            return await self._run_in_terminal(params)
-        if params.background or params.daemon:
+        if params.sandbox or _sandbox_default():
+            # A sandbox is a wrapper around one process, so it cannot live in the
+            # shell: this is the only path that spawns fresh.
+            return await self._run_foreground(
+                params, cancel_event=cancel_event, inline_output=inline_output, on_output=on_output
+            )
+        if params.background:
             return await self._start_task(params)
-        if params.wait_ms > 0:
-            return await self._run_with_promotion(params, cancel_event=cancel_event)
-        return await self._run_foreground(
-            params, cancel_event=cancel_event, inline_output=inline_output, on_output=on_output
-        )
+        return await self._run_in_terminal(params, cancel_event=cancel_event, on_output=on_output)
 
     # -- actions ------------------------------------------------------------
 
@@ -546,22 +520,45 @@ class BashTool(BaseTool):
 
     # -- agentap ------------------------------------------------------------
 
-    async def _run_in_terminal(self, params: BashParams) -> ToolResult:
+    async def _run_in_terminal(
+        self,
+        params: BashParams,
+        *,
+        cancel_event: asyncio.Event | None = None,
+        on_output: Callable[[str], None] | None = None,
+    ) -> ToolResult:
+        """Run the command in this tool's own shell: the default, so state survives."""
         from vx.terminals import TERMINALS
 
         if _IS_WINDOWS:
-            return self._fail("terminal reuse needs a pty; not available on Windows")
-        terminal = await TERMINALS.get_or_create(params.terminal)
+            return await self._run_foreground(
+                params, cancel_event=cancel_event, inline_output=False, on_output=on_output
+            )
+        terminal = await TERMINALS.get_or_create(self._shell_id())
         if terminal is None:
-            return self._fail("No shell to open a terminal with")
-        out = await terminal.run(params.command, wait_ms=params.wait_ms, timeout=params.timeout)
+            return await self._run_foreground(
+                params, cancel_event=cancel_event, inline_output=False, on_output=on_output
+            )
+        out = await terminal.run(
+            params.command,
+            wait_ms=params.wait_ms,
+            timeout=params.timeout,
+            on_output=on_output,
+            cancel_event=cancel_event,
+        )
         body, cut = _agy_body(out.text)
         if cut:
             path = _write_full_output_to_temp(out.text)
             body += f"\n\nFull output: {path}"
+        if out.aborted:
+            return ToolResult(
+                success=False,
+                result=f"Command aborted{('\n' + body) if body else ''}",
+                ui_summary="[yellow]Command aborted by user[/yellow]",
+            )
         if out.state == "running":
             result = (
-                f"The command is still running in terminal {terminal.id}: {params.command}\n"
+                f"The command is still running in task {terminal.id}: {params.command}\n"
                 f"Output so far:\n{body}\n"
                 f'Read it again with bash(action="status", task_id="{terminal.id}"), '
                 f'stop it with bash(action="kill", task_id="{terminal.id}").'
@@ -571,13 +568,25 @@ class BashTool(BaseTool):
                 result=self._with_notices(result),
                 ui_summary=f"{terminal.id} · still running",
             )
-        result = f"{_exit_block(out.exit_code, body)}\nTerminal: {terminal.id}"
+        if out.timed_out:
+            return ToolResult(
+                success=False,
+                result=f"Command timed out after {params.timeout}s{('\n' + body) if body else ''}",
+                ui_summary=f"[yellow]timed out after {params.timeout}s[/yellow]",
+            )
+        result = _exit_block(out.exit_code, body)
         summary = f"{terminal.id} · exit {out.exit_code}"
         return ToolResult(
             success=out.exit_code == 0,
             result=self._with_notices(result),
             ui_summary=summary if out.exit_code == 0 else f"[red]{summary}[/red]",
         )
+
+    def _shell_id(self) -> str:
+        """This tool's shell name: one per bash tool, so agents do not share a cd."""
+        if self._terminal is None:
+            self._terminal = f"t{next(_SHELL_IDS)}"
+        return self._terminal
 
     async def _start_job(self, params: BashParams) -> tuple[Any, bool] | ToolResult:
         """Validate, sandbox-decide and start the registry job.
@@ -592,12 +601,7 @@ class BashTool(BaseTool):
         if refusal is not None:
             return refusal
         job = await REGISTRY.start(
-            params.command,
-            sandbox=sandbox_requested,
-            network=params.sandbox_network,
-            daemon=params.daemon,
-            wait_ms=params.wait_ms,
-            timeout_notify=params.timeout_notify or None,
+            params.command, sandbox=sandbox_requested, wait_ms=params.wait_ms
         )
         if job is None:
             return self._fail("No shell to run the command in")
@@ -608,7 +612,7 @@ class BashTool(BaseTool):
         if isinstance(started, ToolResult):
             return started
         job, sandbox_requested = started
-        kind = "Daemon" if params.daemon else "Task"
+        kind = "Task"
         result = (
             f"Started {job.id}: {params.command}\n"
             f"Log: {job.log_path}\n"
@@ -617,62 +621,11 @@ class BashTool(BaseTool):
             f'bash(action="kill", task_id="{job.id}").'
         )
         if sandbox_requested:
-            result += f"\n{sandbox_mod.describe(network=params.sandbox_network)}"
+            result += f"\n{sandbox_mod.describe(network=False)}"
         return ToolResult(
             success=True,
             result=self._with_notices(result),
             ui_summary=f"[green]{kind} {job.id}[/green]",
-        )
-
-    async def _run_with_promotion(
-        self, params: BashParams, *, cancel_event: asyncio.Event | None
-    ) -> ToolResult:
-        """agy's WaitMsBeforeAsync: wait, then hand back the task that is still going."""
-        from vx.jobs import REGISTRY
-
-        started = await self._start_job(params)
-        if isinstance(started, ToolResult):
-            return started
-        job, _sandboxed = started
-        deadline = time.monotonic() + params.wait_ms / 1000.0
-        while time.monotonic() < deadline:
-            if cancel_event is not None and cancel_event.is_set():
-                await REGISTRY.kill(job)
-                return ToolResult(
-                    success=False,
-                    result="Command aborted",
-                    ui_summary="[yellow]Command aborted by user[/yellow]",
-                )
-            if job.status != "running":
-                break
-            await asyncio.sleep(_EXIT_POLL_SECONDS * 5)
-        # Past the wait: the job lives on in the registry either way.
-        exit_code = None if job.status == "running" else job.exit_code
-        job.cursor = job.total
-        if exit_code is not None:
-            # This result is the notification: no duplicate `finished` block.
-            NOTICES.discard(job.id, FINISHED)
-        body, cut = _agy_body("\n".join(job.lines))
-        if cut:
-            body += f"\n\nFull output: {job.log_path}"
-        if exit_code is None:
-            result = (
-                f"Background command is still running after {params.wait_ms / 1000:.0f}s: "
-                f"{params.command}\n"
-                f"Task: {job.id}\nLog: {job.log_path}\nOutput so far:\n{body}\n"
-                f'Read it with bash(action="status", task_id="{job.id}"), stop it with '
-                f'bash(action="kill", task_id="{job.id}").'
-            )
-            return ToolResult(
-                success=True,
-                result=self._with_notices(result),
-                ui_summary=f"{job.id} · still running",
-            )
-        result = _exit_block(exit_code, body)
-        return ToolResult(
-            success=exit_code == 0,
-            result=self._with_notices(result),
-            ui_summary=self._summary_for(exit_code, body),
         )
 
     def _sandbox_decision(self, params: BashParams) -> tuple[bool, ToolResult | None]:
@@ -716,9 +669,7 @@ class BashTool(BaseTool):
                 shell = _get_shell()
                 if shell is None:
                     return self._fail("No shell to run the command in")
-                argv = sandbox_mod.build_argv(
-                    command, cwd, shell=shell, network=params.sandbox_network
-                )
+                argv = sandbox_mod.build_argv(command, cwd, shell=shell, network=False)
                 proc = await asyncio.create_subprocess_exec(
                     *argv,
                     stdout=asyncio.subprocess.PIPE,
@@ -881,7 +832,7 @@ class BashTool(BaseTool):
             if guidance:
                 result_text = f"{guidance}\n\n{result_text}"
             if sandbox_requested:
-                result_text += f"\n\n{sandbox_mod.describe(network=params.sandbox_network)}"
+                result_text += f"\n\n{sandbox_mod.describe(network=False)}"
 
             return ToolResult(
                 success=proc.returncode == 0,

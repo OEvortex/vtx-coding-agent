@@ -31,107 +31,79 @@ ChannelOp = Literal["create", "list", "subscribe", "unsubscribe", "archive"]
 
 class SwarmParams(BaseModel):
     action: Action = Field(
-        description=(
-            "add (spawn a worker), status (who is waiting/working), models (what add accepts), "
-            "model (switch a member's model), kill, title, channel (create/list/subscribe/"
-            "unsubscribe/archive a work area)"
-        )
+        description="add | status | models | model | kill | title | channel (a work area)"
     )
     name: str = Field(default="", description="Roster name for add/kill/model: short, lowercase")
     brief: str = Field(
         default="",
         description=(
-            "For add: the worker's whole assignment. It starts fresh and sees nothing of "
-            "this conversation, so say what it owns and what done looks like. Posted publicly."
+            "For add: the whole assignment — it sees nothing of this chat. Public. Say what "
+            "it owns and what done looks like."
         ),
     )
     model: str | None = Field(
         default=None, description="For add/model: the model to pin (defaults to yours)"
     )
     tasks: list[str] | None = Field(
-        default=None, description="For add: per-worker slices to spawn <name>-1..k as a group"
+        default=None, description="For add: one slice per worker, spawning <name>-1..k"
     )
     n: int | None = Field(default=None, description="For add: number of homogeneous copies")
     title: str = Field(default="", description="For title: a short name for the swarm")
     role: str = Field(
         default="worker",
-        description=(
-            "For add: worker (default), verifier (reports, does not fix), or narrator/monitor "
-            "(roles that see every channel)."
-        ),
+        description="For add: worker | verifier (reports, does not fix) | narrator/monitor",
     )
     channels: list[str] | None = Field(
         default=None,
-        description=(
-            "For add: channels this worker joins besides #main. Its brief is posted in the "
-            "first one and its posts go there by default."
-        ),
+        description="For add: extra channels besides #main; the brief posts in the first",
     )
     workspace: Literal["inherit", "share", "branch"] = Field(
         default="inherit",
         description=(
-            "For add: inherit (your working copy, default), share (its own git worktree of "
-            "your repo, for authors that edit or build at the same time), branch (an isolated "
-            "clone). kill deletes it, so land the branch first."
+            "For add: inherit (default) | share (own worktree) | branch (clone); kill deletes it"
         ),
     )
     fork: str = Field(
         default="",
-        description=(
-            'For add: roster name of a member (or "coordinator") whose conversation history the '
-            "new worker starts from instead of cold. Use it when the context is already warm."
-        ),
+        description='For add: member name or "coordinator" to start from, instead of cold',
     )
-    all: bool = Field(
-        default=False, description="For models: list every model, not just the first page"
-    )
+    all: bool = Field(default=False, description="For models: the whole catalog, not one page")
     channel: str = Field(default="", description="For channel: the channel name, e.g. parser")
     op: ChannelOp = Field(
         default="list",
         description="For channel: create | list | subscribe | unsubscribe | archive",
     )
-    topic: str = Field(default="", description="For channel create: what this area owns")
+    topic: str = Field(default="", description="For channel create: what the area owns")
 
 
 class BoardParams(BaseModel):
     """The board's three verbs. Each one reads the fields it needs and ignores the rest."""
 
     action: Literal["post", "read", "wait"] = Field(
-        description=(
-            "`post` says something (needs `text`); `read` returns numbered posts (needs "
-            "`since`); `wait` parks this turn until somebody posts (needs `since`)."
-        )
+        description="post (needs text) | read (needs since) | wait (needs since; parks the turn)"
     )
     text: str = Field(
         default="",
-        description=(
-            "For post. Name who should act on it: `@parser take the lexer tests`, `@all new "
-            "rule: ...`, `@#ui is the header done`. A post with no @ wakes nobody."
-        ),
+        description="For post. `@name` / `@#channel` / `@all` wakes them; no @ wakes nobody",
     )
     since: int = Field(
         default=0,
         description=(
-            "For read and wait: only posts after this sequence number. Pass the last one you "
-            "actually read, not the board head, so nothing posted while you worked is slept "
-            "through."
+            "For read and wait: only posts after this one. Pass the last you read, not the "
+            "head, so nothing posted while you worked is slept through."
         ),
     )
     channel: str = Field(
         default="",
         description=(
-            "For post and read. Post: empty is #main for the coordinator, the worker's own "
-            "area for a worker. Read: one channel, `*` for every channel, empty for your own "
-            "view (#main plus the channels you follow)."
+            "For post and read: one channel, `*` for all; empty is your own post area, or "
+            "your own view when reading"
         ),
     )
     limit: int = Field(default=50, description="For read: newest N posts after `since`")
     mentions_only: bool = Field(
         default=True,
-        description=(
-            "For wait: wake only for a post that names you, your channel, or @all (default). "
-            "False wakes for anything in your channels — use it when you are free and hunting."
-        ),
+        description="For wait: only @you/@your channel/@all (default); false wakes for anything",
     )
     timeout: int = Field(
         default=0, description="For wait: give up after this many seconds (0 waits until woken)"

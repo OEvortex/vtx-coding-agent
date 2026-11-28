@@ -23,32 +23,28 @@ MAX_TRANSCRIPT_LINES = 120
 
 class SubagentParams(BaseModel):
     description: str = Field(
-        min_length=1,
-        max_length=128,
-        description="Concise 3-5 word imperative label, e.g. 'Find the auth bug'",
+        min_length=1, max_length=128, description="3-5 word label, e.g. 'Find the auth bug'"
     )
     prompt: str = Field(
         min_length=1,
         description=(
-            "The whole task and the context it needs. The sub-agent cannot see this chat, "
-            "so state what to look at and what a good answer looks like."
+            "The whole task — it cannot see this chat. Say what to look at and what a good "
+            "answer looks like."
         ),
     )
     subagent_type: str = Field(
         default="",
         description=(
-            "Optional agent name from .ctx/agent/<name>.py (e.g. a read-only researcher). "
-            "Empty runs the default sub-agent with your tools minus parent-only ones."
+            "Agent from .ctx/agent/<name>.py (e.g. a read-only researcher); empty runs the "
+            "default one"
         ),
     )
-    model: str | None = Field(
-        default=None, description="Optional model override (defaults to this conversation's)"
-    )
+    model: str | None = Field(default=None, description="Model override; defaults to ours")
     background: bool = Field(
         default=False,
         description=(
-            "Run concurrently and return a task_id now; the answer arrives automatically in "
-            "a later turn. Do not poll it."
+            "Run concurrently, return a task_id now; the answer arrives in a later turn. Do not "
+            "poll."
         ),
     )
 

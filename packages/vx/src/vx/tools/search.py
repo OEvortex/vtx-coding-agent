@@ -151,29 +151,24 @@ class SearchParams(BaseModel):
     pattern: str | list[str] = Field(
         default="",
         description=(
-            "Regex to find (content mode) or filename glob (files mode). "
-            "Pass a list to search several at once. `a|b|c` also works."
+            "Regex (content mode) or filename glob (files mode). A list or `a|b` searches "
+            "several at once."
         ),
     )
 
     mode: Literal["content", "files"] = Field(
-        default="content",
-        description="`content` finds matching lines, `files` finds matching paths.",
+        default="content", description="content: matching lines; files: matching paths"
     )
-    path: str = Field(default="", description="Where to search. Defaults to the cwd.")
-    glob: str = Field(
-        default="", description="Only look at files matching this glob, e.g. `*.py`."
-    )
-    case_sensitive: bool = Field(default=False, description="Match case exactly.")
-    literal: bool = Field(
-        default=False, description="Treat the pattern as plain text, not a regex."
-    )
-    context_lines: int = Field(default=0, description="Lines of context per match (0-5).")
+    path: str = Field(default="", description="Where to search; defaults to the cwd")
+    glob: str = Field(default="", description="Only files matching this glob, e.g. `*.py`")
+    case_sensitive: bool = Field(default=False, description="Match case exactly")
+    literal: bool = Field(default=False, description="Plain text, not a regex")
+    context_lines: int = Field(default=0, description="Lines of context per match (0-5)")
     max_results: int = Field(
-        default=DEFAULT_RESULTS, description=f"Stop after this many hits (max {MAX_RESULTS})."
+        default=DEFAULT_RESULTS, description=f"Stop after this many hits (max {MAX_RESULTS})"
     )
     no_ignore: bool = Field(
-        default=False, description="Also search ignored files (node_modules, .venv, .gitignore'd)."
+        default=False, description="Also search ignored files (node_modules, .venv, gitignored)"
     )
 
     @model_validator(mode="before")

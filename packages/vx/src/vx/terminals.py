@@ -10,8 +10,8 @@ A :class:`Terminal` is one shell attached to a PTY, kept for the session, driven
 by a sentinel: the command is written, followed by ``printf '\036VX-EXIT:%d\036'``,
 and everything up to that sentinel is the command's output with its exit code
 attached. That is agy's persistent terminal (``terminalId`` + ``SendTerminalInput``)
-with a smaller protocol, and it is what makes ``bash(terminal="t1")`` mean the
-same shell every time.
+with a smaller protocol. Every bash call runs in one of these, so plain ``bash``
+means the same shell every time and ``cd`` needs no second thought.
 
 Echo is off: a PTY echoes what is written to it, and an echoed command line in
 the output reads as if the command printed itself.
@@ -28,6 +28,7 @@ import signal
 import subprocess
 import termios
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,7 @@ class TerminalOutput:
     exit_code: int | None
     state: str  # running | done
     timed_out: bool = False
+    aborted: bool = False
 
     @property
     def finished(self) -> bool:
@@ -147,9 +149,20 @@ class Terminal:
     # -- running ------------------------------------------------------------
 
     async def run(
-        self, command: str, *, wait_ms: int = 0, timeout: float = 180.0
+        self,
+        command: str,
+        *,
+        wait_ms: int = 0,
+        timeout: float = 180.0,
+        on_output: Callable[[str], None] | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> TerminalOutput:
-        """Run ``command`` in this shell and read it up to the sentinel."""
+        """Run ``command`` in this shell and read it up to the sentinel.
+
+        Output arrives live through ``on_output`` as the pty produces it, so a
+        long build shows up in the transcript while it runs rather than all at
+        once at the end.
+        """
         if self._state != "running" or self.proc is None:
             return TerminalOutput("", None, "closed")
         self._buf = ""
@@ -161,7 +174,14 @@ class Terminal:
             parsed = self._take()
             if parsed is not None:
                 return parsed
+            if on_output is not None and self._buf:
+                chunk = self._take_buffer()
+                if chunk:
+                    with contextlib.suppress(Exception):
+                        on_output(chunk)
             now = time.monotonic()
+            if cancel_event is not None and cancel_event.is_set():
+                return await self._interrupt()
             if now >= min(soft, deadline):
                 if now >= deadline:
                     self.write("\x03")  # Ctrl-C: the pty's own interrupt
@@ -174,6 +194,27 @@ class Terminal:
                 return TerminalOutput(self._take_buffer(), None, "running")
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._changed.wait(), min(0.05, deadline - now))
+
+    async def _interrupt(self, grace: float = 0.6) -> TerminalOutput:
+        """Ctrl-C the foreground command and collect what it left behind.
+
+        The sentinel still lands -- the shell prints it once the command dies --
+        so the buffer is not left poisoned for the next call.
+        """
+        self.write("\x03")
+        end = time.monotonic() + grace
+        while time.monotonic() < end:
+            parsed = self._take()
+            if parsed is not None:
+                parsed.aborted = True
+                return parsed
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._changed.wait(), 0.05)
+        parsed = self._take()
+        if parsed is not None:
+            parsed.aborted = True
+            return parsed
+        return TerminalOutput(self._take_buffer(), None, "running", aborted=True)
 
     def write(self, text: str) -> bool:
         """Raw keystrokes into the shell: an answer, a Ctrl-C, a heredoc."""
