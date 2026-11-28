@@ -2446,8 +2446,9 @@ class VxApp(_CommandBase):
     def _place_detail(self, tool_call_id: str, detail: blocks.Block) -> None:
         """Put a call's detail under its group, or after the call when alone."""
         group = self._tool_groups.get(tool_call_id)
-        if group is not None:
-            group.details.append(detail)
+        call = self._tool_blocks.get(tool_call_id)
+        if group is not None and call is not None:
+            group.details.append((call, detail))
         else:
             self.viewport.add(detail)
         self.viewport.touch()

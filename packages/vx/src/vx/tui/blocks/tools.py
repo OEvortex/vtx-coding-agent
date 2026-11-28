@@ -340,26 +340,28 @@ class ToolGroup(Block):
     """
 
     calls: list[ToolStatusBlock] = field(default_factory=list)
-    details: list[Block] = field(default_factory=list)
+    details: list[tuple[ToolStatusBlock, Block]] = field(default_factory=list)
     kind: str = "tool"
 
     def parts(self) -> tuple[Revisioned, ...]:
         # A group is its calls: append, remove and status changes all live on
         # the children, so the group's own revision never moves.
-        return (*self.calls, *self.details)
+        return (*self.calls, *(detail for _call, detail in self.details))
 
     def rows(self, width: int) -> list[str]:
         out: list[str] = []
         rows = _story_rows(list(self.calls))
-        if len(self.calls) == 1:
-            out.extend(rows[0].rows(width))
-        elif rows:
+        if len(self.calls) > 1 and rows:
             out.append(_group_header(list(self.calls), width))
-            last = len(rows) - 1
-            for index, call in enumerate(rows):
+        last = len(rows) - 1
+        for index, call in enumerate(rows):
+            if len(self.calls) == 1:
+                out.extend(call.rows(width))
+            else:
                 out.append(call.child_row(width, last=index == last))
-        for detail in self.details:
-            out.extend(detail.rows(width))
+            for owner, detail in self.details:
+                if owner is call:
+                    out.extend(detail.rows(width))
         return out
 
 
@@ -675,12 +677,11 @@ class SearchToolStatus(ToolRow):
 @dataclass
 @dataclass
 class SearchResults(Block):
-    """A search's detail, drawn only when ctrl+o asks for it.
+    """A search's hits, drawn only when ctrl+o asks for them.
 
-    A row already says how much was found, so nothing is printed under it by
-    default: the transcript is not a pager, and a preview of the hits pushes
-    the conversation off the screen. ctrl+o is the pager, and then a hit reads
-    like a line out of a file -- the file's own gutter width, its own code.
+    The search row already says how much was found, so the transcript stays
+    concise by default. ctrl+o is the pager, and then a hit reads like a line
+    out of a file -- the file's own gutter width, its own code.
     """
 
     counts: tuple[tuple[str, int], ...] = ()
@@ -692,13 +693,6 @@ class SearchResults(Block):
     def rows(self, width: int) -> list[str]:
         t = _theme.current()
         out: list[str] = []
-        if len(self.counts) > 1:
-            # The one thing a row cannot say: which alternative found nothing.
-            parts = []
-            for name, count in self.counts:
-                label = f"{_short(name, 20)} {count}"
-                parts.append(label if count else f"{t.dim_style}{label}{ansi.RESET}")
-            out.append(f"  {' · '.join(parts)}")
         if expanded():
             out.extend(self._hits(width, t))
         return [ansi.clip_ellipsis(row, width) for row in out]

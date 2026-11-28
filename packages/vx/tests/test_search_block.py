@@ -1,8 +1,13 @@
 """The search row and its detail block: what they say, and that they fit."""
 
+import asyncio
+from typing import cast
+
 import pytest
 from vx import app
+from vx.app import VxApp
 from vx.tui import ansi, blocks
+from vx.tui.terminal import Terminal
 
 
 def plain(row: str) -> str:
@@ -130,10 +135,10 @@ class TestResults:
         assert block is not None  # placed, so ctrl+o has something to open
         assert block.rows(80) == []
 
-    def test_the_counts_line_is_always_drawn(self):
+    def test_counts_are_not_drawn_below_the_search_row(self):
         block = app._search_results({"counts": [["needle", 3], ["absent", 0]]})
         assert block is not None
-        assert [plain(r) for r in block.rows(80)] == ["  needle 3 · absent 0"]
+        assert block.rows(80) == []
 
     def test_hits_come_back_only_when_expanded(self):
         ui = {
@@ -170,6 +175,40 @@ class TestGrouping:
         assert len(rows) == 3
         assert rows[1].startswith("├ Searched a")
         assert rows[2].startswith("└ Searched b")
+
+    def test_grouped_searches_show_only_their_search_rows(self):
+        class StubTerminal:
+            _fd = -1
+
+            def size(self):
+                return 24, 80
+
+            def write(self, data):
+                pass
+
+            def enter(self):
+                pass
+
+            def exit(self):
+                pass
+
+        vx = VxApp(cwd="/tmp", terminal=cast(Terminal, StubTerminal()))
+        vx._ready = asyncio.Event()
+        vx._ready.set()
+        first = row(pattern="alpha", status="ok")
+        second = row(pattern="beta", status="ok")
+        group = blocks.ToolGroup(calls=[first, second])
+        vx._tool_blocks.update({"alpha": first, "beta": second})
+        vx._tool_groups.update({"alpha": group, "beta": group})
+
+        vx._place_detail("beta", blocks.SearchResults(counts=(("beta", 1), ("absent", 0))))
+        vx._place_detail("alpha", blocks.SearchResults(counts=(("alpha", 2), ("absent", 0))))
+
+        rows = [plain(line) for line in group.rows(100)]
+        assert len(rows) == 3
+        assert rows[1].startswith("├ Searched alpha")
+        assert rows[2].startswith("└ Searched beta")
+        assert all("absent" not in line for line in rows)
 
 
 class TestFailedRow:
