@@ -173,7 +173,7 @@ def _activity_of(member: Any) -> str:
     if awaiting:
         return f"needs you · {awaiting}"
     if member.state == "waiting":
-        return f"parked in swarm_wait · since #{member.row.last_read_seq}"
+        return f"parked in board wait · since #{member.row.last_read_seq}"
     if member.state == "stopped":
         return "between turns · a post naming it wakes it"
     if getattr(member, "pending_model", ""):

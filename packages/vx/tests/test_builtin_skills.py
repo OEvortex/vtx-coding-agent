@@ -48,7 +48,7 @@ def test_the_body_is_a_playbook_not_a_stub():
     for heading in ("## The task", "## Start it", "## Keep it going", "## Things that will bite"):
         assert heading in body
     # The tools it names have to be the tools that exist.
-    for tool in ("swarm{", "post_message{", "read_board{", "swarm_wait{"):
+    for tool in ("swarm{", 'board{action:"post"', 'board{action:"read"', 'board{action:"wait"'):
         assert tool in body
     assert "$ARGUMENTS" in body
 

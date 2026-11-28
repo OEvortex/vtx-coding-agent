@@ -5,8 +5,8 @@ A swarm is not a loop that calls a sub-agent N times. Each member is a full
 own turn loop, running concurrently on this process's event loop. What they
 share is a :class:`~vx.swarm.board.Board`: an append-only feed of numbered
 posts, split into channels. A member that has nothing to do *parks* by calling
-``swarm_wait`` — the tool blocks inside the member's own turn until a post names
-it — so an idle swarm costs no tokens at all.
+``board{action:"wait"}`` — the tool blocks inside the member's own turn until a
+post names it — so an idle swarm costs no tokens at all.
 
 The coordinator is the conversation itself: it posts, reads, and waits with the
 same tools, under the roster name ``coordinator``.
@@ -45,7 +45,7 @@ log = logging.getLogger("vx.swarm")
 MAX_MEMBERS = 8
 
 #: Turns a member gets in one run before the harness stops it.
-MAX_TURNS = 60
+MAX_TURNS = 600
 
 #: Roles that see every channel, whatever they subscribe to.
 SEE_ALL_ROLES = frozenset({"coordinator", "narrator", "monitor"})
@@ -60,9 +60,9 @@ sharing a message board. The user is NOT talking to you. Your coordinator
 (`@coordinator`) assigned you the work in your first message and reads what you
 post.
 
-- `post_message` puts a line on the board. `read_board` reads posts after a
-  sequence number. `swarm_wait` parks you until somebody names you — call it
-  instead of polling, and never call it with work left to do.
+- `board{action:"post"}` puts a line on the board. `board{action:"read"}` reads
+  posts after a sequence number. `board{action:"wait"}` parks you until somebody
+  names you — call it instead of polling, and never with work left to do.
 - Ending a turn with work pending is the failure mode: post, then wait.
 - Start your completion post with `[done]` and mention the next actor by name
   (`@coordinator [done] …`). A post with no `@` wakes nobody.
@@ -81,17 +81,17 @@ Your assignment from @{added_by}:
 
 {board}
 
-Work the assignment now. When you are finished or blocked, call `post_message`
-with `@{added_by} [done] <what you did / what is blocking>` and then call
-`swarm_wait` to park.
+Work the assignment now. When you are finished or blocked, call
+`board{{action:"post"}}` with `@{added_by} [done] <what you did / what is
+blocking>` and then `board{{action:"wait"}}` to park.
 """
 
 WAKE_TEMPLATE = """You were woken: the board moved.
 
 {posts}
 
-Continue your assignment. Do the work, then post with `post_message` and park
-with `swarm_wait`.
+Continue your assignment. Do the work, then post with
+`board{action:"post"}` and park with `board{action:"wait"}`.
 """
 
 
@@ -226,7 +226,7 @@ class SwarmEngine:
         """Append a post and wake whoever it names."""
         body = (text or "").strip()
         if not body:
-            raise SwarmError("post_message needs text.")
+            raise SwarmError('board{action:"post"} needs text.')
         if MAIN in mn.channel_calls(body):
             raise SwarmError("`@#main` is `@all`: use @all to wake everybody.")
         member = self._member(agent)
@@ -244,7 +244,7 @@ class SwarmEngine:
             return MAIN
         clean = str(channel).strip().lower().lstrip("#")
         if clean == "*":
-            raise SwarmError("post_message goes to one channel; `*` is for reading.")
+            raise SwarmError('board{action:"post"} goes to one channel; `*` is for reading.')
         found = self.board.channel(clean)
         if found is None:
             raise SwarmError(
@@ -360,7 +360,7 @@ class SwarmEngine:
                 self._save_row(member)
                 return (
                     f"Waited {timeout:.0f}s and nothing woke you. "
-                    f"Read the board with read_board{{since:{since}}} and decide."
+                    f'Read the board with board{{action:"read", since:{since}}} and decide.'
                 )
             finally:
                 member.parked = False

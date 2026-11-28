@@ -26,14 +26,12 @@ _TOOL_MODULES = {
     "ApplyPatchTool": ".apply_patch",
     "AskUserTool": ".ask_user",
     "BashTool": ".bash",
-    "PostMessageTool": ".swarm",
-    "ReadBoardTool": ".swarm",
+    "BoardTool": ".swarm",
     "ReadTool": ".read",
     "SearchTool": ".search",
     "SkillTool": ".skill",
     "SubagentTool": ".subagent",
     "SwarmTool": ".swarm",
-    "SwarmWaitTool": ".swarm",
     "TodoTool": ".todo",
     "WebTool": ".web",
 }
@@ -41,7 +39,7 @@ _TOOL_MODULES = {
 #: Tools only the top-level agent gets. A sub-agent dispatched by
 #: ``delegate_subagent`` must not start its own swarm or recurse, and the board
 #: tools belong to a conversation's swarm, not to a one-shot helper.
-PARENT_ONLY = frozenset({"swarm", "post_message", "read_board", "swarm_wait", "delegate_subagent"})
+PARENT_ONLY = frozenset({"swarm", "board", "delegate_subagent"})
 
 
 def _build_catalog() -> None:
@@ -72,9 +70,7 @@ def _build_catalog() -> None:
         modules[7].SearchTool(),
         modules[8].SubagentTool(),
         modules[9].SwarmTool(),
-        modules[9].PostMessageTool(),
-        modules[9].ReadBoardTool(),
-        modules[9].SwarmWaitTool(),
+        modules[9].BoardTool(),
     ]
     tools_by_name = {tool.name: tool for tool in all_tools}
     DEFAULT_TOOLS = [
@@ -88,9 +84,7 @@ def _build_catalog() -> None:
         "todo",
         "delegate_subagent",
         "swarm",
-        "post_message",
-        "read_board",
-        "swarm_wait",
+        "board",
     ]
 
     def get_tools(names: list[str] | None = None):

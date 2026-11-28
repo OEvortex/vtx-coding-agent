@@ -6,16 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **One board tool** — `post_message`, `read_board` and `swarm_wait` are now one
+  `board{action:"post"|"read"|"wait"}` tool. They were three schemas for one
+  object, and the board is one conversation: posting, reading and parking are
+  the same thing with a different verb. `wait` still parks the turn and still
+  says so in the transcript, and it refuses to run without `since` rather than
+  returning history as if it were news. The swarm went from five tools to three
+  (`delegate_subagent`, `swarm`, `board`).
+
 ### Added
 
 - **Sub-agents** — the `delegate_subagent` tool runs one isolated agent (own
   session and tools) for a self-contained side task and returns its final text,
   in the foreground or as a background task. Dispatch machinery stays in the
   ctx harness (`ctx.agent.subagent`).
-- **Swarms** — `swarm`, `post_message`, `read_board` and `swarm_wait` tools plus
+- **Swarms** — `swarm` and `board` tools plus
   `vx.swarm`: several real agents working in parallel, each its own conversation,
   coordinating through one append-only board (`board.jsonl`, `members.json`,
-  `channels.json` in `~/…/swarms/<id>/`). Members park in `swarm_wait` (free, no
+  `channels.json` in `~/…/swarms/<id>/`). Members park in `board{action:"wait"}`
+  (free, no
   polling) and wake on `@name` / `@#channel` / `@all` posts; `status` reports
   waiting/working/stopped/killed, and `kill` is final. Workers get the coding
   tools minus the conversation-only ones, auto-approve their own tool prompts,
@@ -23,7 +34,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Swarm channels** — `swarm{action:"channel"}` creates work areas
   (create/list/subscribe/unsubscribe/archive). Everyone is in `#main`; a worker
   follows `#main` plus its areas and only sees those, so unrelated work stops
-  waking it. `post_message{channel}`, `read_board{channel|"*"}` and `@#area`
+  waking it. `board{action:"post", channel}`, `board{action:"read", channel:"*"}` and `@#area`
   calls complete the split.
 - **Worker workspaces and forks** — `add{workspace:"share"|"branch"}` gives a
   worker its own `git worktree` (share) or clone (branch), deleted by `kill`;

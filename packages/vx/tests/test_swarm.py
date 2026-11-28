@@ -9,16 +9,7 @@ from vx.swarm import engine as engine_mod
 from vx.swarm.board import STOPPED, WAITING, Board, MemberRow
 from vx.swarm.engine import SwarmEngine, SwarmError
 from vx.swarm.mentions import addressed, group_of, mentions
-from vx.tools.swarm import (
-    PostMessageTool,
-    PostParams,
-    ReadBoardTool,
-    ReadParams,
-    SwarmParams,
-    SwarmTool,
-    SwarmWaitTool,
-    WaitParams,
-)
+from vx.tools.swarm import BoardParams, BoardTool, SwarmParams, SwarmTool
 
 # -- mentions ----------------------------------------------------------
 
@@ -239,25 +230,25 @@ class TestEngine:
         result = {}
 
         async def work(agent, prompt):
-            post, _read, wait = board_tools(engine, "parser")
-            await post.execute(PostParams(text="@coordinator starting on the lexer"))
-            seen = await wait.execute(WaitParams(since=engine.head))
+            (board,) = board_tools(engine, "parser")
+            await board.execute(BoardParams(action="post", text="@coordinator lexer start"))
+            seen = await board.execute(BoardParams(action="wait", since=engine.head))
             result["woke"] = seen.result
-            await post.execute(PostParams(text="@coordinator [done] lexer works"))
+            await board.execute(BoardParams(action="post", text="@coordinator [done] lexer works"))
 
         install(engine, {"parser": [work]})
         await engine.add("parser", "Own the lexer")
         assert await wait_until(lambda: engine.members["parser"].state == WAITING)
 
-        await PostMessageTool(engine, "coordinator").execute(
-            PostParams(text="@parser hand me the token list")
+        await BoardTool(engine, "coordinator").execute(
+            BoardParams(action="post", text="@parser hand me the token list")
         )
         assert await wait_until(lambda: "woke" in result)
         assert "token list" in (result["woke"] or "")
 
         await wait_until(lambda: any("[done]" in p.text for p in engine.board.since(0)))
         posts = [(p.agent, p.text) for p in engine.board.since(0)]
-        assert ("parser", "@coordinator starting on the lexer") in posts
+        assert ("parser", "@coordinator lexer start") in posts
         await engine.close()
 
 
@@ -483,24 +474,48 @@ class TestTools:
         await engine.close()
 
     @pytest.mark.asyncio
-    async def test_post_read_and_wait_tools(self, tmp_path):
+    async def test_the_board_tool_posts_reads_and_waits(self, tmp_path):
         engine = make_engine(tmp_path)
         install(engine, {"parser": []})
         await engine.add("parser", "Own it")
-        post = PostMessageTool(engine, "coordinator")
-        read = ReadBoardTool(engine, "parser")
-        wait = SwarmWaitTool(engine, "parser")
+        as_coordinator = BoardTool(engine, "coordinator")
+        as_parser = BoardTool(engine, "parser")
 
-        sent = await post.execute(PostParams(text="@parser do the thing"))
+        sent = await as_coordinator.execute(BoardParams(action="post", text="@parser do it"))
         assert sent.success and "#2" in (sent.result or "")
 
         # The post names parser, so waiting returns it rather than parking.
-        parked = await wait.execute(WaitParams(since=1))
-        assert "do the thing" in (parked.result or "")
+        parked = await as_parser.execute(BoardParams(action="wait", since=1))
+        assert "do it" in (parked.result or "")
 
-        read_back = await read.execute(ReadParams(since=0))
-        assert "do the thing" in (read_back.result or "")
+        read_back = await as_parser.execute(BoardParams(action="read", since=0))
+        assert "do it" in (read_back.result or "")
         await engine.close()
+
+    @pytest.mark.asyncio
+    async def test_the_board_tool_says_what_it_is_missing(self, tmp_path):
+        engine = make_engine(tmp_path)
+        install(engine, {"parser": []})
+        await engine.add("parser", "Own it")
+        board = BoardTool(engine, "coordinator")
+
+        empty = await board.execute(BoardParams(action="post", text="  "))
+        assert empty.success is False
+        assert "needs text" in (empty.result or "")
+
+        # Waiting needs to know what "new" means, or it would return history.
+        blind = await board.execute(BoardParams(action="wait"))
+        assert blind.success is False
+        assert "since" in (blind.result or "")
+        await engine.close()
+
+    def test_the_board_tool_calls_itself_by_its_verb(self):
+        board = BoardTool()
+        assert (
+            board.format_call(BoardParams(action="post", text="@parser go")) == "post @parser go"
+        )
+        assert board.format_call(BoardParams(action="wait", since=7)) == "wait since #7 · mentions"
+        assert board.format_call(BoardParams(action="read", since=7)) == "read since #7"
 
 
 # -- worker permissions -----------------------------------------------------

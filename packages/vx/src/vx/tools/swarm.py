@@ -1,9 +1,12 @@
 """The swarm tools: the board, the channels, and the roster that talks on it.
 
-``swarm``        workers, channels, models, title — the swarm itself
-``post_message`` put a line on the board (``@name`` is how you hand out work)
-``read_board``   read posts after a sequence number, one channel or all
-``swarm_wait``   park until a post names you — free, unlike polling
+``swarm``  workers, channels, models, title — the swarm itself
+``board``  post (`@name` is how you hand out work), read after a sequence
+           number, or park until a post names you (free, unlike polling)
+
+The board's three verbs are one tool because they are one object: posting,
+reading and parking are the same conversation, and three schemas for it was
+three ways to say the same thing.
 
 ``board_tools(engine, name)`` and ``worker_swarm_tool(engine, name)`` build
 bound copies for a worker; the registered copies act as the coordinator of the
@@ -20,6 +23,7 @@ from ctx.protocol.types import ToolResult
 from pydantic import BaseModel, Field
 
 from vx.swarm import mentions as mn
+from vx.swarm.engine import SwarmError
 
 Action = Literal["add", "status", "models", "model", "kill", "title", "channel"]
 ChannelOp = Literal["create", "list", "subscribe", "unsubscribe", "archive"]
@@ -89,50 +93,48 @@ class SwarmParams(BaseModel):
     topic: str = Field(default="", description="For channel create: what this area owns")
 
 
-class PostParams(BaseModel):
+class BoardParams(BaseModel):
+    """The board's three verbs. Each one reads the fields it needs and ignores the rest."""
+
+    action: Literal["post", "read", "wait"] = Field(
+        description=(
+            "`post` says something (needs `text`); `read` returns numbered posts (needs "
+            "`since`); `wait` parks this turn until somebody posts (needs `since`)."
+        )
+    )
     text: str = Field(
-        description=(
-            "What to say. Name who should act on it: `@parser take the lexer tests`, "
-            "`@all new rule: ...`, `@#ui is the header done`. A post with no @ wakes nobody."
-        )
-    )
-    channel: str = Field(
         default="",
         description=(
-            "Where to post. Empty means #main for the coordinator, the worker's own area for "
-            "a worker. Keep cross-area talk in #main and area talk in the area."
+            "For post. Name who should act on it: `@parser take the lexer tests`, `@all new "
+            "rule: ...`, `@#ui is the header done`. A post with no @ wakes nobody."
         ),
     )
-
-
-class ReadParams(BaseModel):
-    since: int = Field(default=0, description="Read posts after this sequence number")
-    limit: int = Field(default=50, description="Newest N posts after `since`")
-    channel: str = Field(
-        default="",
-        description=(
-            "One channel (e.g. `parser`), `*` for every channel, or empty for your own view "
-            "(#main plus the channels you follow)."
-        ),
-    )
-
-
-class WaitParams(BaseModel):
     since: int = Field(
+        default=0,
         description=(
-            "Wake for posts after this sequence number. Pass the last one you actually "
-            "read, not the board head, so nothing posted while you worked is slept through."
-        )
+            "For read and wait: only posts after this sequence number. Pass the last one you "
+            "actually read, not the board head, so nothing posted while you worked is slept "
+            "through."
+        ),
     )
+    channel: str = Field(
+        default="",
+        description=(
+            "For post and read. Post: empty is #main for the coordinator, the worker's own "
+            "area for a worker. Read: one channel, `*` for every channel, empty for your own "
+            "view (#main plus the channels you follow)."
+        ),
+    )
+    limit: int = Field(default=50, description="For read: newest N posts after `since`")
     mentions_only: bool = Field(
         default=True,
         description=(
-            "Wake only for a post that names you, your channel, or @all (default). False "
-            "wakes for anything in your channels — use it when you are free and hunting."
+            "For wait: wake only for a post that names you, your channel, or @all (default). "
+            "False wakes for anything in your channels — use it when you are free and hunting."
         ),
     )
     timeout: int = Field(
-        default=0, description="Give up after this many seconds (0 waits until woken)"
+        default=0, description="For wait: give up after this many seconds (0 waits until woken)"
     )
 
 
@@ -153,8 +155,6 @@ class _SwarmTool(BaseTool):
         return self._engine if self._engine is not None else current_engine()
 
     async def run(self, params: Any, cancel_event: asyncio.Event | None = None) -> ToolResult:
-        from vx.swarm.engine import SwarmError
-
         try:
             return await self._run(params, cancel_event)
         except SwarmError as exc:
@@ -177,8 +177,8 @@ class SwarmTool(_SwarmTool):
         "who is waiting, working, stopped or killed; models lists what add accepts; model "
         "switches a member's model; kill ends a worker for good; title names the swarm; channel "
         "creates/ lists/ subscribes/ archives work areas so unrelated work stops waking other "
-        "workers. With the swarm started, hand out work with post_message (@name, @#channel, "
-        "@all), read with read_board, and park with swarm_wait instead of polling."
+        "workers. With the swarm started, hand out work on the `board` (@name, @#channel, "
+        '@all), read it, and park with `board{action:"wait"}` instead of polling.'
     )
 
     def format_call(self, params: SwarmParams) -> str:
@@ -275,28 +275,55 @@ class SwarmTool(_SwarmTool):
         )
 
 
-class PostMessageTool(_SwarmTool):
-    name = "post_message"
-    params = PostParams
-    tool_icon = "✎"
+class BoardTool(_SwarmTool):
+    """One tool for the board, because the board is one thing.
+
+    Posting, reading and parking are the same conversation with a different verb;
+    they travel together and were three schemas for one object. The verbs stay
+    distinct inside, and ``wait`` keeps its own name in `format_call` so a turn
+    that parks is never mistaken for a turn that reads.
+    """
+
+    name = "board"
+    params = BoardParams
+    tool_icon = "☰"
     description = (
-        "Say something on the swarm board. This is how you assign work and answer workers: "
-        "`@name` wakes that worker wherever it is, `@#area` wakes everyone following that "
-        "channel, `@all` wakes everyone. Posts are numbered and kept, so refer to earlier ones "
-        "by `#seq` instead of repeating them."
+        "The swarm board: one numbered, append-only conversation shared by you and every "
+        "worker. `post` assigns work and answers workers (`@name` wakes that worker, `@#area` "
+        "wakes a channel, `@all` wakes everyone); `read` returns posts after a sequence "
+        "number; `wait` parks until somebody posts something that concerns you, which is free "
+        "— polling `read` in a loop is not. Posts are kept: refer to earlier ones by `#seq` "
+        "instead of repeating them."
     )
 
-    def format_call(self, params: PostParams) -> str:
-        text = " ".join(params.text.split())
+    def format_call(self, params: BoardParams) -> str:
+        if params.action == "post":
+            text = " ".join(params.text.split())
+            where = f"#{params.channel} " if params.channel else ""
+            return f"post {where}{text[:58]}" + ("…" if len(text) > 58 else "")
+        if params.action == "wait":
+            mode = "any post" if not params.mentions_only else "mentions"
+            return f"wait since #{params.since} · {mode}"
         where = f"#{params.channel} " if params.channel else ""
-        return f"{where}{text[:60]}" + ("…" if len(text) > 60 else "")
+        return f"read {where}since #{params.since}"
 
     async def execute(
-        self, params: PostParams, cancel_event: asyncio.Event | None = None
+        self, params: BoardParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
         return await self.run(params, cancel_event)
 
-    async def _run(self, params: PostParams, cancel_event: asyncio.Event | None) -> ToolResult:
+    async def _run(self, params: BoardParams, cancel_event: asyncio.Event | None) -> ToolResult:
+        if params.action == "post":
+            return await self._post(params)
+        if params.action == "wait":
+            return await self._wait(params)
+        return self._read(params)
+
+    async def _post(self, params: BoardParams) -> ToolResult:
+        if not params.text.strip():
+            raise SwarmError(
+                'board{action:"post"} needs text, e.g. text:"@parser take the lexer".'
+            )
         engine = self._get_engine()
         post = await engine.post(self._member, params.text, params.channel or None)
         woken = [name for name in engine.woken_by(post) if name != self._member]
@@ -305,58 +332,23 @@ class PostMessageTool(_SwarmTool):
         result = f"Posted #{post.seq}{where}.{(' ' + note.strip(' ·')) if note else ''}"
         return ToolResult(success=True, result=result, ui_summary=f"#{post.seq}{note}")
 
-
-class ReadBoardTool(_SwarmTool):
-    name = "read_board"
-    params = ReadParams
-    tool_icon = "☰"
-    description = (
-        "Read the swarm board: numbered posts from the coordinator and every worker, oldest "
-        "first. Pass the last sequence number you saw as `since`. `channel` reads one work "
-        "area, `*` reads everything, empty reads your own view (#main plus your channels)."
-    )
-
-    def format_call(self, params: ReadParams) -> str:
-        where = f"#{params.channel} " if params.channel else ""
-        return f"{where}since #{params.since}"
-
-    async def execute(
-        self, params: ReadParams, cancel_event: asyncio.Event | None = None
-    ) -> ToolResult:
-        return await self.run(params, cancel_event)
-
-    async def _run(self, params: ReadParams, cancel_event: asyncio.Event | None) -> ToolResult:
+    def _read(self, params: BoardParams) -> ToolResult:
         engine = self._get_engine()
         text = engine.read(
             self._member, params.since, max(1, min(params.limit, 200)), params.channel or None
         )
         return ToolResult(success=True, result=text, ui_summary=f"since #{params.since}")
 
-
-class SwarmWaitTool(_SwarmTool):
-    name = "swarm_wait"
-    params = WaitParams
-    tool_icon = "⏸"
-    description = (
-        "Park until somebody posts something that concerns you, then return it. Waiting is "
-        "free; polling read_board in a loop is not. Call it when you have nothing to do — "
-        "never with work left, and never as a substitute for finishing your turn."
-    )
-
-    def format_call(self, params: WaitParams) -> str:
-        mode = "any post" if not params.mentions_only else "mentions"
-        return f"since #{params.since} · {mode}"
-
-    async def execute(
-        self, params: WaitParams, cancel_event: asyncio.Event | None = None
-    ) -> ToolResult:
-        return await self.run(params, cancel_event)
-
-    async def _run(self, params: WaitParams, cancel_event: asyncio.Event | None) -> ToolResult:
+    async def _wait(self, params: BoardParams) -> ToolResult:
+        if params.since <= 0:
+            raise SwarmError(
+                'board{action:"wait"} needs since: the last sequence number you actually read '
+                "(the last post you read), or it cannot tell what is new."
+            )
         engine = self._get_engine()
         text = await engine.wait(
             self._member,
-            since=max(0, params.since),
+            since=params.since,
             mentions_only=params.mentions_only,
             timeout=max(0, params.timeout),
         )
@@ -364,12 +356,8 @@ class SwarmWaitTool(_SwarmTool):
 
 
 def board_tools(engine: object, member: str) -> list[BaseTool]:
-    """Board tools bound to one worker (they post and read as that member)."""
-    return [
-        PostMessageTool(engine, member),
-        ReadBoardTool(engine, member),
-        SwarmWaitTool(engine, member),
-    ]
+    """The board bound to one worker: it posts and reads as that member."""
+    return [BoardTool(engine, member)]
 
 
 def worker_swarm_tool(engine: object, member: str) -> BaseTool:
@@ -378,11 +366,10 @@ def worker_swarm_tool(engine: object, member: str) -> BaseTool:
 
 
 __all__ = [
-    "PostMessageTool",
-    "ReadBoardTool",
+    "BoardParams",
+    "BoardTool",
     "SwarmParams",
     "SwarmTool",
-    "SwarmWaitTool",
     "board_tools",
     "worker_swarm_tool",
 ]

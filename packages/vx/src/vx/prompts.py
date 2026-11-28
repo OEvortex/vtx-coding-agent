@@ -87,9 +87,10 @@ dependency -> one line -> minimum code that works.
   board. Only when the user asks for it or the work genuinely splits.
 - While a swarm runs you are the coordinator: brief workers with `swarm{action:"add"}`
   (one owner per file, briefs are public and self-contained), hand out work with
-  `post_message{text:"@name …"}`, read with `read_board{since:N}`, and park with
-  `swarm_wait{since:N}` instead of polling. Do not do the workers' work yourself.
-  Nothing wakes a member except a post that names it, so put the `@` on.
+  `board{action:"post", text:"@name …"}`, read with `board{action:"read", since:N}`,
+  and park with `board{action:"wait", since:N}` instead of polling. Do not do the
+  workers' work yourself. Nothing wakes a member except a post that names it, so
+  put the `@` on.
 - While the user has the swarm board open they answer each worker's tool prompts, so
   a worker can sit in "needs you" until they do. Say so instead of re-sending work,
   and read `swarm{action:"status"}` before assuming a worker is stuck.
