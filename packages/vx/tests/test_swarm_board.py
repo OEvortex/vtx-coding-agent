@@ -53,6 +53,26 @@ class FakeLive:
     started_at: float = 0.0
     last_text: str = ""
     pending_model: str = ""
+    activity: list = field(default_factory=list)
+    current: object | None = None
+    tools: int = 0
+    fails: int = 0
+    stream: str = ""
+
+
+@dataclass
+class FakeActivity:
+    """One engine-side tool call, in the shape the page reads."""
+
+    label: str = "bash"
+    detail: str = "cargo test -p parser"
+    status: str = "ok"
+    at: float = 0.0
+    took: float = 1.2
+    kind: str = "tool"
+    agent: str = "parser"
+    channel: str = "main"
+    output: str = ""
 
 
 def fake_engine(now: float = 0.0):
@@ -534,3 +554,61 @@ def test_theme_is_read_at_render_time(monkeypatch):
     theme.apply_named("fx-light")
     light = board.render(100, 24)
     assert dark != light
+
+
+# -- live tool calls ---------------------------------------------------
+
+
+def active_board() -> SwarmBoard:
+    """A room where the parser has three calls behind it and one in flight."""
+    engine = fake_engine(now=600.0)
+    parser = engine.members["parser"]
+    parser.activity = [
+        FakeActivity(label="read", detail="src/parser.rs L112-240", status="ok", took=0.7),
+        FakeActivity(label="edit", detail="src/parser.rs +18 -6", status="ok", took=1.2),
+        FakeActivity(label="bash", detail="cargo test --workspace", status="fail", took=3.0),
+    ]
+    parser.tools, parser.fails = 3, 1
+    parser.current = FakeActivity(
+        label="grep", detail="fn parse_number across src/", status="run", at=598.5, took=0.0
+    )
+    return SwarmBoard(view=snapshot_from_engine(engine, now=600.0))
+
+
+class TestLiveActivity:
+    def test_tool_calls_cross_over_with_their_label_and_duration(self):
+        view = active_board().view
+        parser = view.member("parser")
+        assert parser is not None
+        assert parser.tools == 3 and parser.fails == 1
+        assert [event.label for event in parser.events[:-1]] == ["read", "edit", "bash"]
+
+    def test_a_running_call_is_listed_before_it_finishes(self):
+        parser = active_board().view.member("parser")
+        assert parser is not None
+        running = parser.running
+        assert running is not None
+        assert running.label == "grep"
+        assert running.secs == pytest.approx(1.5)
+
+    def test_the_activity_column_shows_the_calls_and_the_roster_shows_the_live_one(self):
+        text = "\n".join(ansi.strip_ansi(r) for r in active_board().render(120, 34))
+        assert "grep" in text and "fn parse_number across src/" in text
+        assert "1.5s" in text  # the running call's elapsed time
+        assert "3.0s" in text  # a finished call's duration
+        assert "3⌁ 1✗" in text.replace("  ", " ")
+
+    def test_v_narrows_the_column_to_board_posts(self):
+        board = active_board()
+        assert board.key("v") == "redraw"
+        text = "\n".join(ansi.strip_ansi(r) for r in board.render(120, 34))
+        assert "cargo test --workspace" not in text
+        assert "lexer passes" in text  # the posts are still there
+
+    def test_a_members_panel_lists_its_own_calls(self):
+        board = active_board()
+        board.key("enter")
+        text = "\n".join(ansi.strip_ansi(r) for r in board.render(120, 34))
+        assert "MEMBER" in text
+        assert "src/parser.rs +18 -6" in text
+        assert "3 tools" in text and "1 failed" in text

@@ -43,7 +43,9 @@ Workers auto-approve their own tool calls — except while the swarm board page 
 
 ## The board page
 
-`/board`, `alt+s`, or `left` on an empty composer opens `vx.tui.swarm`: a roster of member cards (model, channel, workspace, current activity), the channel strip, and the board feed. `⏎` on a member shows its own panel. The page renders an empty state when the conversation has no swarm.
+`/board`, `alt+s`, or `left` on an empty composer opens `vx.tui.swarm`: a roster of member cards (model, channel, workspace, the tool call it is running now and how long it has held, calls made and failed), the channel strip, and an activity column. The column lists the room's own history — every tool call with its duration and result, interleaved with the board posts; `v` narrows it to posts only. `⏎` on a member shows its own panel: its stats, its tool calls, and its posts. The page renders an empty state when the conversation has no swarm.
+
+Workers report their tool calls to the page through `Member.activity` and `Member.current` in `swarm/engine.py` (`ToolStartEvent` / `ToolEndEvent` / `ToolResultEvent`), so the roster and the activity column are live rather than a summary written after the fact. `packages/vx/demo.py` drives the same page with a simulated room, which is the quickest way to see it without spending tokens.
 
 ## `delegate_subagent`
 

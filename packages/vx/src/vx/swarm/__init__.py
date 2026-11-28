@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from vx.swarm.board import Board, MemberRow, Post, render_posts
 from vx.swarm.engine import (
+    MAX_ACTIVITY,
     MAX_MEMBERS,
+    ActivityEvent,
     Member,
     SwarmEngine,
     SwarmError,
@@ -19,7 +21,9 @@ from vx.swarm.mentions import ALL, COORDINATOR, addressed, group_of
 __all__ = [
     "ALL",
     "COORDINATOR",
+    "MAX_ACTIVITY",
     "MAX_MEMBERS",
+    "ActivityEvent",
     "Board",
     "Member",
     "MemberRow",

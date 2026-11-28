@@ -1,11 +1,15 @@
 """The swarm board: the page ``left`` opens when there is a swarm to watch.
 
 A swarm is a room, not a list of agents. This draws the room: one roster column
-where every member is a card that says what it is doing right now, one feed
-column where the shared board scrolls past, and a header that counts the states
-and names the head. Open a member and its column becomes that member's own panel
-— its activity, its posts, where it works — so "what is this one doing" never
-means scrolling the board.
+where every member is a card that says what it is doing *right now* — the tool
+it is running, how long it has been running, how many calls it has made — and
+one activity column where the room's own history scrolls past: every tool call
+with its duration and result, interleaved with the posts on the board. Open a
+member and its column becomes that member's own panel.
+
+Live tool calls are the point. A card is not decoration: it answers "what is
+this one doing" without opening anything, and the activity column answers "what
+has this room done" without reading the transcript.
 
 The page reads a :class:`SwarmView`, which :func:`snapshot_from_engine` builds
 from the live :class:`vx.swarm.SwarmEngine`. Nothing here imports the agent
@@ -26,9 +30,9 @@ MIN_COLS = 52
 MIN_ROWS = 10
 
 #: The roster column: wide enough for a name and its numbers, never a third of
-#: the room. The feed is where the words are.
-ROSTER_MIN = 26
-ROSTER_MAX = 42
+#: the room. The activity column is where the words are.
+ROSTER_MIN = 28
+ROSTER_MAX = 44
 
 #: The states, in the order the roster lists them, with the glyph and the word.
 STATES: tuple[tuple[str, str, str], ...] = (
@@ -40,11 +44,121 @@ STATES: tuple[tuple[str, str, str], ...] = (
 )
 
 STATE_ORDER = {name: index for index, (name, _glyph, _word) in enumerate(STATES)}
+STATE_WORD = {name: word for name, _glyph, word in STATES}
+
+#: Tool families, by the prefix of the tool name, to the glyph that names it.
+#: A page that showed the same dot for `bash` and `write` would be a list of
+#: events rather than a picture of what the swarm is doing.
+TOOL_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("bash", "❯"),
+    ("shell", "❯"),
+    ("exec", "❯"),
+    ("read", "◎"),
+    ("view", "◎"),
+    ("open", "◎"),
+    ("edit", "✎"),
+    ("write", "✎"),
+    ("patch", "✎"),
+    ("apply", "✎"),
+    ("create", "✎"),
+    ("grep", "⌕"),
+    ("search", "⌕"),
+    ("glob", "⌕"),
+    ("find", "⌕"),
+    ("list", "⌕"),
+    ("web", "☁"),
+    ("fetch", "☁"),
+    ("http", "☁"),
+    ("task", "⇄"),
+    ("delegate", "⇄"),
+    ("agent", "⇄"),
+    ("spawn", "⇄"),
+    ("board", "▤"),
+    ("swarm", "⬡"),
+    ("todo", "☑"),
+    ("plan", "☰"),
+    ("think", "✻"),
+)
+
+#: A running call spins. Time based, so it does not stutter when a frame runs long.
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+#: The header's activity sparkline, quietest to loudest.
+BARS = "▁▂▃▄▅▆▇█"
+
+
+def tool_glyph(name: str) -> str:
+    """The one cell that says which family of tool this call belongs to."""
+    key = (name or "").strip().lower()
+    for prefix, glyph in TOOL_FAMILIES:
+        if key == prefix or key.startswith(prefix):
+            return glyph
+    return "⚙"
+
+
+def spinner(now: float) -> str:
+    """A frame of the running-call spinner.
+
+    Reduced motion holds the first cell: a spinner is information, not
+    decoration, and a frozen one still says "this call is in flight".
+    """
+    index = 0 if theme.motion_reduced() else int(max(0.0, now) * 12) % len(SPINNER)
+    return SPINNER[index]
+
+
+def duration(secs: float) -> str:
+    """A tool call's length in the fewest cells that still read as seconds."""
+    secs = max(0.0, secs)
+    if secs < 9.95:
+        return f"{secs:.1f}s"
+    if secs < 59.5:
+        return f"{secs:.0f}s"
+    minutes, seconds = divmod(round(secs), 60)
+    return f"{minutes}m{seconds:02d}s"
+
+
+def sparkline(values: list[int], width: int) -> str:
+    """The last ``width`` buckets as bars: how busy the room has been."""
+    tail = values[-width:] if width > 0 else []
+    if not tail:
+        return ""
+    top = max(tail) or 1
+    out: list[str] = []
+    for value in tail:
+        if value <= 0:
+            out.append("·")
+        else:
+            out.append(BARS[min(len(BARS) - 1, value * len(BARS) // top)])
+    return "".join(out)
 
 
 # ---------------------------------------------------------------------------
 # what the page draws: a snapshot of the swarm, taken by the app each frame
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class EventView:
+    """One thing a member did: a tool call, or a post on the board.
+
+    ``secs`` is the call's duration once it finishes, and the elapsed time while
+    it is still running — so a running call reads ``⚠ bash 2.4s`` and ticks.
+    """
+
+    agent: str = ""
+    kind: str = "tool"  # tool | say
+    label: str = ""
+    detail: str = ""
+    status: str = "ok"  # run | ok | fail
+    clock: str = ""
+    at: float = 0.0
+    secs: float = 0.0
+    channel: str = "main"
+    seq: int = 0
+
+    @property
+    def running(self) -> bool:
+        return self.status == "run"
 
 
 @dataclass
@@ -54,7 +168,7 @@ class MemberView:
     name: str
     role: str = "worker"
     model: str = ""
-    state: str = "working"  # working | waiting | stopped | killed
+    state: str = "working"  # working | waiting | stopped | killed | blocked
     channels: tuple[str, ...] = ()
     workspace: str = "inherit"
     turns: int = 0
@@ -64,10 +178,18 @@ class MemberView:
     activity: str = ""
     note: str = ""
     pending_model: str = ""
+    #: Newest last: the tool calls this member has made, plus the running one.
+    events: tuple[EventView, ...] = ()
+    tools: int = 0
+    fails: int = 0
 
     @property
     def channel(self) -> str:
         return self.channels[0] if self.channels else "main"
+
+    @property
+    def running(self) -> EventView | None:
+        return next((event for event in reversed(self.events) if event.running), None)
 
 
 @dataclass
@@ -115,6 +237,8 @@ class SwarmView:
     posts: list[PostView] = field(default_factory=list)
     channels: dict[str, str] = field(default_factory=dict)
     dir: str = ""
+    #: How long the swarm has been up, in seconds, as of the snapshot.
+    elapsed: float = 0.0
 
     @property
     def exists(self) -> bool:
@@ -159,29 +283,140 @@ class SwarmView:
             self.members, key=lambda m: (STATE_ORDER.get(m.state, 9), depth_of(m), m.name)
         )
 
+    # -- the timeline ------------------------------------------------------
 
-def _activity_of(member: Any) -> str:
+    def events(self) -> list[EventView]:
+        """Tool calls and posts, oldest first: the room's own history."""
+        out: list[EventView] = []
+        for member in self.members:
+            out.extend(member.events)
+        out.extend(
+            EventView(
+                agent=post.agent,
+                kind="say",
+                label="board",
+                detail=post.text,
+                channel=post.channel,
+                clock=post.at,
+                seq=post.seq,
+            )
+            for post in self.posts
+        )
+        return sorted(out, key=_event_order)
+
+    def timeline(self, channel: str = "all") -> list[EventView]:
+        events = self.events()
+        if channel not in ("all", ""):
+            events = [event for event in events if event.channel == channel]
+        return events
+
+    @property
+    def tool_count(self) -> int:
+        return sum(member.tools for member in self.members)
+
+    @property
+    def fail_count(self) -> int:
+        return sum(member.fails for member in self.members)
+
+    def series(self, buckets: int = 26, span: float = 60.0) -> list[int]:
+        """Tool calls per bucket over the last ``span`` seconds."""
+        marks = [
+            event.at
+            for member in self.members
+            for event in member.events
+            if event.kind == "tool" and event.at > 0
+        ]
+        if not marks:
+            return []
+        newest = max(marks)
+        out = [0] * buckets
+        width = span / max(1, buckets)
+        for at in marks:
+            age = newest - at
+            if 0 <= age < span:
+                index = buckets - 1 - int(age // width)
+                out[max(0, min(buckets - 1, index))] += 1
+        return out
+
+    def rate(self, span: float = 60.0) -> float:
+        """Tool calls per minute over the last ``span`` seconds."""
+        marks = [
+            event.at
+            for member in self.members
+            for event in member.events
+            if event.kind == "tool" and event.at > 0
+        ]
+        if not marks:
+            return 0.0
+        newest = max(marks)
+        recent = sum(1 for at in marks if 0 <= newest - at < span)
+        return recent * 60.0 / span
+
+
+def _clock_seconds(clock: str) -> float:
+    """``HH:MM:SS`` as seconds of the day; unreadable clocks sort first."""
+    parts = (clock or "").split(":")
+    try:
+        numbers = [int(part) for part in parts if part.strip()]
+    except ValueError:
+        return -1.0
+    while len(numbers) < 3:
+        numbers.insert(0, 0)
+    hour, minute, second = numbers[-3:]
+    return hour * 3600 + minute * 60 + second
+
+
+def _event_order(event: EventView) -> tuple[float, int]:
+    return (_clock_seconds(event.clock), event.seq)
+
+
+def _activity_of(member: Any, *, now: float | None = None) -> str:
     """What a live member is doing, from the little the engine knows for certain.
 
-    Only two things are true of a worker without asking its model: the state the
-    engine reports, and the last thing it said before it parked. A page that
-    invented more than that would be lying about a live board.
+    The running tool call wins: it is the one thing a watcher wants, and it is
+    true while it lasts. Otherwise the last thing the member said stands in.
     """
     if getattr(member.row, "killed", False) or member.state == "killed":
         return "killed — its work needs a fresh worker"
     awaiting = getattr(member, "awaiting", "")
     if awaiting:
         return f"needs you · {awaiting}"
+    current = getattr(member, "current", None)
+    if current is not None:
+        label = getattr(current, "label", "") or "tool"
+        detail = " ".join(str(getattr(current, "detail", "") or "").split())
+        return f"{label} {detail}".strip()
     if member.state == "waiting":
         return f"parked in board wait · since #{member.row.last_read_seq}"
     if member.state == "stopped":
         return "between turns · a post naming it wakes it"
     if getattr(member, "pending_model", ""):
         return f"switching to {member.pending_model} at its next turn"
-    text = " ".join((getattr(member, "last_text", "") or "").split())
+    stream = " ".join((getattr(member, "stream", "") or "").split())
+    text = stream or " ".join((getattr(member, "last_text", "") or "").split())
     if text:
         return text[:160]
     return "working"
+
+
+def _event_from_activity(event: Any, *, now: float) -> EventView:
+    """One engine-side activity record, as the page draws it."""
+    started = float(getattr(event, "at", 0.0) or 0.0)
+    status = str(getattr(event, "status", "ok") or "ok")
+    took = float(getattr(event, "took", 0.0) or 0.0)
+    if status == "run" and started:
+        took = max(0.0, now - started)
+    return EventView(
+        agent=str(getattr(event, "agent", "") or ""),
+        kind=str(getattr(event, "kind", "tool") or "tool"),
+        label=str(getattr(event, "label", "") or ""),
+        detail=" ".join(str(getattr(event, "detail", "") or "").split())[:160],
+        status=status,
+        clock=time.strftime("%H:%M:%S", time.localtime(started)) if started else "",
+        at=started,
+        secs=took,
+        channel=str(getattr(event, "channel", "main") or "main"),
+    )
 
 
 def snapshot_from_engine(engine: Any, *, now: float | None = None) -> SwarmView:
@@ -194,6 +429,16 @@ def snapshot_from_engine(engine: Any, *, now: float | None = None) -> SwarmView:
     for name, live in engine.members.items():
         row = live.row
         started = getattr(live, "started_at", 0.0) or 0.0
+        channel = row.channels[0] if row.channels else "main"
+        events = [_event_from_activity(event, now=now) for event in getattr(live, "activity", ())]
+        current = getattr(live, "current", None)
+        if current is not None:
+            running = _event_from_activity(current, now=now)
+            running.agent = name
+            running.channel = channel
+            events.append(running)
+        for event in events:
+            event.agent = event.agent or name
         members.append(
             MemberView(
                 name=name,
@@ -210,13 +455,22 @@ def snapshot_from_engine(engine: Any, *, now: float | None = None) -> SwarmView:
                 age=int(max(0.0, now - started) // 60) if started else 0,
                 last_read=row.last_read_seq,
                 added_by=row.added_by or "coordinator",
-                activity=_activity_of(live),
+                activity=_activity_of(live, now=now),
                 note=row.note,
                 pending_model=getattr(live, "pending_model", ""),
+                events=tuple(events),
+                tools=int(getattr(live, "tools", 0) or 0),
+                fails=int(getattr(live, "fails", 0) or 0),
             )
         )
     posts = [
-        PostView(post.seq, post.agent, post.text, post.channel, post.time[-5:])
+        PostView(
+            post.seq,
+            post.agent,
+            post.text,
+            post.channel,
+            post.time[-8:] if len(post.time) >= 8 else post.time[-5:],
+        )
         for post in board.since(0)
     ]
     return SwarmView(
@@ -228,6 +482,7 @@ def snapshot_from_engine(engine: Any, *, now: float | None = None) -> SwarmView:
             for name, spec in board.channels.items()
         },
         dir=str(engine.dir),
+        elapsed=max(0.0, now - float(getattr(engine, "created_at", 0.0) or now)),
     )
 
 
@@ -238,11 +493,11 @@ def snapshot_from_engine(engine: Any, *, now: float | None = None) -> SwarmView:
 
 @dataclass
 class SwarmBoard:
-    """Header, channels, roster, feed, and any member's own panel.
+    """Header, channels, roster, activity column, and any member's own panel.
 
-    Every band is budgeted before it is drawn, so a short terminal loses feed rows
-    before it loses the roster, and loses both before it loses the header. A frame
-    is exactly ``height`` rows of exactly ``width`` cells at any size.
+    Every band is budgeted before it is drawn, so a short terminal loses
+    activity rows before it loses the roster, and loses both before it loses the
+    header. A frame is exactly ``height`` rows of exactly ``width`` cells.
     """
 
     view: SwarmView = field(default_factory=SwarmView)
@@ -252,6 +507,7 @@ class SwarmBoard:
     follow: bool = True
     scroll: int = 0
     open_member: str = ""
+    panel: str = "activity"  # activity | board
     help: bool = False
     paused: bool = False
     now: float = 0.0
@@ -326,6 +582,7 @@ class SwarmBoard:
         t = theme.current()
         counts = self.view.counts()
         left = f"{t.dim_style}⬡{ansi.RESET} {t.tag_style}{ansi.BOLD}{self.view.title}{ansi.RESET}"
+        head = f"{t.dim_style}board #{self.view.head}{ansi.RESET}"
         chips: list[str] = []
         for name, glyph, word in STATES:
             count = counts.get(name, 0)
@@ -336,15 +593,25 @@ class SwarmBoard:
                 "working": t.tag_style,
                 "waiting": t.dim_style,
                 "stopped": t.dim_style,
-                "killed": t.red_style,
+                "killed": t.dim_style,
             }[name]
             chips.append(f"{style}{glyph}{ansi.RESET}{t.dim_style} {count} {word}{ansi.RESET}")
-        head = f"{t.dim_style}board #{self.view.head}{ansi.RESET}"
-        right = f"{'   '.join(chips)}   {head}"
-        if ansi.width(left) + ansi.width(right) + 2 > width:
-            right = head
-        if ansi.width(left) + ansi.width(right) + 2 > width:
-            right = ""
+        joined = f"{t.dim_style}   {ansi.RESET}".join(chips)
+        stamp = (
+            f"{t.dim_style}{duration(self.view.elapsed)}{ansi.RESET}"
+            if self.view.elapsed >= 1
+            else ""
+        )
+        tally = f"{t.dim_style}   {ansi.RESET}".join(part for part in (stamp, joined) if part)
+        right = head
+        for candidate in (
+            f"{tally}   {head}" if tally else "",
+            f"{t.dim_style}{len(self.view.members)} agents{ansi.RESET}   {head}",
+            head,
+        ):
+            if candidate and ansi.width(left) + ansi.width(candidate) + 2 <= width:
+                right = candidate
+                break
         return ansi.clip(ansi.pad(left, max(1, width - ansi.width(right))) + right, width)
 
     def _rule(self, width: int) -> str:
@@ -352,25 +619,42 @@ class SwarmBoard:
         return f"{t.divider_style}{'─' * max(0, width)}{ansi.RESET}"
 
     def _strip(self, width: int) -> str:
+        """Channel chips on the left; how busy the room is on the right."""
         t = theme.current()
         parts = [self._channel_chip("all"), self._channel_chip("main")]
         parts.extend(self._channel_chip(name) for name in self.view.channels)
         left = " " + f"{t.dim_style}   {ansi.RESET}".join(parts)
-        fresh = 0 if self.follow else max(0, self.view.head - self.seen_head)
+
         state = (
             f"{t.dim_style}paused{ansi.RESET}"
             if self.paused
             else (
-                f"{t.tag_style}● following{ansi.RESET}"
+                f"{t.tag_style}● live{ansi.RESET}"
                 if self.follow
                 else f"{t.dim_style}‖ held{ansi.RESET}"
             )
         )
+        fresh = 0 if self.follow else max(0, self.view.head - self.seen_head)
         if fresh:
             state += f"{t.warning_style}  ▲ {fresh} new{ansi.RESET}"
+        tools = self.view.tool_count
+        rate = self.view.rate()
+        segments = [state]
+        if tools:
+            segments.insert(0, f"{t.dim_style}{tools} tools{ansi.RESET}")
+        if tools and rate:
+            segments.insert(1, f"{t.dim_style}{rate:.1f}/min{ansi.RESET}")
+        marks = sparkline(self.view.series(26), 26)
+        if marks:
+            segments.insert(0, f"{t.dim_style}{marks}{ansi.RESET}")
+        right = ""
+        for segment in reversed(segments):
+            candidate = segment if not right else f"{segment}{t.dim_style}   {ansi.RESET}{right}"
+            if ansi.width(left) + ansi.width(candidate) + 1 <= width:
+                right = candidate
         row = left
-        if ansi.width(row) + ansi.width(state) + 1 <= width:
-            row = ansi.pad(row, width - ansi.width(state)) + state
+        if right and ansi.width(row) + ansi.width(right) + 1 <= width:
+            row = ansi.pad(row, width - ansi.width(right)) + right
         return ansi.clip(row, width)
 
     def _channel_chip(self, name: str) -> str:
@@ -391,9 +675,9 @@ class SwarmBoard:
         elif self.open_member:
             keys = "esc back · ↑↓ member · tab roster · left close"
         elif self.focus == "feed":
-            keys = "tab roster · ↑↓ scroll · f follow · ⏎ member · ? keys · left close"
+            keys = "tab roster · ↑↓ scroll · f follow · v panel · ⏎ member · ? keys"
         else:
-            keys = "↑↓ select · ⏎ open member · tab feed · 1-9 channel · ? keys · left close"
+            keys = "↑↓ select · ⏎ member · tab feed · v panel · 1-9 channel · ? keys · left close"
         hint = f"{t.dim_style}{ansi.clip_ellipsis(keys, width)}{ansi.RESET}"
         if self.open_member:
             tag = f"{t.dim_style}viewing @{self.open_member}{ansi.RESET}"
@@ -407,7 +691,7 @@ class SwarmBoard:
         if height <= 0:
             return []
         if width >= 84:
-            roster_w = max(ROSTER_MIN, min(ROSTER_MAX, width * 38 // 100))
+            roster_w = max(ROSTER_MIN, min(ROSTER_MAX, width * 36 // 100))
             feed_w = max(20, width - roster_w - 3)
             left = self._roster(roster_w, height)
             right = self._right(feed_w, height)
@@ -432,7 +716,7 @@ class SwarmBoard:
     def _right(self, width: int, height: int) -> list[str]:
         if self.open_member:
             return self._member_panel(self.open_member, width, height)
-        return self._feed(width, height)
+        return self._activity(width, height)
 
     # -- needs you ---------------------------------------------------------
 
@@ -504,23 +788,24 @@ class SwarmBoard:
     def _group_head(self, state: str, members: list[MemberView]) -> str:
         t = theme.current()
         count = sum(1 for member in members if member.state == state)
-        word = dict((name, word) for name, _glyph, word in STATES).get(state, state)
+        word = STATE_WORD.get(state, state)
         return f"{t.dim_style}{word.upper()} {count}{ansi.RESET}"
 
     def _card(self, member: MemberView, width: int, chosen: bool, *, compact: bool) -> list[str]:
         t = theme.current()
         indent = "  " * self._depth(member)
         glyph, style = self._state_face(member)
-        bar = f"{t.tag_style}▌{ansi.RESET} " if chosen else "  "
+        bar = f"{t.tag_style}▌{ansi.RESET}" if chosen else " "
+        lead = f"{bar}{indent}"
         name_style = f"{t.tag_style}{ansi.BOLD}" if chosen else t.hint_style
         name = f"{name_style}{member.name}{ansi.RESET}"
         if member.role not in ("worker", "") and member.role != member.name:
             name += f"{t.dim_style} · {member.role}{ansi.RESET}"
         numbers = self._numbers(member)
-        room = width - ansi.width(bar) - len(indent) - 2 - ansi.width(numbers) - 1
-        head = f"{bar}{indent}{style}{glyph}{ansi.RESET} "
-        head += ansi.clip_ellipsis(name, max(4, room))
-        first = ansi.pad(head, max(1, width - ansi.width(numbers))) + numbers
+        room = width - ansi.width(lead) - 3 - ansi.width(numbers) - 1
+        first = f"{lead} {style}{glyph}{ansi.RESET} "
+        first += ansi.clip_ellipsis(name, max(4, room))
+        first = ansi.pad(first, max(1, width - ansi.width(numbers))) + numbers
         if compact:
             room_now = width - ansi.width(first) - 3
             if room_now >= 12:
@@ -532,21 +817,59 @@ class SwarmBoard:
                     )
                 ]
             return [ansi.clip(first, width)]
-        lead = f"{bar}{indent}   "
-        room = max(6, width - ansi.width(lead))
-        where = ansi.clip_ellipsis(self._where_line(member), room)
-        activity = ansi.clip_ellipsis(member.activity, room)
-        return [
-            ansi.clip(first, width),
-            f"{lead}{t.dim_style}{where}{ansi.RESET}",
-            f"{lead}{t.statusline_style}{activity}{ansi.RESET}",
-        ]
+        pad = f"{bar}{indent}   "
+        counters = self._counters(member)
+        where = ansi.clip_ellipsis(
+            self._where_line(member), max(6, width - ansi.width(pad) - ansi.width(counters) - 1)
+        )
+        second = ansi.pad(
+            f"{pad}{t.dim_style}{where}{ansi.RESET}", max(1, width - ansi.width(counters))
+        )
+        second += counters
+        third = f"{pad}{self._now_line(member, max(8, width - ansi.width(pad)))}"
+        return [ansi.clip(first, width), ansi.clip(second, width), ansi.clip(third, width)]
 
     def _numbers(self, member: MemberView) -> str:
+        """Age and turns, right aligned: the two numbers a watcher skims for."""
         t = theme.current()
         unread = "" if member.state == "killed" else self.view.unread(member)
         tail = f"{t.tag_style}+{unread}{ansi.RESET}" if unread else f"{t.dim_style}·{ansi.RESET}"
-        return f"{t.dim_style}{member.age}m  {member.turns}t{ansi.RESET}  {tail}"
+        return f"{t.dim_style}{member.age}m {member.turns}t{ansi.RESET} {tail}"
+
+    def _counters(self, member: MemberView) -> str:
+        """How much work this member has actually done."""
+        t = theme.current()
+        if member.state == "killed":
+            return f"{t.dim_style}✕{ansi.RESET} "
+        out = f"{t.dim_style}{member.tools}⌁{ansi.RESET}"
+        if member.fails:
+            out += f"{t.diff_removed_style} {member.fails}✗{ansi.RESET}"
+        return f"{out} "
+
+    def _now_line(self, member: MemberView, width: int) -> str:
+        """The one line that answers "what is it doing": the tool it is running."""
+        t = theme.current()
+        running = member.running
+        text = member.activity or "—"
+        style = t.statusline_style
+        head = ""
+        tail = ""
+        if member.state in ("waiting", "stopped"):
+            style = t.dim_style
+        if member.state == "blocked":
+            style = t.warning_style
+        elif member.state == "killed":
+            style = t.dim_style
+        elif running is not None:
+            style = t.hint_style
+            text = f"{tool_glyph(running.label)} {running.label} {running.detail}".strip()
+            tail = duration(running.secs)
+            head = f"{t.tag_style}{spinner(self.now)}{ansi.RESET} "
+        room = max(4, width - ansi.width(head) - ansi.width(tail) - 1)
+        row = f"{head}{style}{ansi.clip_ellipsis(text, room)}{ansi.RESET}"
+        if tail and ansi.width(row) + ansi.width(tail) + 1 <= width:
+            row = ansi.pad(row, width - ansi.width(tail)) + f"{t.dim_style}{tail}{ansi.RESET}"
+        return row
 
     def _where_line(self, member: MemberView) -> str:
         bits = [member.model or "—"]
@@ -574,81 +897,117 @@ class SwarmBoard:
     def _state_face(self, member: MemberView) -> tuple[str, str]:
         t = theme.current()
         if member.state == "working":
-            pulse = ("◇", "◈", "◆", "◈")[int(self.now * 3) % 4]
+            frames = ("◇", "◈", "◆", "◈")
+            pulse = frames[0 if theme.motion_reduced() else int(self.now * 3) % 4]
             return pulse, t.tag_style
         return {
             "blocked": ("◆", t.warning_style),
             "waiting": ("⏸", t.dim_style),
             "stopped": ("○", t.dim_style),
-            "killed": ("✕", t.red_style),
+            "killed": ("✕", t.dim_style),
         }.get(member.state, ("·", t.dim_style))
 
-    # -- feed --------------------------------------------------------------
+    # -- the activity column -----------------------------------------------
 
-    def posts_for_channel(self) -> list[PostView]:
-        if self.channel == "all":
-            return list(self.view.posts)
-        return [post for post in self.view.posts if post.channel == self.channel]
+    def shown_events(self) -> list[EventView]:
+        """What the activity column lists: tool calls, or only board posts."""
+        events = self.view.timeline(self.channel)
+        if self.panel == "board":
+            return [event for event in events if event.kind == "say"]
+        return events
 
-    def _feed(self, width: int, height: int) -> list[str]:
+    def _activity(self, width: int, height: int) -> list[str]:
         t = theme.current()
         if height <= 0:
             return []
-        posts = self.posts_for_channel()
+        events = self.shown_events()
         rows: list[str] = []
         if height >= 3:
-            rows.append(self._feed_header(width))
+            rows.append(self._panel_head(width, len(events)))
             height -= 1
-        if not posts:
-            rows.append(f"{t.dim_style}  the board is empty{ansi.RESET}")
+        if not events:
+            rows.append(f"{t.dim_style}  nothing has happened yet{ansi.RESET}")
             return rows
         room = max(0, height)
-        tail = posts if self.follow else posts[: max(0, len(posts) - self.scroll)]
+        tail = events if self.follow else events[: max(0, len(events) - self.scroll)]
         shown = tail[-room:] if room else []
         if rows and len(shown) < len(tail):
-            rows[-1] = self._feed_header(width, hidden=len(tail) - len(shown))
+            rows[-1] = self._panel_head(width, len(events), hidden=len(tail) - len(shown))
         body = [
-            self._post_row(post, width, newest=index == len(shown) - 1)
-            for index, post in enumerate(shown)
+            self._event_row(event, width, newest=index == len(shown) - 1)
+            for index, event in enumerate(shown)
         ]
         pad = max(0, height - len(body))
         return rows + [""] * pad + body
 
-    def _feed_header(self, width: int, hidden: int = 0) -> str:
+    def _panel_head(self, width: int, count: int, *, hidden: int = 0) -> str:
         t = theme.current()
-        where = "every channel" if self.channel == "all" else f"#{self.channel}"
-        label = f"{t.hint_style}{ansi.BOLD}BOARD{ansi.DIM_OFF}"
-        left = f"{t.dim_style}▾{ansi.RESET} {label} {t.dim_style}· {where}{ansi.RESET}"
-        count = len(self.posts_for_channel())
-        right = f"{t.dim_style}{count} post{'s' if count != 1 else ''}{ansi.RESET}"
-        if self.channel not in ("all",) and self.channel in self.view.channels:
-            topic = self.view.channels[self.channel]
-            right = f"{t.dim_style}{ansi.clip_ellipsis(topic, max(0, width // 2))}{ansi.RESET}"
+        label = "ACTIVITY · BOARD" if self.panel == "activity" else "BOARD"
+        where = "all channels" if self.channel == "all" else f"#{self.channel}"
+        left = (
+            f"{t.dim_style}▾{ansi.RESET} {t.hint_style}{ansi.BOLD}{label}{ansi.DIM_OFF}"
+            f"{t.dim_style} · {where}{ansi.RESET}"
+        )
         if hidden:
             right = f"{t.dim_style}+{hidden} older{ansi.RESET}"
+        elif self.channel != "all" and self.channel in self.view.channels:
+            topic = self.view.channels[self.channel]
+            right = f"{t.dim_style}{ansi.clip_ellipsis(topic, max(0, width // 2))}{ansi.RESET}"
+        else:
+            word = "entries" if self.panel == "activity" else "posts"
+            right = f"{t.dim_style}{count} {word}{ansi.RESET}"
         if ansi.width(left) + ansi.width(right) + 1 <= width:
             return ansi.pad(left, width - ansi.width(right)) + right
         return ansi.clip(left, width)
 
-    def _post_row(self, post: PostView, width: int, *, newest: bool = False) -> str:
+    def _event_row(self, event: EventView, width: int, *, newest: bool = False) -> str:
+        """One tool call or one post: who, what, how long, how it went."""
         t = theme.current()
-        seq = f"{t.dim_style}#{post.seq:<3}{ansi.RESET}"
-        where = ""
-        if width >= 70:
-            label = "" if post.channel == "main" else f"#{post.channel}"
-            where = f"{t.dim_style}{ansi.pad(label, 8)}{ansi.RESET}"
-        author = f"{t.tag_style}@{ansi.clip_ellipsis(post.agent, 11)}{ansi.RESET}"
-        lead = f" {seq} {where}{ansi.pad(author, 14)}"
-        room = max(6, width - ansi.width(lead) - 1)
+        lead = ""
+        if width >= 78 and event.clock:
+            lead += f"{t.dim_style}{event.clock:>8}{ansi.RESET} "
+        if width >= 64 and event.agent:
+            who = ansi.clip_ellipsis("@" + event.agent, 10)
+            lead += f"{t.tag_style}{ansi.pad(who, 11)}{ansi.RESET}"
+        if event.kind == "say":
+            glyph, label, glyph_style = "▤", "board", t.dim_style
+        else:
+            glyph = tool_glyph(event.label)
+            label = event.label or "tool"
+            glyph_style = {"run": t.tag_style, "fail": t.diff_removed_style}.get(
+                event.status, t.dim_style
+            )
+        head = (
+            f"{glyph_style}{glyph}{ansi.RESET} "
+            f"{t.hint_style}{ansi.pad(ansi.clip_ellipsis(label, 7), 7)}{ansi.RESET}"
+        )
+        lead += head
+        tail = ""
+        if event.kind == "say":
+            if event.seq:
+                tail = f"{t.dim_style}#{event.seq}{ansi.RESET}"
+        else:
+            if event.running:
+                mark = f"{t.tag_style}{spinner(self.now)}{ansi.RESET}"
+            elif event.status == "fail":
+                mark = f"{t.diff_removed_style}✗{ansi.RESET}"
+            else:
+                mark = f"{t.diff_added_style}✓{ansi.RESET}"
+            tail = f"{t.dim_style}{duration(event.secs):>5}{ansi.RESET} {mark}"
+        room = max(4, width - ansi.width(lead) - ansi.width(tail) - 1)
+        text = _styled(event.detail) if event.kind == "say" else event.detail
         body_style = t.hint_style if newest else t.statusline_style
-        body = ansi.clip_ellipsis(_styled(post.text), room)
-        return ansi.clip(f"{lead}{body_style}{body}{ansi.RESET}", width)
+        body = f"{body_style}{ansi.clip_ellipsis(text, room)}{ansi.RESET}"
+        row = f"{lead}{body}"
+        if tail and ansi.width(row) + ansi.width(tail) + 1 <= width:
+            row = ansi.pad(row, width - ansi.width(tail)) + tail
+        return ansi.clip(row, width)
 
     # -- one member's panel ------------------------------------------------
 
     def _member_panel(self, name: str, width: int, height: int) -> list[str]:
-        member = self.view.member(name)
         t = theme.current()
+        member = self.view.member(name)
         if member is None:
             return [f"{t.dim_style}  no member {name!r}{ansi.RESET}"]
         glyph, style = self._state_face(member)
@@ -674,34 +1033,44 @@ class SwarmBoard:
         meta = f" {t.hint_style}{member.model or '—'}{ansi.RESET}"
         meta += (
             f"{t.dim_style} · {member.age}m · {member.turns} turns"
+            f" · {member.tools} tools"
             f" · read #{member.last_read}{ansi.RESET}"
         )
+        if member.fails:
+            meta += f"{t.diff_removed_style} · {member.fails} failed{ansi.RESET}"
         if unread:
             meta += f"{t.tag_style} · +{unread} unread{ansi.RESET}"
         rows.append(ansi.clip(meta, width))
+        now = self._now_line(member, max(8, width - 6))
+        rows.append(ansi.clip(f" {t.dim_style}NOW{ansi.RESET}  {now}", width))
         rows.append("")
+
+        events = [event for event in member.events]
+        posts = self.view.posts_by(member.name)
+        room = max(0, height - len(rows) - 3)
+        shown_events = events[-max(1, room * 3 // 5) :] if room else []
+        shown_posts = posts[-max(0, room - len(shown_events) - 1) :] if room else []
         rows.append(f" {t.dim_style}ACTIVITY{ansi.RESET}")
-        rows.append(
-            f" {t.hint_style}{ansi.clip_ellipsis(member.activity, max(6, width - 3))}{ansi.RESET}"
-        )
+        rows.extend(self._event_row(event, width) for event in shown_events)
+        if not shown_events:
+            rows.append(f" {t.dim_style}no tool calls yet{ansi.RESET}")
         rows.append("")
-        mine = self.view.posts_by(member.name)
-        rows.append(f" {t.dim_style}POSTS ({len(mine)}){ansi.RESET}")
-        body_h = max(0, height - len(rows))
-        for post in mine[-body_h:] if body_h else []:
+        rows.append(f" {t.dim_style}POSTS ({len(posts)}){ansi.RESET}")
+        for post in shown_posts:
             seq = f"{t.dim_style}#{post.seq:<3}{ansi.RESET}"
             area = ""
             if post.channel != "main" and width >= 78:
                 area = f"{t.dim_style}{ansi.pad('#' + post.channel, 8)}{ansi.RESET}"
-            room = max(6, width - ansi.width(seq) - ansi.width(area) - 2)
+            when = f"{t.dim_style}{post.at:>8}{ansi.RESET} " if post.at and width >= 78 else ""
+            room_text = max(6, width - ansi.width(seq) - ansi.width(area) - ansi.width(when) - 2)
             rows.append(
                 ansi.clip(
-                    f" {seq} {area}{t.statusline_style}"
-                    f"{ansi.clip_ellipsis(_styled(post.text), room)}{ansi.RESET}",
+                    f" {when}{seq} {area}{t.statusline_style}"
+                    f"{ansi.clip_ellipsis(_styled(post.text), room_text)}{ansi.RESET}",
                     width,
                 )
             )
-        if not mine:
+        if not posts:
             rows.append(f" {t.dim_style}nothing yet{ansi.RESET}")
         return rows[:height]
 
@@ -728,6 +1097,9 @@ class SwarmBoard:
         if name == "tab":
             self.focus = "feed" if self.focus == "roster" else "roster"
             return "redraw"
+        if name == "v":
+            self.panel = "board" if self.panel == "activity" else "activity"
+            return "redraw"
         if name in ("up", "down", "k", "j"):
             delta = -1 if name in ("up", "k") else 1
             if self.focus == "roster" or self.open_member:
@@ -735,7 +1107,7 @@ class SwarmBoard:
                     self.selected = max(0, min(len(ordered) - 1, self.selected + delta))
             elif delta < 0:
                 self.follow = False
-                self.scroll = min(max(0, len(self.posts_for_channel()) - 1), self.scroll + 1)
+                self.scroll = min(max(0, len(self.shown_events()) - 1), self.scroll + 1)
             else:
                 self.scroll = max(0, self.scroll - 1)
             return "redraw"
@@ -774,7 +1146,10 @@ class SwarmBoard:
         if name in ("1", "2", "3"):
             ask.selected = int(name) - 1
             return ask.choice
-        if name in ("enter", " "):
+        if name == "enter":
+            # Space does not answer: it is the pause key next to the confirm
+            # key, and an approval is the one thing on this page that must not
+            # be one keystroke away from a reflex.
             return ask.choice
         if name in ("esc", "left", "n"):
             return "deny"
@@ -788,7 +1163,8 @@ class SwarmBoard:
             f"{t.hint_style}↑ ↓{ansi.RESET}   move the selection",
             f"{t.hint_style}⏎{ansi.RESET}     open the member's panel",
             f"{t.hint_style}esc{ansi.RESET}   back, then close the board",
-            f"{t.hint_style}tab{ansi.RESET}   switch between roster and feed",
+            f"{t.hint_style}tab{ansi.RESET}   switch between roster and activity",
+            f"{t.hint_style}v{ansi.RESET}     activity timeline or board posts only",
             f"{t.hint_style}1-9{ansi.RESET}   pick a channel",
             f"{t.hint_style}f{ansi.RESET}     follow the tail",
             f"{t.hint_style}space{ansi.RESET} pause the board",
@@ -844,9 +1220,14 @@ __all__ = [
     "MIN_COLS",
     "MIN_ROWS",
     "STATES",
+    "Ask",
+    "EventView",
     "MemberView",
     "PostView",
     "SwarmBoard",
     "SwarmView",
+    "duration",
     "snapshot_from_engine",
+    "sparkline",
+    "tool_glyph",
 ]

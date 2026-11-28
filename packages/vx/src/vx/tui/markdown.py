@@ -7,12 +7,12 @@ two-column gutter and the ``│ `` command rail.
 from __future__ import annotations
 
 import re
-from contextlib import suppress
 from functools import lru_cache
 from typing import Any
 
 from vx.tui import ansi, cache
 from vx.tui import theme as _theme
+from vx.tui.latex import preprocess_latex
 
 _FENCE_RE = re.compile(r"^(?P<indent>[ ]{0,3})(?P<marker>`{3,}|~{3,})(?P<info>.*)$")
 _HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
@@ -219,15 +219,6 @@ def _task_prefix(body: str) -> tuple[str | None, str]:
     return f"[{mark}]", m.group("body")
 
 
-def _latex(line: str) -> str:
-    """Unicode math for a non-fenced line, when the helper is importable."""
-    with suppress(Exception):
-        from ctx.term.latex import preprocess_latex
-
-        return preprocess_latex(line)
-    return line
-
-
 _TASK_RE = re.compile(r"^\[([ xX])\][ \t]+(.*)$")
 
 
@@ -404,6 +395,9 @@ def _replace_html_breaks(line: str) -> str:
 
 def render(text: str, cols: int) -> list[str]:
     """Render markdown to styled rows (no gutter, no trailing blanks)."""
+    # LaTeX math becomes Unicode before line splitting so multi-line
+    # ``$$...$$`` blocks convert too; the helper leaves fenced code alone.
+    text = preprocess_latex(text)
     rows: list[str] = []
     raw_lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     lines: list[str] = []
@@ -429,10 +423,6 @@ def render(text: str, cols: int) -> list[str]:
             lines.append(raw)
             continue
         lines.append(_replace_html_breaks(raw))
-
-    # fx turns LaTeX math into Unicode so a formula reads as symbols rather than
-    # as backslash words; the helper leaves fenced code alone.
-    lines = [_latex(line) for line in lines]
 
     i = 0
     n = len(lines)

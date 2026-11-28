@@ -47,6 +47,13 @@ MAX_MEMBERS = 8
 #: Turns a member gets in one run before the harness stops it.
 MAX_TURNS = 600
 
+#: Tool calls the board keeps per member: enough for the activity column, not a
+#: transcript (the session already has one).
+MAX_ACTIVITY = 40
+
+#: How much of the text being written the card holds for its live line.
+MAX_STREAM = 2_000
+
 #: Roles that see every channel, whatever they subscribe to.
 SEE_ALL_ROLES = frozenset({"coordinator", "narrator", "monitor"})
 
@@ -100,6 +107,24 @@ class SwarmError(RuntimeError):
 
 
 @dataclass
+class ActivityEvent:
+    """One tool call a member made, as the board page lists it.
+
+    ``status`` is ``run`` while the call is in flight, then ``ok`` or ``fail``;
+    ``took`` is the wall-clock seconds it held the member up.
+    """
+
+    kind: str = "tool"
+    label: str = ""
+    detail: str = ""
+    status: str = "run"
+    at: float = 0.0
+    took: float = 0.0
+    output: str = ""
+    channel: str = MAIN
+
+
+@dataclass
 class Member:
     """One live worker, or the coordinator."""
 
@@ -128,6 +153,16 @@ class Member:
     #: The tool call this member is blocked on, while a human reviews it
     #: (``""`` when nothing is pending). The board shows it as "needs you".
     awaiting: str = ""
+    #: The tool calls this member has made, oldest first: the board's activity
+    #: column, and the only live view of what a worker is actually doing.
+    activity: list[ActivityEvent] = field(default_factory=list)
+    #: The call in flight right now, listed before it finishes so a watcher sees
+    #: the swarm move rather than its results.
+    current: ActivityEvent | None = None
+    tools: int = 0
+    fails: int = 0
+    #: The reply being written, bounded, for the card's live line.
+    stream: str = ""
 
     @property
     def killed(self) -> bool:
@@ -851,8 +886,14 @@ class SwarmEngine:
             AskUserEvent,
             AskUserResponse,
             ErrorEvent,
+            TextDeltaEvent,
+            TextStartEvent,
             ToolApprovalEvent,
+            ToolEndEvent,
+            ToolResultEvent,
+            ToolStartEvent,
             TurnEndEvent,
+            TurnStartEvent,
         )
         from ctx.protocol.types import StopReason, TextContent
 
@@ -864,6 +905,16 @@ class SwarmEngine:
             elif isinstance(event, AskUserEvent):
                 if event.future is not None and not event.future.done():
                     event.future.set_result(AskUserResponse())
+            elif isinstance(event, ToolStartEvent):
+                self._activity_start(member, event)
+            elif isinstance(event, ToolEndEvent):
+                self._activity_call(member, event)
+            elif isinstance(event, ToolResultEvent):
+                self._activity_result(member, event)
+            elif isinstance(event, TurnStartEvent | TextStartEvent):
+                member.stream = ""
+            elif isinstance(event, TextDeltaEvent):
+                self._activity_text(member, event)
             elif isinstance(event, TurnEndEvent):
                 member.turns += 1
                 message = event.assistant_message
@@ -871,9 +922,58 @@ class SwarmEngine:
                     member.last_text = "".join(
                         part.text for part in message.content if isinstance(part, TextContent)
                     )
+                    member.stream = ""
             elif isinstance(event, ErrorEvent):
                 member.error = str(event.error)
         self._save_row(member)
+
+    # -- what the worker is doing, live ----------------------------------
+
+    def _activity_start(self, member: Member, event: Any) -> None:
+        """A tool call began: show it before it finishes, that is the point."""
+        member.stream = ""
+        member.current = ActivityEvent(
+            kind="tool",
+            label=str(getattr(event, "tool_name", "") or "tool"),
+            at=time.time(),
+            channel=member.row.channels[0] if member.row.channels else MAIN,
+        )
+
+    def _activity_call(self, member: Member, event: Any) -> None:
+        """The arguments are known now: name the call the way the CLI would."""
+        current = member.current
+        if current is None:
+            current = ActivityEvent(
+                at=time.time(), channel=member.row.channels[0] if member.row.channels else MAIN
+            )
+            member.current = current
+        current.label = str(getattr(event, "tool_name", "") or current.label or "tool")
+        current.detail = " ".join(str(getattr(event, "display", "") or "").split())[:120]
+
+    def _activity_result(self, member: Member, event: Any) -> None:
+        """The call is over: stamp it, count it, and file it on the activity log."""
+        current = member.current
+        if current is None:
+            return
+        result = getattr(event, "result", None)
+        failed = bool(getattr(result, "is_error", False))
+        current.status = "fail" if failed else "ok"
+        current.took = max(0.0, time.time() - (current.at or time.time()))
+        summary = " ".join(str(getattr(result, "ui_summary", "") or "").split())
+        current.output = summary[:120]
+        member.tools += 1
+        if failed:
+            member.fails += 1
+        member.activity.append(current)
+        del member.activity[:-MAX_ACTIVITY]
+        member.current = None
+
+    def _activity_text(self, member: Member, event: Any) -> None:
+        """Keep the tail of the reply: a card has one line, not a transcript."""
+        piece = str(getattr(event, "delta", "") or "")
+        if not piece:
+            return
+        member.stream = (member.stream + piece)[-MAX_STREAM:]
 
     async def _decide(self, member: Member, event: Any) -> Any:
         """Approve a worker's tool call, or let the watching UI decide it.
@@ -1215,11 +1315,13 @@ async def close_all_engines() -> None:
 
 
 __all__ = [
+    "MAX_ACTIVITY",
     "MAX_MEMBERS",
     "MAX_TURNS",
     "SEE_ALL_ROLES",
     "WORKER_PROMPT",
     "WORKSPACES",
+    "ActivityEvent",
     "Member",
     "SpawnRequest",
     "SwarmEngine",

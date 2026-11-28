@@ -40,7 +40,18 @@ Exit codes:
 | `VX_DEBUG_FRAME` | Path to a file; every rendered frame is appended as JSON for debugging the TUI |
 | `VX_UPDATE_USE_PIP` | Set to force `/update` down the `pip install --upgrade vx` path |
 
-`VTX_PET_SHEET` / `VTX_PETS_DIR` configure the animated-pet graphics prototype (`pet.py`, `demo.py`); they are a development demo, not shipped UI surface.
+`VTX_PET_SHEET` / `VTX_PETS_DIR` configure the animated-pet graphics prototype (`pet.py`, `pet_demo.py`); they are a development demo, not shipped UI surface.
+
+## Demos
+
+Each of these is a standalone program that drives one part of `vx.tui` against a real terminal:
+
+| Command | What it shows |
+|---|---|
+| `uv run python demo.py` | the swarm board (`vx.tui.swarm`) with a simulated room: live tool calls, durations, a `needs you` approval |
+| `uv run python html_demo.py` | the HTML/CSS renderer, page by page |
+| `uv run python markdown_demo.py` | the markdown renderer over a long document |
+| `uv run python pet_demo.py` | sprite-sheet animation across the cell and pixel graphics backends |
 
 ## Documentation
 
