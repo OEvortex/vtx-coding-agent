@@ -272,6 +272,22 @@ def test_clicking_a_terminal_row_opens_its_drawer():
     assert app._terminal.job is REGISTRY.jobs["j1"]
 
 
+def test_clicking_a_terminal_row_is_not_swallowed_by_the_menu(monkeypatch):
+    app = make_app(100, 26)
+    REGISTRY.jobs["j1"] = Job(id="j1", command="npm run dev", proc=None, group=None)
+    REGISTRY._next = 1
+    give_jobs(app, JobRow("j1", "npm run dev", "running", "2s"))
+    app._draw(force=True)
+    row = next(iter(app._sidebar.job_hits))
+    app._menu = object()
+    monkeypatch.setattr(app, "_menu_key", lambda _key: None)
+
+    app._handle_key(f"mouse:left:{sidebar_x(app)}:{row + 1}")
+
+    assert app._terminal is not None
+    assert app._terminal.job is REGISTRY.jobs["j1"]
+
+
 def test_clicking_the_section_header_folds_it():
     app = make_app(100, 26)
     give_plan(app, Todo("read", "active"))

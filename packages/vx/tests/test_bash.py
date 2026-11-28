@@ -1,6 +1,7 @@
 """Bash tool: output sanitizing, truncation, and commands that never end."""
 
 import asyncio
+import os
 import time
 
 import pytest
@@ -96,19 +97,17 @@ class TestNotStuck:
         assert "up" in (result.result or "")
 
     @pytest.mark.asyncio
-    async def test_the_background_child_stays_with_the_shell(self, tmp_path):
-        """The shell outlives the call, so its `&` children do too.
-
-        That is the price of cwd and exports surviving between calls; a process
-        that must belong to the tool is a `background=true` task, which has an
-        id and a kill.
-        """
-        tool = BashTool()
-        result = await tool.execute(BashParams(command="sleep 60 & echo up", timeout=30))
-        assert result.success
-        jobs = await tool.execute(BashParams(command="jobs", timeout=30))
-        assert "sleep 60" in (jobs.result or "")
-        await tool.execute(BashParams(command="kill %1", timeout=30))
+    async def test_the_background_child_is_killed_with_the_call(self, tmp_path):
+        pidfile = tmp_path / "pid"
+        await BashTool().execute(
+            BashParams(command=f"sleep 60 & echo $! > {pidfile}; echo up", timeout=30)
+        )
+        pid = int(pidfile.read_text().strip())
+        for _ in range(50):
+            if not os.path.exists(f"/proc/{pid}"):
+                break
+            await asyncio.sleep(0.02)
+        assert not os.path.exists(f"/proc/{pid}")
 
     @pytest.mark.asyncio
     async def test_one_long_line_is_output_not_an_error(self):

@@ -40,9 +40,6 @@ Use the `# Env` block instead of guessing about the machine.
   a prompt it is stuck on, and `bash(action="kill", task_id="j1")` stops it.
   `bash(action="list")` is the inventory. A dev server or a watch loop never
   blocks a turn, and you are told when one finishes rather than polling it.
-- One shell kept across calls: every `bash` runs in the same persistent shell,
-  so `cd`, exports and an activated venv survive between calls. Do not chain
-  unrelated setup into one command line to make it stick — it already sticks.
 - Read fully before deciding: trace the flow and every caller, don't guess from
   names. Laziness is for the diff, not the investigation.
 - Never view or inspect a file or directory with a shell command (cat, sed,

@@ -274,9 +274,7 @@ class VxApp(_CommandBase):
             # still holding a port after the panel is gone.
             with suppress(Exception):
                 from vx.jobs import REGISTRY
-                from vx.terminals import TERMINALS
 
-                await TERMINALS.close_all()
                 await REGISTRY.kill_all()
             self.term.exit()
         return 0
@@ -869,6 +867,9 @@ class VxApp(_CommandBase):
     def _handle_key(self, key: str) -> None:
         if self._exiting:
             return
+        if key.startswith("mouse:"):
+            self._mouse_key(key)
+            return
         if self._terminal is not None and self._terminal_key(key):
             return
         if self._swarm is not None and self._swarm_key(key):
@@ -880,9 +881,6 @@ class VxApp(_CommandBase):
             self._approval_key(key)
             return
         if self._ask is not None and self._ask_key(key):
-            return
-        if key.startswith("mouse:"):
-            self._mouse_key(key)
             return
         # The user is here: the idle recap is for when they are not.
         self._idle_since = None
@@ -3033,22 +3031,11 @@ class VxApp(_CommandBase):
 def _job_rows() -> list[sidebar.JobRow]:
     """The registry as the panel draws it: four fields, no process."""
     from vx.jobs import REGISTRY
-    from vx.terminals import TERMINALS
 
-    rows = [
+    return [
         sidebar.JobRow(id=job.id, command=job.command, status=job.status, label=job.label())
         for job in REGISTRY.all()
     ]
-    rows += [
-        sidebar.JobRow(
-            id=terminal.id,
-            command=f"terminal · {terminal.cwd}",
-            status="running" if terminal.status_word() == "RUNNING" else "stopped",
-            label=f"{terminal.elapsed():.0f}s",
-        )
-        for terminal in TERMINALS.all()
-    ]
-    return rows
 
 
 def _pad_to(row: str, width: int) -> str:

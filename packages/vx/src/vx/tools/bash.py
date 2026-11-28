@@ -1,17 +1,16 @@
 """Bash tool for vx — run shell commands, and manage the ones still running.
 
-Two ways to run something:
+Three ways to run something, all of them fresh processes:
 
-* ``bash(command=...)`` — one persistent shell per agent, blocked on until the
-  command exits or ``timeout`` runs out. Because the shell is the same one every
-  time, ``cd``, exports and an activated venv survive between calls.
+* ``bash(command=...)`` — blocked on until it exits or ``timeout`` runs out.
+* ``bash(command=..., wait_ms=N)`` — the same, but the caller stops waiting after
+  N ms and gets a task id back (agy's ``WaitMsBeforeAsync``): the command is
+  already a job by then, and the sync call was only a wait on it.
 * ``bash(command=..., background=True)`` — a job immediately, for dev servers and
-  watchers that must not hold a shell.
+  watchers.
 
-``wait_ms`` stops waiting after N ms and hands back the shell's id.
-
-And four actions on the jobs and terminals those produced, in agy's vocabulary:
-``status``, ``list``, ``send_input``, ``kill``.
+And four actions on those jobs, in agy's vocabulary: ``status``, ``list``,
+``send_input``, ``kill``.
 
 Everything a job has to say before it is asked — finished, stalled on a prompt,
 or still running — arrives as a ``<job-notification>`` block at the head of the
@@ -20,7 +19,6 @@ next tool result.
 
 import asyncio
 import contextlib
-import itertools
 import os
 import re
 import signal
@@ -36,7 +34,7 @@ from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
 from pydantic import BaseModel, Field
 
-from vx.notifications import drain_text
+from vx.notifications import FINISHED, NOTICES, drain_text
 
 DEFAULT_TIMEOUT = 180
 MAX_OUTPUT_BYTES = 50 * 1024
@@ -293,20 +291,14 @@ class BashParams(BaseModel):
         return self.task_id.strip()
 
 
-#: Shell names, one per bash tool: t1 is this agent's, t2 the next agent's.
-_SHELL_IDS = itertools.count(1)
-
-
 class BashTool(BaseTool):
     name = "bash"
     tool_icon = "$"
     params = BashParams
     mutating = True
-    #: The persistent shell this instance drives (``t1``), allocated on first use.
-    _terminal: str | None = None
     description = (
-        "Run a shell command (builds, tests, git, package managers) in one persistent shell "
-        "per agent, so cd, exports and an activated venv survive between calls. "
+        "Run a shell command in the cwd (builds, tests, git, package managers), each in a "
+        "fresh process: cd and exports do not survive between calls. "
         f"Output truncated to last {MAX_OUTPUT_LINES} lines/{MAX_OUTPUT_BYTES // 1024}KB "
         "(full saved to a log). Not for reading/listing (use read), searching "
         "(use search), editing (use apply_patch), or fetching URLs (use web). "
@@ -340,7 +332,11 @@ class BashTool(BaseTool):
             return await self._dispatch(action, params)
         if params.background:
             return await self._start_task(params)
-        return await self._run_in_terminal(params, cancel_event=cancel_event, on_output=on_output)
+        if params.wait_ms > 0:
+            return await self._run_with_promotion(params, cancel_event=cancel_event)
+        return await self._run_foreground(
+            params, cancel_event=cancel_event, inline_output=inline_output, on_output=on_output
+        )
 
     # -- actions ------------------------------------------------------------
 
@@ -354,41 +350,30 @@ class BashTool(BaseTool):
         if not params.target():
             return self._fail(f"The {action} action needs a task_id")
         from vx.jobs import REGISTRY
-        from vx.terminals import TERMINALS
 
-        target = params.target()
-        job = REGISTRY.get(target)
-        terminal = TERMINALS.get(target)
-        if job is None and terminal is None:
-            return self._unknown_target(target)
-        if job is not None:
-            return await self._job_action(action, job, params)
-        return await self._terminal_action(action, terminal, params)
+        job = REGISTRY.get(params.target())
+        if job is None:
+            return self._unknown_target(params.target())
+        return await self._job_action(action, job, params)
 
     def _list(self) -> ToolResult:
         from vx.jobs import REGISTRY
-        from vx.terminals import TERMINALS
 
-        blocks: list[str] = []
-        for job in REGISTRY.all():
-            blocks.append(self._job_status_block(job, tail=0))
-        for terminal in TERMINALS.all():
-            blocks.append(self._terminal_status_block(terminal))
-        if not blocks:
+        jobs = REGISTRY.all()
+        if not jobs:
             msg = "No running tasks."
             return ToolResult(success=True, result=self._with_notices(msg), ui_summary="no tasks")
-        body = "\n\n".join(blocks)
+        body = "\n\n".join(self._job_status_block(job, tail=0) for job in jobs)
         return ToolResult(
             success=True,
             result=self._with_notices(body),
-            ui_summary=f"{len(REGISTRY.all())} tasks · {len(TERMINALS.all())} terminals",
+            ui_summary=f"{len(jobs)} task{'s' if len(jobs) != 1 else ''}",
         )
 
     def _unknown_target(self, target: str) -> ToolResult:
         from vx.jobs import REGISTRY
-        from vx.terminals import TERMINALS
 
-        known = ", ".join([job.id for job in REGISTRY.all()] + [t.id for t in TERMINALS.all()])
+        known = ", ".join(job.id for job in REGISTRY.all())
         return self._fail(
             f'No task “{target}”; known: {known or "none"}. Use bash(action="list").'
         )
@@ -451,127 +436,56 @@ class BashTool(BaseTool):
             out += f"\nLog output:\n{body}"
         return out
 
-    async def _terminal_action(self, action: str, terminal, params: BashParams) -> ToolResult:
-        from vx.terminals import TERMINALS
-
-        if action == "kill":
-            await TERMINALS.close(terminal.id)
-            msg = f'Terminal "{terminal.id}" closed.'
-            return ToolResult(
-                success=True, result=self._with_notices(msg), ui_summary=f"[yellow]{msg}[/yellow]"
-            )
-        if action == "send_input":
-            text = params.input if params.input.endswith("\n") else params.input + "\n"
-            if not terminal.write(text):
-                return self._fail(f'Terminal "{terminal.id}" is closed')
-            msg = f'Input sent to terminal "{terminal.id}".'
-            return ToolResult(
-                success=True,
-                result=self._with_notices(msg),
-                ui_summary=f"{terminal.id} · input sent",
-            )
-        out = await terminal.read_new(wait_ms=params.wait_ms)
-        body = out.text or "(no new output)"
-        result = self._terminal_status_block(terminal, body=body)
-        return ToolResult(
-            success=True,
-            result=self._with_notices(result),
-            ui_summary=f"{terminal.id} · {terminal.status_word().lower()}",
-        )
-
-    @staticmethod
-    def _terminal_status_block(terminal, *, body: str | None = None) -> str:
-        """The terminal's status block: identity, state, and output when given."""
-        out = (
-            f"Terminal: {terminal.id}\n"
-            f"Status: {terminal.status_word()}\n"
-            f"Running for: {terminal.elapsed():.0f}s"
-        )
-        if body:
-            out += f"\nLog output:\n{body}"
-        return out
-
-    # -- agentap ------------------------------------------------------------
-
-    async def _run_in_terminal(
-        self,
-        params: BashParams,
-        *,
-        cancel_event: asyncio.Event | None = None,
-        on_output: Callable[[str], None] | None = None,
+    async def _run_with_promotion(
+        self, params: BashParams, *, cancel_event: asyncio.Event | None
     ) -> ToolResult:
-        """Run the command in this tool's own shell: the default, so state survives."""
-        from vx.terminals import TERMINALS
+        """agy's WaitMsBeforeAsync: wait, then hand back the task that is still going."""
+        from vx.jobs import REGISTRY
 
-        if not params.command.strip():
-            return self._fail("Command cannot be empty")
-        if _IS_WINDOWS:
-            return await self._run_fresh(
-                params, cancel_event=cancel_event, inline_output=False, on_output=on_output
-            )
-        terminal = await TERMINALS.get_or_create(self._shell_id())
-        if terminal is None:
-            return await self._run_fresh(
-                params, cancel_event=cancel_event, inline_output=False, on_output=on_output
-            )
-        out = await terminal.run(
-            params.command,
-            wait_ms=params.wait_ms,
-            timeout=params.timeout,
-            on_output=on_output,
-            cancel_event=cancel_event,
-        )
-        body, cut = _agy_body(out.text)
+        started = await self._start_job(params)
+        if isinstance(started, ToolResult):
+            return started
+        job = started
+        deadline = time.monotonic() + params.wait_ms / 1000.0
+        while time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                await REGISTRY.kill(job)
+                return ToolResult(
+                    success=False,
+                    result="Command aborted",
+                    ui_summary="[yellow]Command aborted by user[/yellow]",
+                )
+            if job.status != "running":
+                break
+            await asyncio.sleep(_EXIT_POLL_SECONDS * 5)
+        # Past the wait: the job lives on in the registry either way.
+        exit_code = None if job.status == "running" else job.exit_code
+        job.cursor = job.total
+        if exit_code is not None:
+            # This result is the notification: no duplicate `finished` block.
+            NOTICES.discard(job.id, FINISHED)
+        body, cut = _agy_body("\n".join(job.lines))
         if cut:
-            path = _write_full_output_to_temp(out.text)
-            body += f"\n\nFull output: {path}"
-        if out.aborted:
-            return ToolResult(
-                success=False,
-                result=f"Command aborted{('\n' + body) if body else ''}",
-                ui_summary="[yellow]Command aborted by user[/yellow]",
-            )
-        if out.state == "closed":
-            return ToolResult(
-                success=False,
-                result=(
-                    "The command ended the shell, so it has no exit code"
-                    f"{(': ' + body) if body else ''}. The next bash call opens a new one."
-                ),
-                ui_summary="[yellow]shell ended by the command[/yellow]",
-            )
-        if out.timed_out:
-            return ToolResult(
-                success=False,
-                result=f"Command timed out after {params.timeout}s{('\n' + body) if body else ''}",
-                ui_summary=f"[yellow]timed out after {params.timeout}s[/yellow]",
-            )
-        if out.state == "running":
+            body += f"\n\nFull output: {job.log_path}"
+        if exit_code is None:
             result = (
-                f"The command is still running in task {terminal.id}: {params.command}\n"
-                f"Output so far:\n{body}\n"
-                f'Read it again with bash(action="status", task_id="{terminal.id}"), '
-                f'stop it with bash(action="kill", task_id="{terminal.id}").'
+                f"Background command is still running after {params.wait_ms / 1000:.0f}s: "
+                f"{params.command}\n"
+                f"Task: {job.id}\nLog: {job.log_path}\nOutput so far:\n{body}\n"
+                f'Read it with bash(action="status", task_id="{job.id}"), stop it with '
+                f'bash(action="kill", task_id="{job.id}").'
             )
             return ToolResult(
                 success=True,
                 result=self._with_notices(result),
-                ui_summary=f"{terminal.id} · still running",
+                ui_summary=f"{job.id} · still running",
             )
-        result = _exit_block(out.exit_code, body)
-        code = out.exit_code if out.exit_code is not None else 1
-        summary = f"{terminal.id} · done" if code == 0 else f"Exit code {code} · {terminal.id}"
+        result = _exit_block(exit_code, body)
         return ToolResult(
-            success=code == 0,
+            success=exit_code == 0,
             result=self._with_notices(result),
-            ui_summary=summary if code == 0 else f"[red]{summary}[/red]",
+            ui_summary=self._summary_for(exit_code, body),
         )
-
-    def _shell_id(self) -> str:
-        """This tool's shell name: one per bash tool, so agents do not share a cd."""
-        if self._terminal is None:
-            self._terminal = f"t{next(_SHELL_IDS)}"
-        return self._terminal
 
     async def _start_job(self, params: BashParams) -> Any | ToolResult:
         """Validate and start the registry job, or return the refusal."""
@@ -601,19 +515,6 @@ class BashTool(BaseTool):
             success=True,
             result=self._with_notices(result),
             ui_summary=f"[green]{kind} {job.id}[/green]",
-        )
-
-    async def _run_fresh(
-        self,
-        params: BashParams,
-        *,
-        cancel_event: asyncio.Event | None,
-        inline_output: bool,
-        on_output: Callable[[str], None] | None,
-    ) -> ToolResult:
-        """Run in a fresh process: the fallback when this host has no pty."""
-        return await self._run_foreground(
-            params, cancel_event=cancel_event, inline_output=inline_output, on_output=on_output
         )
 
     async def _run_foreground(
