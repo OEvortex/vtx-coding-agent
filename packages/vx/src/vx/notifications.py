@@ -17,7 +17,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 FINISHED = "finished"
-STILL_RUNNING = "still_running"
 INPUT_REQUIRED = "input_required"
 OUTPUT_SETTLED = "output_settled"
 

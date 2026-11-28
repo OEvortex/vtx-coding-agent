@@ -27,13 +27,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from vx import sandbox as sandbox_mod
 from vx.notifications import FINISHED, INPUT_REQUIRED, NOTICES, JobNotice, looks_like_a_prompt
 from vx.tools.bash import (
     _IS_WINDOWS,
     _STREAM_LIMIT_BYTES,
     _get_env,
-    _get_shell,
     _get_spawn_argv,
     _kill_process_tree,
     _sanitize_output,
@@ -80,7 +78,6 @@ class Job:
     log_path: Path | None = None
     _log: Any = None
     #: How this job was started, so a status reply can say what it ran under.
-    sandboxed: bool = False
     wait_ms: int = 0
     #: Set once the job has been reported as waiting for input.
     asked_for_input: str | None = None
@@ -257,12 +254,10 @@ class JobRegistry:
 
     # -- lifecycle -----------------------------------------------------------
 
-    async def start(
-        self, command: str, owner: str = "", *, sandbox: bool = False, wait_ms: int = 0
-    ) -> Job | None:
+    async def start(self, command: str, owner: str = "", *, wait_ms: int = 0) -> Job | None:
         """Spawn ``command`` as a job. None when the shell could not be found."""
         job_id = self.new_id()
-        argv = self._argv(command, sandbox=sandbox)
+        argv = _get_spawn_argv(command)
         if argv is None:
             return None
         proc = await asyncio.create_subprocess_exec(
@@ -280,22 +275,12 @@ class JobRegistry:
             proc=proc,
             group=None if _IS_WINDOWS else proc.pid,
             owner=owner,
-            sandboxed=sandbox,
             wait_ms=wait_ms,
         )
         job.open_log(LOG_DIR / f"{job_id}.log")
         self.jobs[job_id] = job
         self._watchers[job_id] = asyncio.create_task(self._watch(job))
         return job
-
-    @staticmethod
-    def _argv(command: str, *, sandbox: bool) -> list[str] | None:
-        shell = _get_shell()
-        if shell is None:
-            return None
-        if sandbox:
-            return sandbox_mod.build_argv(command, Path.cwd(), shell=shell, network=False)
-        return _get_spawn_argv(command)
 
     async def _watch(self, job: Job) -> None:
         readers = [

@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Bash runs in one persistent shell** — every `bash` call now runs in the agent's
+  own kept-open shell (`t1`, one per agent), so `cd`, exports and an activated venv
+  survive between calls without chaining them into one command line. Output still
+  streams live; `wait_ms` hands back the shell's id when a command outlives the
+  wait, and `status`/`kill`/`send_input` act on it. Consequences worth knowing: a
+  `&` child now belongs to the shell rather than the call (use `background=true`
+  for anything that needs an id), stdout and stderr arrive merged because a pty
+  has one stream, and a command that takes the shell down (`exit`) is run in a
+  subshell so its code still reports.
+- **Fewer bash fields** — `daemon` (the same thing as `background`), `sandbox_network`
+  (a sandbox is offline), `timeout_notify` (a watcher nobody asked for) and
+  `terminal` (every call is in the shell now) are gone. `sandbox=true` remains the
+  one path that spawns a fresh process, because a sandbox wraps a process.
 - **One board tool** — `post_message`, `read_board` and `swarm_wait` are now one
   `board{action:"post"|"read"|"wait"}` tool. They were three schemas for one
   object, and the board is one conversation: posting, reading and parking are

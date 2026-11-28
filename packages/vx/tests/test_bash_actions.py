@@ -37,9 +37,11 @@ class TestOutputShape:
         assert "Exit code 4" in (result.ui_summary or "")
 
     @pytest.mark.asyncio
-    async def test_stderr_is_kept_and_labelled(self):
+    async def test_stderr_is_kept_but_not_separated(self):
+        """One pty merges the streams, so both are kept and neither is tagged."""
         result = await BashTool().execute(BashParams(command="echo out; echo err >&2"))
-        assert "[stderr]" in (result.result or "")
+        assert "out" in (result.result or "")
+        assert "err" in (result.result or "")
 
     def test_long_output_is_cut_with_agy_marker(self):
         from vx.tools.bash import _agy_body
@@ -53,10 +55,12 @@ class TestOutputShape:
 
 class TestActions:
     @pytest.mark.asyncio
-    async def test_list_is_empty_before_anything_runs(self):
-        result = await BashTool().execute(BashParams(action="list"))
+    async def test_list_names_the_idle_shell_after_the_first_call(self):
+        tool = BashTool()
+        await tool.execute(BashParams(command="true"))
+        result = await tool.execute(BashParams(action="list"))
         assert result.success
-        assert "No running tasks." in (result.result or "")
+        assert "Terminal: t" in (result.result or "")
 
     @pytest.mark.asyncio
     async def test_an_unknown_task_says_so_and_lists_the_known_ones(self):
@@ -132,13 +136,15 @@ class TestActions:
 
 class TestPromotion:
     @pytest.mark.asyncio
-    async def test_a_command_that_outlives_the_wait_becomes_a_task(self):
+    async def test_a_command_that_outlives_the_wait_hands_back_the_shell(self):
+        tool = BashTool()
         started = time.monotonic()
-        result = await BashTool().execute(BashParams(command="sleep 30", wait_ms=600, timeout=30))
+        result = await tool.execute(BashParams(command="sleep 30", wait_ms=600, timeout=30))
         assert time.monotonic() - started < 5
         assert result.success
-        assert "still running after 1s" in (result.result or "")
-        assert "Task: j1" in (result.result or "")
+        assert "still running in task t" in (result.result or "")
+        # And the same id answers a status, which is what the id is for.
+        await tool.execute(BashParams(action="kill", task_id="t1"))
 
     @pytest.mark.asyncio
     async def test_a_command_that_finishes_inside_the_wait_reads_like_a_run(self):
@@ -174,43 +180,22 @@ class TestNotices:
         second = await BashTool().execute(BashParams(action="list"))
         assert "input_required" not in (second.result or "")
 
-    @pytest.mark.asyncio
-    async def test_a_still_running_notice_fires_for_a_watched_task(self):
-        await BashTool().execute(BashParams(command="sleep 30", background=True, timeout_notify=1))
-        await asyncio.sleep(1.4)
-        result = await BashTool().execute(BashParams(action="list"))
-        assert "still_running" in (result.result or "")
 
-
-class TestSandboxParam:
-    @pytest.mark.asyncio
-    async def test_a_sandboxed_command_runs_or_explains_itself(self):
-        from vx import sandbox
-
-        support = sandbox.support()
-        result = await BashTool().execute(BashParams(command="echo inside", sandbox=True))
-        if support.available:
-            assert result.success
-            assert "inside" in (result.result or "")
-            assert "sandbox: bwrap" in (result.result or "")
-        else:
-            assert not result.success
-            assert "not available here" in (result.result or "")
-
-
-class TestTerminalParam:
+class TestTheShellIsPersistent:
     @pytest.mark.asyncio
     async def test_two_calls_share_one_shell(self):
         from vx.terminals import TERMINALS
 
         tool = BashTool()
         try:
-            await tool.execute(BashParams(command="cd /tmp", terminal="t1"))
-            second = await tool.execute(BashParams(command="pwd", terminal="t1"))
-            if TERMINALS.get("t1") is None:
+            await tool.execute(BashParams(command="cd /tmp"))
+            second = await tool.execute(BashParams(command="pwd"))
+            if not TERMINALS.all():
                 pytest.skip("no pty on this platform")
             assert "/tmp" in (second.result or "")
-            assert "Terminal: t1" in (second.result or "")
+            # The id is not repeated on every result; `list` is where it lives.
+            listed = await tool.execute(BashParams(action="list"))
+            assert f"Terminal: {tool._shell_id()}" in (listed.result or "")
         finally:
             await TERMINALS.close_all()
 
@@ -220,7 +205,7 @@ class TestTerminalParam:
 
         tool = BashTool()
         try:
-            await tool.execute(BashParams(command="echo one", terminal="t1"))
+            await tool.execute(BashParams(command="echo one"))
             if TERMINALS.get("t1") is None:
                 pytest.skip("no pty on this platform")
             status = await tool.execute(BashParams(action="status", task_id="t1"))

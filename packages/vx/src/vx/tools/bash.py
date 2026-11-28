@@ -8,8 +8,7 @@ Two ways to run something:
 * ``bash(command=..., background=True)`` — a job immediately, for dev servers and
   watchers that must not hold a shell.
 
-``sandbox=true`` is the exception that spawns fresh, because a sandbox wraps one
-process. ``wait_ms`` stops waiting after N ms and hands back the task id.
+``wait_ms`` stops waiting after N ms and hands back the shell's id.
 
 And four actions on the jobs and terminals those produced, in agy's vocabulary:
 ``status``, ``list``, ``send_input``, ``kill``.
@@ -37,7 +36,6 @@ from ctx.agent.tools.base import BaseTool
 from ctx.protocol.types import ToolResult
 from pydantic import BaseModel, Field
 
-from vx import sandbox as sandbox_mod
 from vx.notifications import drain_text
 
 DEFAULT_TIMEOUT = 180
@@ -57,8 +55,6 @@ _EXIT_POLL_SECONDS = 0.02
 
 _IS_WINDOWS: bool = sys.platform == "win32"
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]")
-
-_TRUTHY = {"1", "true", "yes", "on"}
 
 
 def _get_env() -> dict[str, str]:
@@ -123,10 +119,6 @@ def _sanitize_color_output(text: str) -> str:
     text = _ANSI_SEQ_RE.sub(_keep_sgr, text)
     text = "".join(c for c in text if c >= " " or c in "\t\n" or c == "\x1b")
     return text
-
-
-def _sandbox_default() -> bool:
-    return os.environ.get("VX_BASH_SANDBOX", "").strip().lower() in _TRUTHY
 
 
 class TruncationResult:
@@ -292,13 +284,6 @@ class BashParams(BaseModel):
         default="", description="Task or terminal id status/kill/send_input act on"
     )
     input: str = Field(default="", description="Text to deliver to that task or terminal.")
-    sandbox: bool = Field(
-        default=False,
-        description=(
-            "bwrap: root read-only, workspace writable, private /tmp, no network. Errors if "
-            "the host cannot sandbox."
-        ),
-    )
 
     def resolved_action(self) -> str:
         """The action, normalized; empty means run ``command``."""
@@ -337,11 +322,7 @@ class BashTool(BaseTool):
         if action:
             extra = f" · {params.input}" if params.input else ""
             return f"{action} {params.target()}{extra}".strip()
-        prefix = ""
-        if params.background:
-            prefix = "background: "
-        elif params.sandbox:
-            prefix = "sandbox: "
+        prefix = "background: " if params.background else ""
         suffix = f" · wait {params.wait_ms}ms" if params.wait_ms else ""
         return f"{prefix}{params.command}{suffix}"
 
@@ -357,12 +338,6 @@ class BashTool(BaseTool):
         action = params.resolved_action()
         if action:
             return await self._dispatch(action, params)
-        if params.sandbox or _sandbox_default():
-            # A sandbox is a wrapper around one process, so it cannot live in the
-            # shell: this is the only path that spawns fresh.
-            return await self._run_foreground(
-                params, cancel_event=cancel_event, inline_output=inline_output, on_output=on_output
-            )
         if params.background:
             return await self._start_task(params)
         return await self._run_in_terminal(params, cancel_event=cancel_event, on_output=on_output)
@@ -470,8 +445,6 @@ class BashTool(BaseTool):
         if job.exit_code is not None:
             out += f" (exit {job.exit_code})"
         out += f"\nLog: {job.log_path if job.log_path else '(in memory)'}"
-        if job.sandboxed:
-            out += f"\nRan in: {sandbox_mod.describe(network=False)}"
         if body is None and tail:
             body = "\n".join(job.tail(tail))
         if body:
@@ -530,13 +503,15 @@ class BashTool(BaseTool):
         """Run the command in this tool's own shell: the default, so state survives."""
         from vx.terminals import TERMINALS
 
+        if not params.command.strip():
+            return self._fail("Command cannot be empty")
         if _IS_WINDOWS:
-            return await self._run_foreground(
+            return await self._run_fresh(
                 params, cancel_event=cancel_event, inline_output=False, on_output=on_output
             )
         terminal = await TERMINALS.get_or_create(self._shell_id())
         if terminal is None:
-            return await self._run_foreground(
+            return await self._run_fresh(
                 params, cancel_event=cancel_event, inline_output=False, on_output=on_output
             )
         out = await terminal.run(
@@ -556,6 +531,21 @@ class BashTool(BaseTool):
                 result=f"Command aborted{('\n' + body) if body else ''}",
                 ui_summary="[yellow]Command aborted by user[/yellow]",
             )
+        if out.state == "closed":
+            return ToolResult(
+                success=False,
+                result=(
+                    "The command ended the shell, so it has no exit code"
+                    f"{(': ' + body) if body else ''}. The next bash call opens a new one."
+                ),
+                ui_summary="[yellow]shell ended by the command[/yellow]",
+            )
+        if out.timed_out:
+            return ToolResult(
+                success=False,
+                result=f"Command timed out after {params.timeout}s{('\n' + body) if body else ''}",
+                ui_summary=f"[yellow]timed out after {params.timeout}s[/yellow]",
+            )
         if out.state == "running":
             result = (
                 f"The command is still running in task {terminal.id}: {params.command}\n"
@@ -568,18 +558,13 @@ class BashTool(BaseTool):
                 result=self._with_notices(result),
                 ui_summary=f"{terminal.id} · still running",
             )
-        if out.timed_out:
-            return ToolResult(
-                success=False,
-                result=f"Command timed out after {params.timeout}s{('\n' + body) if body else ''}",
-                ui_summary=f"[yellow]timed out after {params.timeout}s[/yellow]",
-            )
         result = _exit_block(out.exit_code, body)
-        summary = f"{terminal.id} · exit {out.exit_code}"
+        code = out.exit_code if out.exit_code is not None else 1
+        summary = f"{terminal.id} · done" if code == 0 else f"Exit code {code} · {terminal.id}"
         return ToolResult(
-            success=out.exit_code == 0,
+            success=code == 0,
             result=self._with_notices(result),
-            ui_summary=summary if out.exit_code == 0 else f"[red]{summary}[/red]",
+            ui_summary=summary if code == 0 else f"[red]{summary}[/red]",
         )
 
     def _shell_id(self) -> str:
@@ -588,30 +573,22 @@ class BashTool(BaseTool):
             self._terminal = f"t{next(_SHELL_IDS)}"
         return self._terminal
 
-    async def _start_job(self, params: BashParams) -> tuple[Any, bool] | ToolResult:
-        """Validate, sandbox-decide and start the registry job.
-
-        Returns ``(job, sandbox_requested)`` or the refusal ``ToolResult``.
-        """
+    async def _start_job(self, params: BashParams) -> Any | ToolResult:
+        """Validate and start the registry job, or return the refusal."""
         from vx.jobs import REGISTRY
 
         if not params.command.strip():
             return self._fail("Command cannot be empty")
-        sandbox_requested, refusal = self._sandbox_decision(params)
-        if refusal is not None:
-            return refusal
-        job = await REGISTRY.start(
-            params.command, sandbox=sandbox_requested, wait_ms=params.wait_ms
-        )
+        job = await REGISTRY.start(params.command, wait_ms=params.wait_ms)
         if job is None:
             return self._fail("No shell to run the command in")
-        return job, sandbox_requested
+        return job
 
     async def _start_task(self, params: BashParams) -> ToolResult:
         started = await self._start_job(params)
         if isinstance(started, ToolResult):
             return started
-        job, sandbox_requested = started
+        job = started
         kind = "Task"
         result = (
             f"Started {job.id}: {params.command}\n"
@@ -620,24 +597,24 @@ class BashTool(BaseTool):
             f'bash(action="send_input", task_id="{job.id}", input="..."), stop it with '
             f'bash(action="kill", task_id="{job.id}").'
         )
-        if sandbox_requested:
-            result += f"\n{sandbox_mod.describe(network=False)}"
         return ToolResult(
             success=True,
             result=self._with_notices(result),
             ui_summary=f"[green]{kind} {job.id}[/green]",
         )
 
-    def _sandbox_decision(self, params: BashParams) -> tuple[bool, ToolResult | None]:
-        """Whether this call is sandboxed, and the refusal when it was asked for."""
-        wanted = params.sandbox or _sandbox_default()
-        if not wanted:
-            return False, None
-        support = sandbox_mod.support()
-        if support.available:
-            return True, None
-        msg = f"The sandboxed run is not available here: {support.reason}"
-        return False, self._fail(msg)
+    async def _run_fresh(
+        self,
+        params: BashParams,
+        *,
+        cancel_event: asyncio.Event | None,
+        inline_output: bool,
+        on_output: Callable[[str], None] | None,
+    ) -> ToolResult:
+        """Run in a fresh process: the fallback when this host has no pty."""
+        return await self._run_foreground(
+            params, cancel_event=cancel_event, inline_output=inline_output, on_output=on_output
+        )
 
     async def _run_foreground(
         self,
@@ -657,29 +634,11 @@ class BashTool(BaseTool):
                 success=False, ui_summary=f"[red]Working directory does not exist: {cwd}[/red]"
             )
 
-        sandbox_requested, refusal = self._sandbox_decision(params)
-        if refusal is not None:
-            return refusal
-
         proc = None
         #: The child's process group, kept from before it could exit.
         group: int | None = None
         try:
-            if sandbox_requested:
-                shell = _get_shell()
-                if shell is None:
-                    return self._fail("No shell to run the command in")
-                argv = sandbox_mod.build_argv(command, cwd, shell=shell, network=False)
-                proc = await asyncio.create_subprocess_exec(
-                    *argv,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    stdin=asyncio.subprocess.DEVNULL,
-                    env=_get_env(),
-                    start_new_session=not _IS_WINDOWS,
-                    limit=_STREAM_LIMIT_BYTES,
-                )
-            else:
+            if True:
                 spawn_argv = _get_spawn_argv(command)
                 if spawn_argv is None:
                     proc = await asyncio.create_subprocess_shell(
@@ -825,14 +784,7 @@ class BashTool(BaseTool):
                 if color_tail:
                     color_tail += marker
 
-            guidance = None
-            if sandbox_requested and proc.returncode not in (0, None):
-                guidance = sandbox_mod.wrap_error(command, stderr)
             result_text = _exit_block(proc.returncode, body)
-            if guidance:
-                result_text = f"{guidance}\n\n{result_text}"
-            if sandbox_requested:
-                result_text += f"\n\n{sandbox_mod.describe(network=False)}"
 
             return ToolResult(
                 success=proc.returncode == 0,

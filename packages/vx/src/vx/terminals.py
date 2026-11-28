@@ -39,6 +39,9 @@ from vx.tools.bash import _IS_WINDOWS, _get_env, _get_shell, _sanitize_output
 SENTINEL_RE = re.compile(r"\x1e\s*VX-EXIT:(-?\d+)\s*\x1e")
 SENTINEL_PRINTF = "printf '\\036VX-EXIT:%d\\036' $?"
 
+#: Commands that would take the shell down with them, and so run in a subshell.
+_DOOMED_RE = re.compile(r"^\s*(exit|exec|logout)\b")
+
 #: A shell that reads commands from a pty without drawing a prompt. bash with
 #: readline off and an empty PS1 prints exactly what the command printed, which
 #: is the whole reason the sentinel can be found at all; zsh and friends echo
@@ -86,6 +89,10 @@ class Terminal:
     _state: str = "running"  # running | closed
     _started: float = field(default_factory=time.monotonic)
     _changed: asyncio.Event = field(default_factory=asyncio.Event)
+    #: The loop the pty reader was registered on. A shell outlives the loop that
+    #: opened it (a closed app, a new test), and a reader on a dead loop never
+    #: delivers the sentinel: the next caller would wait for output forever.
+    _loop: Any = None
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -112,8 +119,26 @@ class Terminal:
         )
         os.close(slave)
         self._master = master
-        asyncio.get_running_loop().add_reader(master, self._on_readable)
+        self._loop = asyncio.get_running_loop()
+        self._loop.add_reader(master, self._on_readable)
         return True
+
+    def _pending(self) -> str:
+        """Output that has arrived and not been returned yet."""
+        return self._buf
+
+    def _stopped(self) -> bool:
+        """Whether the shell died mid-command; a method, so nothing narrows it."""
+        return self._state != "running"
+
+    def live_here(self) -> bool:
+        """Whether this shell's reader belongs to the loop that is running now."""
+        if self._state != "running" or self.proc is None or self._master is None:
+            return False
+        try:
+            return self._loop is asyncio.get_running_loop()
+        except RuntimeError:
+            return False
 
     def _on_readable(self) -> None:
         try:
@@ -166,15 +191,19 @@ class Terminal:
         if self._state != "running" or self.proc is None:
             return TerminalOutput("", None, "closed")
         self._buf = ""
-        self._changed.clear()
         self.write(_compose(command))
         deadline = time.monotonic() + max(0.0, timeout)
         soft = time.monotonic() + max(0.0, wait_ms / 1000.0) if wait_ms else deadline
         while True:
+            self._changed.clear()
             parsed = self._take()
             if parsed is not None:
                 return parsed
-            if on_output is not None and self._buf:
+            if self._stopped():
+                # The command took the shell with it (`exit`, `exec`, a crash):
+                # no sentinel is ever coming.
+                return TerminalOutput(self._take_buffer(), None, "closed")
+            if on_output is not None and self._pending():
                 chunk = self._take_buffer()
                 if chunk:
                     with contextlib.suppress(Exception):
@@ -276,6 +305,10 @@ def _compose(command: str) -> str:
     body = command.rstrip("\n")
     if not body:
         return f"true; {SENTINEL_PRINTF}\n"
+    if _DOOMED_RE.match(body):
+        # `exit 3` would close the shell and leave no exit code to report; in a
+        # subshell it reports 3 and the shell is still there for the next call.
+        return f"( {body} ); {SENTINEL_PRINTF}\n"
     if "<<" in body or body.endswith("&"):
         return f"{body}\n{SENTINEL_PRINTF}\n"
     return f"{body}; {SENTINEL_PRINTF}\n"
@@ -305,7 +338,11 @@ class TerminalRegistry:
     async def get_or_create(self, terminal_id: str) -> Terminal | None:
         terminal = self.get(terminal_id)
         if terminal is not None:
-            return terminal
+            if terminal.live_here():
+                return terminal
+            # Opened under a loop that is gone: it could never answer again.
+            await terminal.close()
+            self.terminals.pop(terminal.id, None)
         terminal = Terminal(id=terminal_id.strip(), cwd=Path.cwd())
         if not await terminal.start():
             return None
