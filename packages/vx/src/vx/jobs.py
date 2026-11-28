@@ -35,6 +35,7 @@ from vx.tools.bash import (
     _get_spawn_argv,
     _kill_process_tree,
     _sanitize_output,
+    _wait_exit,
 )
 
 #: Lines kept per job. A dev server's whole life does not fit, and the tail is
@@ -288,7 +289,11 @@ class JobRegistry:
             asyncio.create_task(self._read(job, "err", job.proc.stderr)),
         ]
         try:
-            code = await job.proc.wait()
+            # Not proc.wait(): that also waits for pipe EOF, which a command that
+            # leaves a daemon behind ("npm run dev &") never delivers. Same trap
+            # as bash.py's _wait_exit.
+            await _wait_exit(job.proc)
+            code = job.proc.returncode
         except asyncio.CancelledError:
             for reader in readers:
                 reader.cancel()

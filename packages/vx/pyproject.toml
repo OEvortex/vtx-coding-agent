@@ -9,6 +9,13 @@ packages = ["src/vx"]
 name = "vx"
 version = "0.1.0"
 description = "Minimal coding agent built on the ctx harness with its own terminal UI."
+license = "Apache-2.0"
+authors = [
+    { name = "OEvortex" },
+]
+readme = "README.md"
+homepage = "https://github.com/OEvortex/ctx-coding-agent"
+repository = "https://github.com/OEvortex/ctx-coding-agent"
 requires-python = ">=3.12"
 keywords = ["coding-agent", "tui", "cli", "llm"]
 dependencies = [

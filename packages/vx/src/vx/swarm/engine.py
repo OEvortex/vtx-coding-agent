@@ -1200,6 +1200,20 @@ def forget_engine(ctx: Any) -> None:
     _ENGINES.pop(_engine_key(ctx), None)
 
 
+async def close_all_engines() -> None:
+    """Close every registered swarm; the app calls this on session shutdown.
+
+    Nothing else calls ``SwarmEngine.close``: without it a worker's provider
+    client is never closed and its task is orphaned by the loop.
+    """
+    engines = list(_ENGINES.values())
+    for engine in engines:
+        with contextlib.suppress(Exception):
+            await engine.close()
+    for engine in engines:
+        _ENGINES.pop(_engine_key(engine.parent), None)
+
+
 __all__ = [
     "MAX_MEMBERS",
     "MAX_TURNS",
@@ -1210,6 +1224,7 @@ __all__ = [
     "SpawnRequest",
     "SwarmEngine",
     "SwarmError",
+    "close_all_engines",
     "current_engine",
     "default_swarm_dir",
     "engine_for",

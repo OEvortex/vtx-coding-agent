@@ -126,6 +126,7 @@ Full reference, generated from the source:
 | **[@ctx.term](src/ctx/term)** | Base terminal-UI toolkit: editing, fuzzy matching, overlays, block renderers |
 | **[@ctx.agent](src/ctx/agent)** | Product-neutral harness: loop, turn engine, sessions, tool registry, prompts, hooks, goals, SDK |
 | **[@ctx.code](src/ctx/code)** | Product layer: CLI entry point, headless runner, filesystem tools, the TUI app |
+| **[vx](packages/vx)** | Standalone `vx` distribution: a minimal coding agent on the ctx harness with its own TUI, swarm tools, and headless mode |
 
 Dependencies flow `protocol` and `telemetry` into `core`, `git`, and `ai`; those into
 `agent`; `agent` into `code`, with `mcp`, `tui`, and `plugins` above. Each package

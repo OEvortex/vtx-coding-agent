@@ -238,6 +238,10 @@ async def run_headless(
                 cwd=str(Path.cwd()),
                 session_id=runtime.session.id if runtime.session else "",
             )
+        with contextlib.suppress(Exception):
+            from vx.swarm.engine import close_all_engines
+
+            await close_all_engines()
         await hook_bridge.unload()
         await runtime.close()
 

@@ -119,6 +119,19 @@ class TestRegistry:
         assert any("terminated" in line for line in job.lines)
 
     @pytest.mark.asyncio
+    async def test_a_command_that_leaves_a_daemon_still_finishes(self):
+        # The child exits while a background grandchild holds its pipes:
+        # Process.wait() would block on pipe EOF forever; _wait_exit polls the
+        # reaped returncode instead.
+        registry = JobRegistry()
+        job = await registry.start("sleep 30 & exit 0")
+        assert job is not None
+        await registry.wait_for(job, 5)
+        assert job.status == "done"
+        assert job.exit_code == 0
+        await registry.kill_all()
+
+    @pytest.mark.asyncio
     async def test_kill_all_leaves_nothing_running(self):
         registry = JobRegistry()
         await registry.start("sleep 5")

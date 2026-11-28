@@ -62,7 +62,7 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
     ("/tools", "list the available tools", "Workspace"),
     ("/mcp", "manage MCP servers", "Extensions"),
     ("/reload", "reload config, extensions and tools", "Extensions"),
-    ("/update", "update ctx to the latest release", "Extensions"),
+    ("/update", "update vx to the latest release", "Extensions"),
     ("/quit", "exit vx", "General"),
 ]
 
@@ -84,12 +84,13 @@ KEY_BINDINGS: list[tuple[str, str]] = [
     ("ctrl+left / right", "move by word"),
     ("ctrl+y", "yank the last kill"),
     ("alt+y", "cycle the kill ring"),
-    ("shift+enter", "new line without sending"),
+    ("alt+enter", "new line without sending"),
     ("ctrl+o", "expand !cmd output"),
     ("pgup / pgdn", "scroll the transcript, or the composer when it fills"),
     ("wheel", "scroll the transcript"),
     ("shift+drag", "select text"),
     ("esc", "interrupt the turn, or clear the composer"),
+    ("ctrl+d", "exit when the composer is empty"),
     ("ctrl+c twice", "exit"),
     ("tab / shift+tab", "cycle reasoning effort / permission mode"),
 ]

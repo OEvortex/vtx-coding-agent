@@ -55,3 +55,11 @@ Ctx expects to be changed. Three surfaces, smallest first:
 - [Development](development.md) - repo layout, the lint and test commands, and how to
   add a tool or a plugin row.
 - [Storage layout](storage-layout.md) - every path Ctx writes to on disk.
+
+## vx
+
+`packages/vx` is a separate `vx` distribution — a minimal coding agent on the ctx
+harness with its own terminal UI. Its docs live with the package:
+[README](../packages/vx/README.md) and [docs/](../packages/vx/docs/) cover its
+slash commands, keybindings, tools, swarm, permissions, skills, headless mode,
+and environment variables.

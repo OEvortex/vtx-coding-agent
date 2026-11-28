@@ -276,6 +276,12 @@ class VxApp(_CommandBase):
                 from vx.jobs import REGISTRY
 
                 await REGISTRY.kill_all()
+            # Swarm workers die with the session too: their providers close and
+            # their tasks are not orphaned.
+            with suppress(Exception):
+                from vx.swarm.engine import close_all_engines
+
+                await close_all_engines()
             self.term.exit()
         return 0
 

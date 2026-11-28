@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from vx.swarm import engine as engine_mod
 from vx.swarm.board import STOPPED, WAITING, Board, MemberRow
-from vx.swarm.engine import SwarmEngine, SwarmError
+from vx.swarm.engine import SwarmEngine, SwarmError, close_all_engines, engine_for
 from vx.swarm.mentions import addressed, group_of, mentions
 from vx.tools.swarm import BoardParams, BoardTool, SwarmParams, SwarmTool
 
@@ -444,6 +444,43 @@ class TestGrownUpSwarm:
         await engine.post("coordinator", "@ui private note", "ui")
         assert "private note" in engine.read("narrator", since=0)
         await engine.close()
+
+    @pytest.mark.asyncio
+    async def test_close_all_engines_closes_and_forgets_them(self, tmp_path):
+        parent = SimpleNamespace(session=SimpleNamespace(id="s1"), cwd=str(tmp_path))
+        engine = engine_for(parent)
+        install(engine, {})
+        await engine.add("parser", "Own it")
+        member = engine.members["parser"]
+
+        await close_all_engines()
+
+        assert engine._closed
+        assert member.row.killed
+        assert member.task is not None and member.task.done()
+        # The registry is swept, so a fresh engine comes back.
+        fresh = engine_for(parent)
+        assert fresh is not engine
+        await close_all_engines()
+        await close_all_engines()  # idempotent: nothing left to close
+
+    @pytest.mark.asyncio
+    async def test_close_all_engines_sweeps_even_if_one_raises(self, tmp_path):
+        parent_a = SimpleNamespace(session=SimpleNamespace(id="a"), cwd=str(tmp_path))
+        parent_b = SimpleNamespace(session=SimpleNamespace(id="b"), cwd=str(tmp_path))
+        bad = engine_for(parent_a)
+        good = engine_for(parent_b)
+
+        async def boom():
+            raise RuntimeError("close failed")
+
+        bad.close = boom  # type: ignore[method-assign]
+
+        await close_all_engines()
+
+        assert good._closed
+        assert engine_for(parent_a) is not bad
+        assert engine_for(parent_b) is not good
 
 
 # -- tools -------------------------------------------------------------

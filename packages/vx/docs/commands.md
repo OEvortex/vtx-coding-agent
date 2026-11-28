@@ -72,6 +72,7 @@ OAuth providers open a browser and print the authorization URL. API keys are ent
 | `/export` | | Write the session to an HTML file in the working directory |
 | `/copy` | | Copy the last assistant message to the clipboard |
 | `/recap` | | Draft a "where you left off" summary into the composer box |
+| `/attach` | `[path]` | Attach an image to the next prompt. No argument lists pending attachments; `clear`, `none`, `off` drops them. Same list ctrl+v fills |
 
 `/new`, `/clear`, `/tree`, `/compact`, `/undo`, `/redo`, `/session`, and `/handoff` refuse while a turn is running (`cannot <verb> while the agent is running — press esc to interrupt`).
 
@@ -98,7 +99,6 @@ OAuth providers open a browser and print the authorization URL. API keys are ent
 |---|---|---|
 | `/skills` | | List loaded skills grouped by category, `local ·` marking project skills, plus any `skill_warnings` |
 | `/tools` | | List loaded tools: `built-in (n)` first, then one section per MCP server as `server > tool` |
-| `/attach` | `[path]` | Attach an image to the next prompt. No argument lists pending attachments; `clear`, `none`, `off` drops them. Same list ctrl+v fills |
 
 ## Extensions
 
@@ -127,7 +127,7 @@ OAuth providers open a browser and print the authorization URL. API keys are ent
 
 ## Extension commands
 
-An extension contributes commands through ctx's plugin API (`api.register_command`). They dispatch through `_extension_command` (`commands/__init__.py:257`): the handler runs with the typed arguments, its `output` is posted as `/<name> (from <owner>): <output>`, and a raise becomes `extension command /<name> failed: <msg>`. They never cost a model turn and are not in `SLASH_COMMANDS`, so they appear in `/help` only if the extension supplies them.
+An extension contributes commands through ctx's plugin API (`api.register_command`). They dispatch through `_extension_command` (`commands/__init__.py:257`): the handler runs with the typed arguments, its `output` is posted as `/<name> (from <owner>): <output>`, and a raise becomes `extension command /<name> failed: <msg>`. They never cost a model turn. They are not in `SLASH_COMMANDS`, so `/help` and the `/` picker do not list them — an extension command is reachable only by typing its exact name.
 
 ## Skill commands
 
@@ -135,7 +135,14 @@ A skill with `register_cmd: true` is reachable as `/<skill-name> <args>` (`_skil
 
 ## Key bindings listed in `/help`
 
-`/help` also lists the composer's key bindings (`KEY_BINDINGS`, `commands/__init__.py:72`): left arrow opens the swarm board on an empty composer, alt+s opens it from anywhere, ctrl+f searches, ctrl+r searches prompt history, ctrl+v attaches/pastes, shift+enter inserts a newline, tab/shift+tab cycle effort and permission mode, esc interrupts, ctrl+c twice exits. The full map is in [keybindings.md](keybindings.md).
+`/help` also lists the composer's key bindings (`KEY_BINDINGS`, `commands/__init__.py:72`): navigation and editing (arrows, word motion, undo, kill ring), transcript search and history, `alt+enter` for a newline without sending, `ctrl+d` to exit on an empty composer, `esc` to interrupt, `ctrl+c` twice to exit, and `tab`/`shift+tab` to cycle effort and permission mode. The full map is in [keybindings.md](keybindings.md).
+
+## Composer escapes
+
+Two prefixes act on the composer text before it is sent:
+
+- `!cmd` runs `cmd` as a shell command and shows the output as a transcript block (`_handle_shell`, `app.py`); `!!cmd` runs it **and** sends the output to the model as context. `ctrl+o` expands a collapsed `!` block.
+- `@path` opens a file picker over workspace paths (`atpath.py`); picking one inserts the path, and `@"quoted path"` handles spaces. `expand_paths` resolves the mentions into the prompt text.
 
 ## See also
 
