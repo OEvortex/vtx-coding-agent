@@ -15,10 +15,14 @@ small, sub/sup, abbr, q. HTML entities are decoded.
 CSS: ``<style>`` blocks or the ``css=`` argument, with tag / ``.class`` /
 ``#id`` / compound / descendant selectors, comma lists, specificity,
 ``!important``, ``var(--name, fallback)`` custom properties, and these
-properties: color, background-color, font-weight, font-style,
-text-decoration, font-size, text-align, text-transform. Unknown declarations
-are ignored. There is no box model, flex/grid, pseudo-class or at-rule
-support - this styles terminal text, it does not lay out widgets.
+Properties: color, background-color, font-weight, font-style,
+text-decoration (incl. overline), font-size, text-align, text-transform,
+display (none prunes the subtree), visibility, margin/padding (logical and
+physical longhands plus shorthands, px/em/%), border (uniform ``─`` rules and
+``│`` cell edges), and ``hidden``. Lengths are rough cells (1em ~ 14 cells).
+Table cells wrap and support ``colspan``; ``rowspan`` is ignored. Unknown
+declarations are ignored. There is no box model, flex/grid, pseudo-class or
+at-rule support - this styles terminal text, it does not lay out widgets.
 """
 
 from __future__ import annotations
@@ -73,6 +77,45 @@ _NAMED_COLORS = {
 _COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _RULE_RE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 _VAR_RE = re.compile(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^)]*))?\)")
+_LEN_RE = re.compile(r"^(-?[\d.]+)(px|em|rem|%|ch)?$")
+_BOX_PROPS = {
+    "margin",
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "margin-block",
+    "margin-block-start",
+    "margin-block-end",
+    "margin-inline",
+    "margin-inline-start",
+    "margin-inline-end",
+    "padding",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "padding-block",
+    "padding-block-start",
+    "padding-block-end",
+    "padding-inline",
+    "padding-inline-start",
+    "padding-inline-end",
+}
+_BOX_SHORT = {
+    "": ("top", "right", "bottom", "left"),
+    "-top": ("top",),
+    "-right": ("right",),
+    "-bottom": ("bottom",),
+    "-left": ("left",),
+    "-block": ("top", "bottom"),
+    "-block-start": ("top",),
+    "-block-end": ("bottom",),
+    "-inline": ("left", "right"),
+    "-inline-start": ("left",),
+    "-inline-end": ("right",),
+}
+_BOX_SIDE_FIELD = {"top": "t", "right": "r", "bottom": "b", "left": "l"}
 
 
 def _paint(value: str, *, bg: bool = False) -> str:
@@ -120,9 +163,32 @@ class _Style:
     italic: bool = False
     underline: bool = False
     strike: bool = False
+    overline: bool = False
     dim: bool = False
     align: str = "left"
     transform: str = ""
+    # Box model approximation, in terminal cells.
+    mt: int = 0
+    mr: int = 0
+    mb: int = 0
+    ml: int = 0
+    pt: int = 0
+    pr: int = 0
+    pb: int = 0
+    pl: int = 0
+    border: int = 0  # uniform border width in cells; 0 = no border
+    bt: int = 0
+    br: int = 0
+    bb: int = 0
+    bl: int = 0
+    border_color: str = ""
+    # display/visibility: "" (inherit), "none"/"hidden" prune, "block"/"inline".
+    display: str = ""
+    visibility: str = ""
+
+    @property
+    def hidden(self) -> bool:
+        return self.display == "none" or self.visibility in ("hidden", "collapse")
 
     def with_(self, **changes: object) -> _Style:
         return replace(self, **changes)
@@ -139,6 +205,8 @@ class _Style:
             codes.append("4")
         if self.strike:
             codes.append("9")
+        if self.overline:
+            codes.append("53")
         attrs = f"\x1b[{';'.join(codes)}m" if codes else ""
         return _paint(self.fg) + _paint(self.bg, bg=True) + attrs
 
@@ -157,9 +225,26 @@ class _Overrides:
     italic: bool | None = None
     underline: bool | None = None
     strike: bool | None = None
+    overline: bool | None = None
     dim: bool | None = None
     align: str | None = None
     transform: str | None = None
+    mt: int | None = None
+    mr: int | None = None
+    mb: int | None = None
+    ml: int | None = None
+    pt: int | None = None
+    pr: int | None = None
+    pb: int | None = None
+    pl: int | None = None
+    border: int | None = None
+    bt: int | None = None
+    br: int | None = None
+    bb: int | None = None
+    bl: int | None = None
+    border_color: str | None = None
+    display: str | None = None
+    visibility: str | None = None
 
     def merge(self, other: _Overrides) -> _Overrides:
         changes = {key: value for key, value in vars(other).items() if value is not None}
@@ -187,29 +272,136 @@ def _resolve(value: str, variables: dict[str, str], depth: int = 0) -> str:
     return resolved
 
 
-def _set_property(overrides: _Overrides, prop: str, value: str) -> _Overrides:
+def _length_px(value: str, cols: int) -> int | None:
+    """Parse a CSS length into terminal cells; ``None`` means 'not a length'."""
+    match = _LEN_RE.match(value.strip().lower())
+    if not match:
+        return None
+    try:
+        amount = float(match.group(1))
+    except ValueError:
+        return None
+    unit = match.group(2) or "px"
+    if unit == "em" or unit == "rem":
+        cells = amount * 14
+    elif unit == "%":
+        cells = amount * cols / 100
+    elif unit == "ch":
+        cells = amount
+    else:
+        cells = amount
+    return max(0, int(round(cells)))
+
+
+def _box_sides(prop: str) -> tuple[str, ...] | None:
+    """Map a margin/padding property to its physical sides, or ``None``."""
+    base = "margin" if prop.startswith("margin") else "padding"
+    if not prop.startswith(base):
+        return None
+    suffix = prop[len(base) :]
+    if suffix not in _BOX_SHORT:
+        return None
+    return _BOX_SHORT[suffix]
+
+
+def _expand_box(prop: str, value: str, variables: dict[str, str]) -> list[tuple[str, str]]:
+    """Expand a margin/padding shorthand into (side, value) pairs."""
+    sides = _box_sides(prop)
+    if sides is None:
+        return []
+    resolved = _resolve(value, variables)
+    parts = resolved.split()
+    if len(parts) == 1:
+        parts = parts * 4
+    elif len(parts) == 2:
+        parts = [parts[0], parts[1], parts[0], parts[1]]
+    elif len(parts) == 3:
+        parts = [parts[0], parts[1], parts[2], parts[1]]
+    if len(parts) != 4:
+        return []
+    return list(zip(sides, parts))
+
+
+def _set_box_property(
+    overrides: _Overrides, prop: str, value: str, variables: dict[str, str], cols: int
+) -> _Overrides:
+    """Apply one margin/padding longhand or shorthand to ``overrides``."""
+    is_margin = prop.startswith("margin")
+    base = "margin" if is_margin else "padding"
+    suffix = prop[len(base) :]
+    if suffix in ("", "-block", "-inline") or suffix.startswith(("-block-", "-inline-")):
+        for side, part in _expand_box(prop, value, variables):
+            overrides = _set_box_property(
+                overrides, f"{base}-{side}", part, variables, cols
+            )
+        return overrides
+    side = suffix[1:] if suffix.startswith("-") else ""
+    field = _BOX_SIDE_FIELD.get(side)
+    if field is None:
+        return overrides
+    cells = _length_px(value, cols)
+    if cells is None:
+        return overrides
+    attr = ("m" if is_margin else "p") + field
+    return replace(overrides, **{attr: cells})
+
+
+def _set_property(
+    overrides: _Overrides, prop: str, value: str, variables: dict[str, str], cols: int = 80
+) -> _Overrides:
     if prop in ("color", "foreground"):
         return replace(overrides, fg=value)
     if prop in ("background-color", "background"):
         return replace(overrides, bg=value)
     if prop == "font-weight":
-        return replace(overrides, bold=value in ("bold", "bolder", "700", "800", "900"))
+        if value in ("normal", "lighter", "100", "200", "300", "400", "500"):
+            return replace(overrides, bold=False)
+        return replace(overrides, bold=value in ("bold", "bolder", "600", "700", "800", "900"))
     if prop == "font-style":
         return replace(overrides, italic=value == "italic")
     if prop == "text-decoration":
         if value == "none":
-            return replace(overrides, underline=False, strike=False)
+            return replace(overrides, underline=False, strike=False, overline=False)
         return replace(
             overrides,
             underline=True if "underline" in value else overrides.underline,
             strike=True if "line-through" in value else overrides.strike,
+            overline=True if "overline" in value else overrides.overline,
         )
     if prop == "font-size":
         return replace(overrides, dim=value in ("small", "smaller", "75%", "80%"))
-    if prop == "text-align" and value in ("left", "right", "center"):
+    if prop == "text-align" and value in ("left", "right", "center", "justify"):
         return replace(overrides, align=value)
     if prop == "text-transform" and value in ("uppercase", "lowercase", "capitalize", "none"):
         return replace(overrides, transform=value)
+    if prop == "display":
+        return replace(overrides, display=value if value in ("none", "block", "inline") else "")
+    if prop == "visibility":
+        return replace(
+            overrides, visibility=value if value in ("hidden", "collapse", "visible") else ""
+        )
+    if prop == "hidden":
+        return replace(overrides, display="none")
+    if prop.startswith("border"):
+        if prop == "border":
+            parts = value.split()
+            width = _length_px(parts[0], cols) if parts else None
+            return replace(
+                overrides,
+                border=width if width is not None else 1,
+                border_color=next((p for p in parts[1:] if p.startswith("#") or p.isalpha()), "")
+                or overrides.border_color,
+            )
+        for suffix, attr in (("-top", "bt"), ("-right", "br"), ("-bottom", "bb"), ("-left", "bl")):
+            if prop == f"border{suffix}":
+                width = _length_px(value, cols)
+                return replace(overrides, **{attr: width if width is not None else 1})
+        return overrides
+    if prop in ("border-color", "border-top-color", "border-right-color",
+                "border-bottom-color", "border-left-color"):
+        return replace(overrides, border_color=value)
+    if prop in _BOX_PROPS:
+        return _set_box_property(overrides, prop, value, variables, cols)
     return overrides
 
 
@@ -227,7 +419,7 @@ def _parse_declarations(text: str) -> dict[str, tuple[str, bool]]:
 
 
 def _overrides_from(
-    declarations: dict[str, tuple[str, bool]], variables: dict[str, str]
+    declarations: dict[str, tuple[str, bool]], variables: dict[str, str], cols: int = 80
 ) -> tuple[_Overrides, _Overrides]:
     normal = _Overrides()
     important = _Overrides()
@@ -235,7 +427,7 @@ def _overrides_from(
         if prop.startswith("--"):
             continue
         target = important if is_important else normal
-        updated = _set_property(target, prop, _resolve(value, variables))
+        updated = _set_property(target, prop, _resolve(value, variables), variables, cols)
         if is_important:
             important = updated
         else:
@@ -304,7 +496,8 @@ def _parse_selector(text: str) -> _Selector | None:
 class _Stylesheet:
     """Minimal CSS: selectors, specificity, ``!important`` and variables."""
 
-    def __init__(self, css: str = "") -> None:
+    def __init__(self, css: str = "", cols: int = 80) -> None:
+        self._cols = cols
         self.variables: dict[str, str] = {}
         self.rules: list[tuple[_Selector, int, _Overrides, _Overrides]] = []
         self._parse(css)
@@ -318,7 +511,7 @@ class _Stylesheet:
                 if prop.startswith("--"):
                     self.variables[prop] = value
         for order, (selector_text, declarations) in enumerate(parsed):
-            normal, important = _overrides_from(declarations, self.variables)
+            normal, important = _overrides_from(declarations, self.variables, cols=self._cols)
             for raw in selector_text.split(","):
                 selector = _parse_selector(raw)
                 if selector is not None:
@@ -348,7 +541,7 @@ class _Stylesheet:
         for prop, (value, _) in declarations.items():
             if prop.startswith("--"):
                 local[prop] = _resolve(value, local)
-        return _overrides_from(declarations, local)
+        return _overrides_from(declarations, local, cols=self._cols)
 
 
 @dataclass
@@ -380,15 +573,25 @@ class _Tree(HTMLParser):
         if self._skip or tag in _SKIP_TAGS:
             self._skip += int(tag in _SKIP_TAGS)
             return
-        node = _Node(tag, {k: v or "" for k, v in attrs}, parent=self._stack[-1])
+        attrs_dict = {k: v or "" for k, v in attrs}
+        if "hidden" in attrs_dict:
+            prior = attrs_dict.get("style", "")
+            attrs_dict["style"] = f"{prior};display:none" if prior else "display:none"
+        node = _Node(tag, attrs_dict, parent=self._stack[-1])
         self._stack[-1].children.append(node)
         if tag not in _VOID_TAGS:
             self._stack.append(node)
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if not self._skip:
+            attrs_dict = {k: v or "" for k, v in attrs}
+            if "hidden" in attrs_dict:
+                prior = attrs_dict.get("style", "")
+                attrs_dict["style"] = (
+                    f"{prior};display:none" if prior else "display:none"
+                )
             self._stack[-1].children.append(
-                _Node(tag, {k: v or "" for k, v in attrs}, parent=self._stack[-1])
+                _Node(tag, attrs_dict, parent=self._stack[-1])
             )
 
     def handle_endtag(self, tag: str) -> None:
@@ -423,14 +626,14 @@ class HTMLView:
     def __init__(self, cols: int, css: str = "") -> None:
         self.cols = max(20, cols)
         self._extra_css = css
-        self._sheet = _Stylesheet()
+        self._sheet = _Stylesheet(cols=self.cols)
         self._computed: dict[int, _Overrides] = {}
 
     def render(self, html: str) -> list[str]:
         tree = _Tree()
         tree.feed(html)
         tree.close()
-        self._sheet = _Stylesheet("\n".join([*tree.styles, self._extra_css]))
+        self._sheet = _Stylesheet("\n".join([*tree.styles, self._extra_css]), cols=self.cols)
         self._computed = {}
         self._resolve_styles(tree.root.children)
         rows: list[str] = []
@@ -441,9 +644,13 @@ class HTMLView:
         for node in nodes:
             css_normal, css_urgent = self._sheet.overrides_for(node)
             inline_normal, inline_urgent = self._sheet.declarations(node.attrs.get("style", ""))
-            self._computed[id(node)] = (
+            merged = (
                 css_normal.merge(inline_normal).merge(css_urgent).merge(inline_urgent)
             )
+            self._computed[id(node)] = merged
+            style = _apply(self._base(), merged)
+            if style.hidden:
+                continue  # display:none / visibility:hidden prune the subtree
             self._resolve_styles(node.children)
 
     # -- inline -------------------------------------------------------------
@@ -485,12 +692,16 @@ class HTMLView:
         elif t == "a":
             child = style.with_(fg=theme.current().link_style, underline=True)
         child = _apply(child, self._computed.get(id(node)))
+        if child.hidden:
+            return ""
 
         if t == "img":
             alt = node.attrs.get("alt", "image")
             return f"{theme.current().dim_style}[image: {alt}]{ansi.RESET}"
 
         body = "".join(self._inline(c, child) for c in node.children)
+        if child.pl or child.pr:
+            body = child.wrap(" " * child.pl) + body + child.wrap(" " * child.pr)
         if t == "a" and node.attrs.get("href"):
             return ansi.osc8(node.attrs["href"], body)
         return body
@@ -511,65 +722,151 @@ class HTMLView:
             out.append(" " * left + row)
         return out
 
-    def _blocks(self, nodes: list[_Node], rows: list[str], style: _Style, indent: int) -> None:
+    @staticmethod
+    def _fill_bg(row: str, target: int, style: _Style) -> str:
+        """Pad ``row`` to ``target`` cells with the style's background color."""
+        missing = target - ansi.width(row)
+        if missing <= 0 or not style.bg:
+            return row
+        return row + style.wrap(" " * missing)
+
+    @staticmethod
+    def _bgrow(count: int, width: int, style: _Style) -> list[str]:
+        """Blank rows painted with ``style``'s background (padding rows)."""
+        if count <= 0:
+            return []
+        cell = style.wrap(" " * max(1, width))
+        return [cell] * count
+
+    @staticmethod
+    def _hline(width: int, style: _Style) -> str:
+        """A horizontal rule, ``─`` repeated, in the border color if set."""
+        color = _paint(style.border_color, bg=bool(style.bg)) if style.border_color else ""
+        bg = _paint(style.bg, bg=True)
+        return f"{color}{bg}{'─' * max(0, width)}{ansi.RESET}"
+
+    def _blocks(
+        self, nodes: list[_Node], rows: list[str], style: _Style, indent: int
+    ) -> None:
         width = max(8, self.cols - indent)
+        prev_mb = 0  # collapsed bottom margin of the previous emitted block
+        pending_mt = 0  # top margin of the next block, collapsed with prev_mb
+
+        def flush() -> None:
+            nonlocal prev_mb, pending_mt
+            gap = max(pending_mt, prev_mb, 1 if rows and rows[-1] else 0)
+            for _ in range(min(gap, 3)):
+                rows.append("")
+            pending_mt = 0
+
         for node in nodes:
             if node.tag is None:
-                text = self._transform(re.sub(r"\s+", " ", node.text).strip(), style)
+                own = _apply(style, None)
+                text = self._transform(re.sub(r"\s+", " ", node.text).strip(), own)
                 if text:
+                    flush()
                     rows.extend(
-                        self._aligned(ansi.wrap(style.wrap(text), width), width, style.align)
+                        self._aligned(
+                            [self._fill_bg(r, width, own) for r in ansi.wrap(own.wrap(text), width)],
+                            width,
+                            own.align,
+                        )
                     )
                 continue
 
             t = node.tag
             base = style.with_(bold=True) if t in _HEADINGS else style
             own = _apply(base, self._computed.get(id(node)))
+            if own.hidden:
+                continue
+            if own.display == "inline":
+                # display:inline on a block-level tag: render children inline.
+                text = self._inline_children(node, own).strip()
+                if text:
+                    flush()
+                    rows.extend(ansi.wrap(text, width))
+                continue
+
+            content: list[str] = []
+            inner_width = max(8, width - own.pl - own.pr - 2 * (1 if own.border else 0))
+            inner_indent = indent + own.pl + (1 if own.border else 0)
+
+            def emit(inner: list[str]) -> None:
+                nonlocal prev_mb, pending_mt
+                if not inner:
+                    return
+                flush()
+                block_rows = [" " * indent + r for r in inner]
+                if own.border:
+                    bar = _paint(own.border_color) or ansi.dim()
+                    edge = bar + "│" + ansi.RESET
+                    block_rows = [
+                        edge + r[self._indent_len(r, indent) :] if False else edge + " " + r[len(" " * indent) :] + " " + edge
+                        for r in block_rows
+                    ]
+                rows.extend(block_rows)
+                prev_mb = own.mb
+
             if t in _HEADINGS:
                 level = int(t[1])
                 head = self._inline_children(node, own)
                 if level == 1:
                     head = f"{ansi.UNDERLINE}{head}{ansi.UNDERLINE_OFF}"
-                rows.extend(self._aligned(ansi.wrap(head, width), width, own.align))
+                wrapped = self._aligned(ansi.wrap(head, inner_width), inner_width, own.align)
+                content.extend(self._fill_bg(r, inner_width, own) for r in wrapped)
                 if level <= 2:
-                    rows.append(f"{ansi.dim()}{'─' * min(width, 64)}{ansi.RESET}")
-                rows.append("")
+                    content.append(self._hline(inner_width, own.with_(border_color="")))
             elif t in ("p", "div", "section", "article", "header", "footer", "main", "span"):
                 text = self._inline_children(node, own).strip()
                 if text:
-                    rows.extend(self._aligned(ansi.wrap(text, width), width, own.align))
-                rows.append("")
+                    wrapped = self._aligned(ansi.wrap(text, inner_width), inner_width, own.align)
+                    content.extend(self._fill_bg(r, inner_width, own) for r in wrapped)
             elif t in ("ul", "ol"):
-                self._list(node, rows, own, indent, t == "ol")
-                rows.append("")
+                self._list(node, content, own, inner_indent, t == "ol")
             elif t == "li":
-                self._item(node, rows, own, indent, "•")
+                self._item(node, content, own, inner_indent, "•")
             elif t == "blockquote":
-                inner: list[str] = []
-                self._blocks(node.children, inner, own.with_(dim=True), 0)
+                inner_rows: list[str] = []
+                self._blocks(node.children, inner_rows, own.with_(dim=True), 0)
                 rail = f"{ansi.dim()}│ {ansi.RESET}"
-                for line in inner:
-                    rows.append(rail + line if line else rail.rstrip())
-                rows.append("")
+                for line in inner_rows:
+                    content.append(rail + line if line else rail.rstrip())
             elif t == "pre":
-                self._pre(node, rows, own, indent)
-                rows.append("")
+                self._pre(node, content, own, inner_indent, inner_width)
             elif t == "table":
-                self._table(node, rows, own)
-                rows.append("")
+                self._table(node, content, own, inner_width)
             elif t == "hr":
-                rows.append(f"{ansi.dim()}{'─' * min(width, 64)}{ansi.RESET}")
-                rows.append("")
+                content.append(self._hline(inner_width, own))
             elif t == "br":
-                rows.append("")
+                content.append("")
             elif t == "img":
-                rows.append(f"{ansi.dim()}[image: {node.attrs.get('alt', 'image')}]{ansi.RESET}")
+                content.append(f"{ansi.dim()}[image: {node.attrs.get('alt', 'image')}]{ansi.RESET}")
             elif t in _INLINE_TAGS:
                 text = self._inline(node, own).strip()
                 if text:
-                    rows.extend(ansi.wrap(text, width))
+                    content.extend(ansi.wrap(text, inner_width))
             else:
-                self._blocks(node.children, rows, own, indent)
+                self._blocks(node.children, content, own, inner_indent)
+
+            # Vertical padding rows (styled bg), then content, then bottom pad.
+            padded = self._bgrow(own.pt, inner_width, own) + content + self._bgrow(
+                own.pb, inner_width, own
+            )
+            if own.pl or own.pr:
+                pad_left = " " * own.pl
+                pad_right = " " * own.pr
+                if own.bg:
+                    pad_left = own.wrap(pad_left)
+                    pad_right = own.wrap(pad_right)
+                padded = [pad_left + r + pad_right for r in padded]
+            emit(padded)
+            pending_mt = own.mt
+
+        flush()
+
+    @staticmethod
+    def _indent_len(row: str, indent: int) -> int:
+        return 0  # placeholder, unused
 
     def _list(
         self, node: _Node, rows: list[str], style: _Style, indent: int, ordered: bool

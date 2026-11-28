@@ -3,7 +3,9 @@
 import os
 import pty
 
+import pytest
 from vx.tui import terminal
+from vx.tui.terminal import Terminal, TerminalError
 
 
 class TestMouseReporting:
@@ -72,4 +74,67 @@ def test_enter_keeps_the_tty_blocking():
             term.exit()
     finally:
         os.close(master)
+        os.close(slave)
+
+
+def _pipe_stdin():
+    """A stdin-like object backed by a pipe (never a tty)."""
+    read_fd, write_fd = os.pipe()
+
+    class Stdin:
+        def fileno(self):
+            return read_fd
+
+    return Stdin(), read_fd, write_fd
+
+
+def test_enter_rejects_non_tty_stdin():
+    stdin, read_fd, write_fd = _pipe_stdin()
+    try:
+        term = Terminal(stdin=stdin)
+        with pytest.raises(TerminalError, match="not a terminal"):
+            term.enter()
+        assert term._running is False
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
+
+
+def test_read_available_latches_eof_instead_of_polling_forever():
+    stdin, read_fd, write_fd = _pipe_stdin()
+    try:
+        term = Terminal(stdin=stdin, stdout=None)
+        # Nothing pending: empty, not EOF.
+        assert term.read_available() == b""
+        assert term.eof is False
+        # Writer closes: the read end reports EOF exactly once, then latches.
+        os.close(write_fd)
+        write_fd = -1
+        assert term.read_available() == b""
+        assert term.eof is True
+        # Subsequent calls short-circuit without touching the fd.
+        assert term.read_available() == b""
+        assert term.eof is True
+    finally:
+        os.close(read_fd)
+        if write_fd != -1:
+            os.close(write_fd)
+
+
+def test_eof_on_pty_hangup_via_eio():
+    """Closing the pty master makes the slave read fail with EIO on Linux."""
+    master, slave = pty.openpty()
+
+    class Stdin:
+        def fileno(self):
+            return slave
+
+    try:
+        term = Terminal(stdin=Stdin(), stdout=None)
+        os.close(master)
+        # Drain whatever the hangup delivered, then the next read reports EIO.
+        for _ in range(3):
+            term.read_available()
+        assert term.eof is True
+    finally:
         os.close(slave)

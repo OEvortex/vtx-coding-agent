@@ -288,7 +288,9 @@ def elapsed_note(seconds: float) -> str:
 def activity_note(label: str, started: float, now: float, queued: int = 0) -> str:
     """The running note: spinner, what is happening, how long, and the way out."""
     elapsed = max(0.0, now - started)
-    frame = SPINNER[int(elapsed * 10) % len(SPINNER)]
+    # Reduced motion holds the spinner on its first cell instead of turning.
+    index = 0 if _theme.motion_reduced() else int(elapsed * 10) % len(SPINNER)
+    frame = SPINNER[index]
     note = f"{frame} {label}"
     if elapsed >= 1:
         note += f" {elapsed_note(elapsed)}"

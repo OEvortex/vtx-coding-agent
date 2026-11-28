@@ -7,13 +7,19 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import errno
 import os
 import select
 import signal
 import sys
-import termios
-import tty
 from typing import Any
+
+try:
+    import termios
+    import tty
+except ImportError:  # non-POSIX (e.g. Windows): the TUI cannot run
+    termios = None  # type: ignore[assignment]
+    tty = None  # type: ignore[assignment]
 
 #: Button events (clicks and the wheel) plus SGR coordinates. Always on:
 #: reporting the pointer is what lets the wheel scroll the transcript, and
@@ -63,6 +69,10 @@ def _hook_signals() -> None:
             _OLD_SIGNAL_HANDLERS[sig] = signal.signal(sig, _handle_signal)
 
 
+class TerminalError(RuntimeError):
+    """The TUI cannot take over this terminal; the caller prints it."""
+
+
 class Terminal:
     """Owns the tty in raw mode while the app runs."""
 
@@ -72,10 +82,25 @@ class Terminal:
         self._fd = self.stdin.fileno()
         self._saved_attrs: Any = None
         self._running = False
+        self._eof = False
+
+    @property
+    def eof(self) -> bool:
+        """Stdin hit EOF/hangup; the app should quit instead of polling."""
+        return self._eof
 
     # -- lifecycle ---------------------------------------------------------
 
     def enter(self) -> None:
+        if termios is None or tty is None or not hasattr(termios, "tcgetattr"):
+            raise TerminalError(
+                f"{os.name} has no POSIX terminal support; "
+                "use -p/--prompt for non-interactive runs"
+            )
+        if not os.isatty(self._fd):
+            raise TerminalError(
+                "stdin is not a terminal; use -p/--prompt for piped or redirected input"
+            )
         _hook_signals()
         self._saved_attrs = termios.tcgetattr(self._fd)
         tty.setraw(self._fd)
@@ -96,7 +121,7 @@ class Terminal:
         self._running = False
         _ACTIVE_TERMINALS.discard(self)
         self.write(_ALTERNATE_SCREEN_OFF)
-        if self._saved_attrs is not None:
+        if self._saved_attrs is not None and termios is not None:
             termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved_attrs)
             self._saved_attrs = None
 
@@ -117,16 +142,29 @@ class Terminal:
             pass
 
     def read_available(self, max_bytes: int = 65536) -> bytes:
-        """Non-blocking read of whatever is pending on stdin."""
+        """Non-blocking read of whatever is pending on stdin.
+
+        Returns ``b""`` both when nothing is pending and at EOF; once EOF (or a
+        pty hangup, which surfaces as EIO) is seen, ``self.eof`` latches so the
+        caller can stop polling a descriptor that will never produce data.
+        """
+        if self._eof:
+            return b""
         try:
             r, _, _ = select.select([self._fd], [], [], 0)
             if not r:
                 return b""
-            return os.read(self._fd, max_bytes)
+            data = os.read(self._fd, max_bytes)
         except (BlockingIOError, InterruptedError):
             return b""
-        except OSError:
+        except OSError as exc:
+            if exc.errno == errno.EIO:
+                # pty/tty hangup: the fd stays "readable" forever after this.
+                self._eof = True
             return b""
+        if not data:
+            self._eof = True
+        return data
 
     # -- size ---------------------------------------------------------------
 

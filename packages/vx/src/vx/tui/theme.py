@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 
 from vx.tui import cache
 
@@ -302,12 +302,43 @@ def current() -> Theme:
     return _active
 
 
+def colors_enabled() -> bool:
+    """Whether the terminal should get SGR color at all.
+
+    ``NO_COLOR`` (no-color.org) and ``TERM=dumb`` both mean "plain text": the
+    theme still resolves so layout is unchanged, but every color slot reports
+    an empty style at emission time (``vx.tui.ansi.style``).
+    """
+    if os.environ.get("NO_COLOR") is not None:
+        return False
+    return os.environ.get("TERM", "").strip().lower() != "dumb"
+
+
+def motion_reduced() -> bool:
+    """Whether animations should hold still.
+
+    ``VX_REDUCED_MOTION`` / ``FX_REDUCED_MOTION`` (any non-empty value but
+    ``0``/``false``/``off``) freeze spinners and slow the repaint ticker.
+    """
+    value = next(
+        (
+            raw.strip().lower()
+            for raw in (os.environ.get("VX_REDUCED_MOTION"), os.environ.get("FX_REDUCED_MOTION"))
+            if raw and raw.strip()
+        ),
+        "",
+    )
+    return bool(value) and value not in ("0", "false", "off", "no")
+
+
 def selected_theme() -> Theme:
     """Resolve the theme the way fx does: an explicit pin, then the terminal.
 
     ``VX_THEME`` / ``FX_THEME`` accept ``light``/``dark`` (or a theme name whose
     substring says which). Without a pin we follow ``COLORFGBG``, which many
     terminals export, and otherwise fall back to fx's dark default.
+    ``NO_COLOR`` and ``TERM=dumb`` do not change the pick -- they suppress the
+    color escapes at emission (see :func:`colors_enabled`).
     """
     pin = (os.environ.get("VX_THEME") or os.environ.get("FX_THEME") or "").strip().lower()
     if pin:
@@ -325,9 +356,32 @@ def selected_theme() -> Theme:
     return FX_DARK
 
 
+_STYLE_FIELDS = tuple(
+    f.name
+    for f in fields(Theme)
+    if f.name.endswith("_style") or f.name.endswith("_open") or f.name.endswith("_close")
+)
+
+
+def _plain(theme: Theme) -> Theme:
+    """``theme`` with every style slot emptied: the no-color fallback.
+
+    Renderers read ``theme.current().<slot>`` directly, so stripping at the
+    theme -- not at each emission site -- is the only seam that reaches them
+    all. ``syntax`` is a nested palette, emptied field by field.
+    """
+    return replace(
+        theme,
+        **{name: "" for name in _STYLE_FIELDS},
+        syntax=replace(theme.syntax, **{f.name: "" for f in fields(theme.syntax)}),
+    )
+
+
 def apply_theme(theme: Theme | None = None) -> Theme:
     global _active
     _active = theme or selected_theme()
+    if not colors_enabled():
+        _active = _plain(_active)
     # Every block's rows carry the styles of the theme they were built with, so
     # switching palettes has to invalidate all of them, not just repaint.
     cache.bump_generation()

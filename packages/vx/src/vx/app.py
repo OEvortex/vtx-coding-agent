@@ -225,6 +225,10 @@ class VxApp(_CommandBase):
 
         self._exiting = False
         self._ticker_task: asyncio.Task | None = None
+        #: The ``(rows, cols)`` the last frame was laid out for. A resize that
+        #: lands between ticks repaints through ``_draw`` itself, so a drag
+        #: that emits forty SIGWINCHes costs one layout, not forty.
+        self._last_size: tuple[int, int] | None = None
         #: Session ids already asked for a title, and the call that is running.
         self._titled: set[str] = set()
         self._title_task: asyncio.Task | None = None
@@ -289,6 +293,7 @@ class VxApp(_CommandBase):
         if not self._term_ready:
             self.term.enter()
         self.painter.reset()
+        self._last_size = self.term.size()
         loop = asyncio.get_running_loop()
         loop.add_reader(self.term._fd, self._on_stdin)
         signal.signal(signal.SIGWINCH, lambda *_: self._on_resize())
@@ -578,6 +583,11 @@ class VxApp(_CommandBase):
     # ==================================================================
 
     def _on_stdin(self) -> None:
+        if self.term.eof:
+            # stdin is gone for good; without this the reader callback fires
+            # forever on a descriptor that can never produce data.
+            self._exiting = True
+            return
         data = self.term.read_available()
         if not data:
             return
@@ -604,7 +614,8 @@ class VxApp(_CommandBase):
         self._draw(force=force)
 
     def _on_resize(self) -> None:
-        self.painter.reset()
+        # Painter invalidation and the repaint decision live in ``_draw``:
+        # it compares against ``_last_size`` and only resets on a real change.
         with suppress(Exception):
             self._draw(force=True)
 
@@ -2769,11 +2780,22 @@ class VxApp(_CommandBase):
             while not self._exiting:
                 # 60 fps while a turn streams, which is where the text has to
                 # keep up with the eye; 20 fps otherwise, where a redraw only
-                # exists to carry the clock and the panel.
-                await asyncio.sleep(1 / 60 if self._is_running else 1 / 20)
+                # exists to carry the clock and the panel. Reduced motion asks
+                # for stillness, so the ticker halves rather than stopping --
+                # streamed text still has to land.
+                rate = 60 if self._is_running else 20
+                if theme.motion_reduced():
+                    rate //= 2
+                await asyncio.sleep(1 / rate)
                 self._drain_events()
                 self._refresh_stats()
                 self._maybe_recap()
+                # Keys held for a split sequence (lone ESC, partial UTF-8)
+                # resolve on this timer even when stdin stays quiet.
+                with suppress(Exception):
+                    for ev in self.decoder.flush():
+                        with suppress(Exception):
+                            self._handle_key(ev)
                 self._draw()
         except asyncio.CancelledError:
             pass
@@ -2967,7 +2989,12 @@ class VxApp(_CommandBase):
             self._draw_wanted = True
             self._draw_force = self._draw_force or force
             return
-        rows, cols = self.term.size()
+        rows, cols = _fit_size(self.term.size())
+        if (rows, cols) != self._last_size:
+            # A real resize invalidates every painted row: widths changed, so
+            # the diff would otherwise keep stale cells at the edges.
+            self.painter.reset()
+            self._last_size = (rows, cols)
         if self._swarm is not None:
             # The board is a page, not a band: it lays out the whole frame itself.
             self._draw_swarm(rows, cols)
@@ -3032,6 +3059,17 @@ class VxApp(_CommandBase):
 
 
 # -- helpers -----------------------------------------------------------------
+
+
+def _fit_size(size: tuple[int, int]) -> tuple[int, int]:
+    """Clamp a ``(rows, cols)`` report to something a frame can be laid out in.
+
+    ``TIOCGWINSZ`` can report 0 mid-resize (or on a terminal that never got a
+    size), and a zero here once meant ``"".join`` over ``range(cols)`` and a
+    dead session. One cell is the smallest frame worth painting.
+    """
+    rows, cols = size
+    return max(1, rows), max(1, cols)
 
 
 def _job_rows() -> list[sidebar.JobRow]:

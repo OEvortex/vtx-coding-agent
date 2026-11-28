@@ -49,7 +49,11 @@ class RecapCard(Block):
     def _title(self) -> str:
         t = theme.current()
         if self.drafting:
-            index = int((time.monotonic() - self.started) * 10) % len(FRAMES)
+            index = (
+                0
+                if theme.motion_reduced()
+                else int((time.monotonic() - self.started) * 10) % len(FRAMES)
+            )
             return f"{t.dim_style}{FRAMES[index]}{ansi.RESET} recap"
         return f"{t.tag_style}✦{ansi.RESET} {ansi.BOLD}recap{ansi.RESET}"
 

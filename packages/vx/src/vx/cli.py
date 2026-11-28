@@ -258,10 +258,14 @@ def _run_tui(args: argparse.Namespace) -> int:
 
     # Paint the shell before ctx loads, so the terminal is never blank.
     from vx.tui import splash
-    from vx.tui.terminal import Terminal
+    from vx.tui.terminal import Terminal, TerminalError
 
     term = Terminal()
-    term.enter()
+    try:
+        term.enter()
+    except TerminalError as exc:
+        print(f"{PROGRAM_NAME}: {exc}", file=sys.stderr)
+        return 1
     trace("terminal in raw mode")
     try:
         painter = splash.paint(term, cwd=cwd)
