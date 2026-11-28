@@ -49,3 +49,25 @@ class TestApplyNamed:
             assert theme.current() is theme.FX_LIGHT
         finally:
             theme.apply_theme(theme.FX_DARK)
+
+
+class TestSwarmPalette:
+    def test_every_builtin_theme_colours_the_board(self):
+        for built in (theme.FX_DARK, theme.FX_LIGHT):
+            palette = built.swarm
+            assert palette.accent.startswith("\x1b[")
+            assert palette.working != palette.waiting  # a live state is not a parked one
+            assert len(palette.people) >= 4
+            assert len(set(palette.people)) == len(palette.people)
+
+    def test_no_color_empties_the_board_palette(self, monkeypatch):
+        monkeypatch.setenv("NO_COLOR", "1")
+        monkeypatch.delenv("TERM", raising=False)
+        theme.apply_theme(theme.FX_DARK)
+        try:
+            palette = theme.current().swarm
+            assert palette.accent == ""
+            assert palette.people == ()
+        finally:
+            monkeypatch.delenv("NO_COLOR", raising=False)
+            theme.apply_theme(theme.FX_DARK)

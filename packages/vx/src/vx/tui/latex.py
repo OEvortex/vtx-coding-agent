@@ -5,7 +5,22 @@ Source: https://github.com/Innomatica-GmbH/innomd
 Commit: 35021c740a44d197cae4e8c0ab142e0b5e0cdaec
 """
 
+import os
 import re
+
+def _unicode_enabled(unicode: bool | None) -> bool:
+    if unicode is not None:
+        return unicode
+    env = os.environ.get("VX_LATEX_UNICODE")
+    if env is not None:
+        return env.lower() not in {"0", "false", "no", "ascii"}
+    if os.environ.get("NO_UNICODE") or os.environ.get("ASCII_ONLY"):
+        return False
+    term = os.environ.get("TERM", "")
+    if term == "dumb":
+        return False
+    return True
+
 
 GREEK = {
     r"\alpha": "α",
@@ -20,6 +35,7 @@ GREEK = {
     r"\vartheta": "ϑ",
     r"\iota": "ι",
     r"\kappa": "κ",
+    r"\varkappa": "ϰ",
     r"\lambda": "λ",
     r"\mu": "μ",
     r"\nu": "ν",
@@ -52,6 +68,14 @@ GREEK = {
     r"\ell": "ℓ",
     r"\Re": "ℜ",
     r"\Im": "ℑ",
+    r"\wp": "℘",
+    r"\partial": "∂",
+    r"\nabla": "∇",
+    r"\eth": "ð",
+    r"\mho": "℧",
+    r"\imath": "ı",
+    r"\jmath": "ȷ",
+    r"\Bbbk": "k",
 }
 
 OPERATORS = {

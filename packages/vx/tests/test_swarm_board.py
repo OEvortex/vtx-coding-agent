@@ -17,6 +17,7 @@ from vx.tui.swarm import (
     SwarmBoard,
     SwarmView,
     snapshot_from_engine,
+    tool_style,
 )
 
 # -- a live engine, in the shape the page reads ------------------------
@@ -612,3 +613,33 @@ class TestLiveActivity:
         assert "MEMBER" in text
         assert "src/parser.rs +18 -6" in text
         assert "3 tools" in text and "1 failed" in text
+
+
+# -- colour ------------------------------------------------------------
+
+
+class TestColour:
+    def test_states_and_tool_families_carry_their_own_colour(self):
+        raw = "".join(active_board().render(120, 34))
+        palette = theme.current().swarm
+        assert palette.working in raw  # the working group head and live card
+        assert palette.fail in raw  # the failed call's duration
+        assert tool_style("bash") in raw
+        assert palette.people[0] in raw  # the first member's own hue
+
+    def test_members_and_tool_families_do_not_share_one_hue(self):
+        board = active_board()
+        hues = {board._person(member.name) for member in board.view.members}
+        assert len(hues) == len(board.view.members)
+        assert len({tool_style(name) for name in ("bash", "read", "edit", "grep")}) == 4
+
+    def test_no_colour_strips_the_whole_board(self, monkeypatch):
+        monkeypatch.setenv("NO_COLOR", "1")
+        theme.apply_theme(theme.FX_DARK)
+        try:
+            raw = "".join(active_board().render(120, 34))
+            assert "38;5;" not in raw
+            assert "\x1b[0m" in raw  # rows still reset, so layout is unchanged
+        finally:
+            monkeypatch.delenv("NO_COLOR", raising=False)
+            theme.apply_theme(theme.FX_DARK)

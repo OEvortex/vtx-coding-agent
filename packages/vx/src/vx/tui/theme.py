@@ -26,6 +26,45 @@ class SyntaxPalette:
 
 
 @dataclass(frozen=True)
+class SwarmPalette:
+    """The board's own colours: its states, its tool families, its people.
+
+    Separate from the general slots because a dashboard needs several accents at
+    once (one per worker, one per kind of call) and state colours that stay true
+    even in a theme whose ``green``/``red`` slots are deliberately monochrome.
+    Every value is a foreground SGR sequence, empty when colour is off.
+    """
+
+    accent: str
+    working: str
+    blocked: str
+    waiting: str
+    killed: str
+    ok: str
+    fail: str
+    clock: str
+    bash: str
+    read: str
+    edit: str
+    search: str
+    web: str
+    task: str
+    board: str
+    tool: str
+    #: One colour per member, picked by name so it never moves between frames.
+    people: tuple[str, ...]
+
+
+def _c(number: int, *, bold: bool = False) -> str:
+    """A 256-colour foreground, the form every terminal from the last decade has."""
+    return f"\x1b[{'1;' if bold else ''}38;5;{number}m"
+
+
+def _people(*numbers: int) -> tuple[str, ...]:
+    return tuple(_c(number) for number in numbers)
+
+
+@dataclass(frozen=True)
 class Theme:
     name: str
     light: bool
@@ -60,6 +99,7 @@ class Theme:
     tool_stderr_style: str
     link_style: str
     syntax: SyntaxPalette
+    swarm: SwarmPalette
 
 
 FX_DARK = Theme(
@@ -103,6 +143,25 @@ FX_DARK = Theme(
         variable_style="\x1b[38;5;252m",
         operator_style="\x1b[38;5;252m",
     ),
+    swarm=SwarmPalette(
+        accent=_c(111),
+        working=_c(114),
+        blocked=_c(214),
+        waiting=_c(245),
+        killed=_c(131),
+        ok=_c(114),
+        fail=_c(203),
+        clock=_c(242),
+        bash=_c(221),
+        read=_c(111),
+        edit=_c(114),
+        search=_c(176),
+        web=_c(80),
+        task=_c(141),
+        board=_c(109),
+        tool=_c(245),
+        people=_people(111, 179, 80, 174, 141, 108, 169, 186),
+    ),
 )
 
 FX_LIGHT = Theme(
@@ -145,6 +204,25 @@ FX_LIGHT = Theme(
         function_style="\x1b[38;5;238m",
         variable_style="\x1b[38;5;238m",
         operator_style="\x1b[38;5;238m",
+    ),
+    swarm=SwarmPalette(
+        accent=_c(25),
+        working=_c(28),
+        blocked=_c(166),
+        waiting=_c(244),
+        killed=_c(124),
+        ok=_c(28),
+        fail=_c(160),
+        clock=_c(245),
+        bash=_c(130),
+        read=_c(25),
+        edit=_c(28),
+        search=_c(90),
+        web=_c(30),
+        task=_c(55),
+        board=_c(95),
+        tool=_c(244),
+        people=_people(25, 130, 30, 95, 55, 22, 90, 136),
     ),
 )
 
@@ -267,6 +345,28 @@ def from_ctx_theme(theme_id: str) -> Theme | None:
             variable_style=_fg(syntax.get("variable") or fg),
             operator_style=_fg(syntax.get("operator") or muted),
         ),
+        # The board needs more than one accent at a time; a ctx theme names its
+        # roles, not its tool families, so the families borrow the roles most
+        # like them and the people borrow the accents.
+        swarm=SwarmPalette(
+            accent=_fg(accent),
+            working=_fg(success),
+            blocked=_fg(notice),
+            waiting=_fg(muted),
+            killed=_fg(error),
+            ok=_fg(success),
+            fail=_fg(error),
+            clock=_fg(muted),
+            bash=_fg(role("warning", notice)),
+            read=_fg(role("info", accent)),
+            edit=_fg(role("diff_added", success)),
+            search=_fg(role("markdown_code", accent)),
+            web=_fg(role("info", accent)),
+            task=_fg(title),
+            board=_fg(role("notice", muted)),
+            tool=_fg(muted),
+            people=(_fg(accent), _fg(title), _fg(success), _fg(role("info", accent))),
+        ),
     )
 
 
@@ -374,6 +474,9 @@ def _plain(theme: Theme) -> Theme:
         theme,
         **{name: "" for name in _STYLE_FIELDS},
         syntax=replace(theme.syntax, **{f.name: "" for f in fields(theme.syntax)}),
+        swarm=replace(
+            replace(theme.swarm, **{f.name: "" for f in fields(theme.swarm)}), people=()
+        ),
     )
 
 

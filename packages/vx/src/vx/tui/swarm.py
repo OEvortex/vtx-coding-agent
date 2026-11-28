@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 import time
+import zlib
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -46,38 +47,38 @@ STATES: tuple[tuple[str, str, str], ...] = (
 STATE_ORDER = {name: index for index, (name, _glyph, _word) in enumerate(STATES)}
 STATE_WORD = {name: word for name, _glyph, word in STATES}
 
-#: Tool families, by the prefix of the tool name, to the glyph that names it.
-#: A page that showed the same dot for `bash` and `write` would be a list of
-#: events rather than a picture of what the swarm is doing.
-TOOL_FAMILIES: tuple[tuple[str, str], ...] = (
-    ("bash", "❯"),
-    ("shell", "❯"),
-    ("exec", "❯"),
-    ("read", "◎"),
-    ("view", "◎"),
-    ("open", "◎"),
-    ("edit", "✎"),
-    ("write", "✎"),
-    ("patch", "✎"),
-    ("apply", "✎"),
-    ("create", "✎"),
-    ("grep", "⌕"),
-    ("search", "⌕"),
-    ("glob", "⌕"),
-    ("find", "⌕"),
-    ("list", "⌕"),
-    ("web", "☁"),
-    ("fetch", "☁"),
-    ("http", "☁"),
-    ("task", "⇄"),
-    ("delegate", "⇄"),
-    ("agent", "⇄"),
-    ("spawn", "⇄"),
-    ("board", "▤"),
-    ("swarm", "⬡"),
-    ("todo", "☑"),
-    ("plan", "☰"),
-    ("think", "✻"),
+#: Tool families: the prefix of the tool name, the glyph that names it in one
+#: cell, and the palette slot that colours it. A page that showed the same dot
+#: for `bash` and `write` would be a list of events, not a picture of the work.
+TOOL_FAMILIES: tuple[tuple[str, str, str], ...] = (
+    ("bash", "❯", "bash"),
+    ("shell", "❯", "bash"),
+    ("exec", "❯", "bash"),
+    ("read", "◎", "read"),
+    ("view", "◎", "read"),
+    ("open", "◎", "read"),
+    ("edit", "✎", "edit"),
+    ("write", "✎", "edit"),
+    ("patch", "✎", "edit"),
+    ("apply", "✎", "edit"),
+    ("create", "✎", "edit"),
+    ("grep", "⌕", "search"),
+    ("search", "⌕", "search"),
+    ("glob", "⌕", "search"),
+    ("find", "⌕", "search"),
+    ("list", "⌕", "search"),
+    ("web", "☁", "web"),
+    ("fetch", "☁", "web"),
+    ("http", "☁", "web"),
+    ("task", "⇄", "task"),
+    ("delegate", "⇄", "task"),
+    ("agent", "⇄", "task"),
+    ("spawn", "⇄", "task"),
+    ("board", "▤", "board"),
+    ("swarm", "⬡", "board"),
+    ("todo", "☑", "task"),
+    ("plan", "☰", "task"),
+    ("think", "✻", "tool"),
 )
 
 #: A running call spins. Time based, so it does not stutter when a frame runs long.
@@ -87,13 +88,22 @@ SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 BARS = "▁▂▃▄▅▆▇█"
 
 
+def _family(name: str) -> tuple[str, str]:
+    key = (name or "").strip().lower()
+    for prefix, glyph, slot in TOOL_FAMILIES:
+        if key == prefix or key.startswith(prefix):
+            return glyph, slot
+    return "⚙", "tool"
+
+
 def tool_glyph(name: str) -> str:
     """The one cell that says which family of tool this call belongs to."""
-    key = (name or "").strip().lower()
-    for prefix, glyph in TOOL_FAMILIES:
-        if key == prefix or key.startswith(prefix):
-            return glyph
-    return "⚙"
+    return _family(name)[0]
+
+
+def tool_style(name: str) -> str:
+    """That family's colour, so `bash` and `read` never look alike."""
+    return getattr(theme.current().swarm, _family(name)[1])
 
 
 def spinner(now: float) -> str:
@@ -118,11 +128,15 @@ def duration(secs: float) -> str:
 
 
 def sparkline(values: list[int], width: int) -> str:
-    """The last ``width`` buckets as bars: how busy the room has been."""
+    """The last ``width`` buckets as bars: how busy the room has been.
+
+    The scale has a floor: a room making a couple of calls a second should not
+    paint a wall of full blocks, or the sparkline stops being a comparison.
+    """
     tail = values[-width:] if width > 0 else []
     if not tail:
         return ""
-    top = max(tail) or 1
+    top = max(3, max(tail))
     out: list[str] = []
     for value in tail:
         if value <= 0:
@@ -130,6 +144,38 @@ def sparkline(values: list[int], width: int) -> str:
         else:
             out.append(BARS[min(len(BARS) - 1, value * len(BARS) // top)])
     return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# colour: the board is a dashboard, so it says who and what in more than one hue
+# ---------------------------------------------------------------------------
+
+
+def state_style(state: str) -> str:
+    """The colour a state's glyph and its group head carry."""
+    palette = theme.current().swarm
+    return {
+        "working": palette.working,
+        "blocked": palette.blocked,
+        "waiting": palette.waiting,
+        "stopped": palette.waiting,
+        "killed": palette.killed,
+    }.get(state, palette.waiting)
+
+
+def person_style(name: str, index: int | None = None) -> str:
+    """A member's own colour, fixed by its name so it never moves between frames.
+
+    ``index`` is the member's roster position when the caller knows it: workers
+    are then coloured in turn, so two of them never land on the same hue. Names
+    without one (a coordinator post, an unknown agent) hash instead, which is
+    stable but can repeat — a repeated colour is a small price for a stable page.
+    """
+    people = theme.current().swarm.people
+    if not people:
+        return ""
+    slot = zlib.crc32((name or "").encode()) if index is None else index
+    return people[slot % len(people)]
 
 
 # ---------------------------------------------------------------------------
@@ -539,7 +585,7 @@ class SwarmBoard:
     def _too_small(self, width: int, height: int) -> list[str]:
         return self._centred(
             [
-                f"{theme.current().hint_style}⬡ vx swarm{ansi.RESET}",
+                f"{theme.current().swarm.accent}⬡ vx swarm{ansi.RESET}",
                 "",
                 f"{theme.current().dim_style}this board needs {MIN_COLS}x{MIN_ROWS}{ansi.RESET}",
                 f"{theme.current().dim_style}the terminal is "
@@ -553,7 +599,7 @@ class SwarmBoard:
         t = theme.current()
         return self._centred(
             [
-                f"{t.dim_style}⬡{ansi.RESET} {t.tag_style}{ansi.BOLD}vx swarm{ansi.RESET}",
+                f"{t.swarm.accent}⬡{ansi.RESET} {t.swarm.accent}{ansi.BOLD}vx swarm{ansi.RESET}",
                 "",
                 f"{t.hint_style}no swarm in this conversation{ansi.RESET}",
                 "",
@@ -581,24 +627,21 @@ class SwarmBoard:
     def _header(self, width: int) -> str:
         t = theme.current()
         counts = self.view.counts()
-        left = f"{t.dim_style}⬡{ansi.RESET} {t.tag_style}{ansi.BOLD}{self.view.title}{ansi.RESET}"
-        head = f"{t.dim_style}board #{self.view.head}{ansi.RESET}"
+        left = (
+            f"{t.swarm.accent}⬡{ansi.RESET} "
+            f"{t.swarm.accent}{ansi.BOLD}{self.view.title}{ansi.RESET}"
+        )
+        head = f"{t.swarm.clock}board #{self.view.head}{ansi.RESET}"
         chips: list[str] = []
         for name, glyph, word in STATES:
             count = counts.get(name, 0)
             if not count:
                 continue
-            style = {
-                "blocked": t.warning_style,
-                "working": t.tag_style,
-                "waiting": t.dim_style,
-                "stopped": t.dim_style,
-                "killed": t.dim_style,
-            }[name]
+            style = state_style(name)
             chips.append(f"{style}{glyph}{ansi.RESET}{t.dim_style} {count} {word}{ansi.RESET}")
         joined = f"{t.dim_style}   {ansi.RESET}".join(chips)
         stamp = (
-            f"{t.dim_style}{duration(self.view.elapsed)}{ansi.RESET}"
+            f"{t.swarm.clock}{duration(self.view.elapsed)}{ansi.RESET}"
             if self.view.elapsed >= 1
             else ""
         )
@@ -626,17 +669,17 @@ class SwarmBoard:
         left = " " + f"{t.dim_style}   {ansi.RESET}".join(parts)
 
         state = (
-            f"{t.dim_style}paused{ansi.RESET}"
+            f"{t.swarm.blocked}paused{ansi.RESET}"
             if self.paused
             else (
-                f"{t.tag_style}● live{ansi.RESET}"
+                f"{t.swarm.working}● live{ansi.RESET}"
                 if self.follow
-                else f"{t.dim_style}‖ held{ansi.RESET}"
+                else f"{t.swarm.waiting}‖ held{ansi.RESET}"
             )
         )
         fresh = 0 if self.follow else max(0, self.view.head - self.seen_head)
         if fresh:
-            state += f"{t.warning_style}  ▲ {fresh} new{ansi.RESET}"
+            state += f"{t.swarm.blocked}  ▲ {fresh} new{ansi.RESET}"
         tools = self.view.tool_count
         rate = self.view.rate()
         segments = [state]
@@ -646,7 +689,11 @@ class SwarmBoard:
             segments.insert(1, f"{t.dim_style}{rate:.1f}/min{ansi.RESET}")
         marks = sparkline(self.view.series(26), 26)
         if marks:
-            segments.insert(0, f"{t.dim_style}{marks}{ansi.RESET}")
+            # Quiet buckets stay grey so the bars that move are the ones you see.
+            lit = "".join(
+                f"{t.swarm.clock}·" if ch == "·" else f"{t.swarm.working}{ch}" for ch in marks
+            )
+            segments.insert(0, lit + ansi.RESET)
         right = ""
         for segment in reversed(segments):
             candidate = segment if not right else f"{segment}{t.dim_style}   {ansi.RESET}{right}"
@@ -665,7 +712,7 @@ class SwarmBoard:
             count = sum(1 for m in self.view.members if name in m.channels)
         text = f"{label}{f' {count}' if count else ''}"
         if self.channel == name:
-            return f"{t.tag_style}{ansi.BOLD}{text}{ansi.RESET}"
+            return f"{t.swarm.accent}{ansi.BOLD}{text}{ansi.RESET}"
         return f"{t.dim_style}{text}{ansi.RESET}"
 
     def _footer(self, width: int) -> str:
@@ -680,10 +727,16 @@ class SwarmBoard:
             keys = "↑↓ select · ⏎ member · tab feed · v panel · 1-9 channel · ? keys · left close"
         hint = f"{t.dim_style}{ansi.clip_ellipsis(keys, width)}{ansi.RESET}"
         if self.open_member:
-            tag = f"{t.dim_style}viewing @{self.open_member}{ansi.RESET}"
+            tag = f"{self._person(self.open_member)}viewing @{self.open_member}{ansi.RESET}"
             if ansi.width(tag) + 2 < width:
                 return ansi.pad(tag, width - ansi.width(hint)) + hint
         return ansi.pad(hint, width)
+
+    def _person(self, name: str) -> str:
+        """A member's colour by roster position: the room reads as a set of people."""
+        order = [member.name for member in self.view.members]
+        index = order.index(name) if name in order else None
+        return person_style(name, index)
 
     # -- the body ----------------------------------------------------------
 
@@ -731,11 +784,13 @@ class SwarmBoard:
             return []
         t = theme.current()
         name = ask.member
+        who = self._person(name)
         rows = [
             self._rule(width),
             ansi.clip(
-                f" {t.warning_style}◆{ansi.RESET} {t.tag_style}{ansi.BOLD}@{name}{ansi.RESET}"
-                f"{t.hint_style} wants to run {ansi.BOLD}{ask.label}{ansi.DIM_OFF}{ansi.RESET}",
+                f" {t.swarm.blocked}◆{ansi.RESET} {who}{ansi.BOLD}@{name}{ansi.RESET}"
+                f"{t.hint_style} wants to run "
+                f"{tool_style(ask.label)}{ansi.BOLD}{ask.label}{ansi.DIM_OFF}{ansi.RESET}",
                 width,
             ),
             ansi.clip(f" {t.dim_style}$ {ask.target_line(width - 4)}{ansi.RESET}", width),
@@ -744,7 +799,7 @@ class SwarmBoard:
         for index, option in enumerate(ask.options):
             label = f"{index + 1} {option}"
             if index == ask.selected:
-                chips.append(f"{t.tag_style}{ansi.BOLD}▸ {label}{ansi.RESET}")
+                chips.append(f"{t.swarm.accent}{ansi.BOLD}▸ {label}{ansi.RESET}")
             else:
                 chips.append(f"{t.dim_style}  {label}{ansi.RESET}")
         line = " " + f"{t.dim_style}   {ansi.RESET}".join(chips)
@@ -786,18 +841,18 @@ class SwarmBoard:
         return lines[:height]
 
     def _group_head(self, state: str, members: list[MemberView]) -> str:
-        t = theme.current()
         count = sum(1 for member in members if member.state == state)
         word = STATE_WORD.get(state, state)
-        return f"{t.dim_style}{word.upper()} {count}{ansi.RESET}"
+        return f"{state_style(state)}{word.upper()} {count}{ansi.RESET}"
 
     def _card(self, member: MemberView, width: int, chosen: bool, *, compact: bool) -> list[str]:
         t = theme.current()
         indent = "  " * self._depth(member)
         glyph, style = self._state_face(member)
-        bar = f"{t.tag_style}▌{ansi.RESET}" if chosen else " "
+        bar = f"{t.swarm.accent}▌{ansi.RESET}" if chosen else " "
         lead = f"{bar}{indent}"
-        name_style = f"{t.tag_style}{ansi.BOLD}" if chosen else t.hint_style
+        person = self._person(member.name)
+        name_style = f"{person}{ansi.BOLD}" if chosen else (person or t.hint_style)
         name = f"{name_style}{member.name}{ansi.RESET}"
         if member.role not in ("worker", "") and member.role != member.name:
             name += f"{t.dim_style} · {member.role}{ansi.RESET}"
@@ -833,7 +888,9 @@ class SwarmBoard:
         """Age and turns, right aligned: the two numbers a watcher skims for."""
         t = theme.current()
         unread = "" if member.state == "killed" else self.view.unread(member)
-        tail = f"{t.tag_style}+{unread}{ansi.RESET}" if unread else f"{t.dim_style}·{ansi.RESET}"
+        tail = (
+            f"{t.swarm.accent}+{unread}{ansi.RESET}" if unread else f"{t.swarm.clock}·{ansi.RESET}"
+        )
         return f"{t.dim_style}{member.age}m {member.turns}t{ansi.RESET} {tail}"
 
     def _counters(self, member: MemberView) -> str:
@@ -843,32 +900,32 @@ class SwarmBoard:
             return f"{t.dim_style}✕{ansi.RESET} "
         out = f"{t.dim_style}{member.tools}⌁{ansi.RESET}"
         if member.fails:
-            out += f"{t.diff_removed_style} {member.fails}✗{ansi.RESET}"
+            out += f"{t.swarm.fail} {member.fails}✗{ansi.RESET}"
         return f"{out} "
 
     def _now_line(self, member: MemberView, width: int) -> str:
         """The one line that answers "what is it doing": the tool it is running."""
         t = theme.current()
         running = member.running
-        text = member.activity or "—"
-        style = t.statusline_style
-        head = ""
-        tail = ""
-        if member.state in ("waiting", "stopped"):
-            style = t.dim_style
+        activity = member.activity or "—"
+        if member.state in ("waiting", "stopped", "killed"):
+            return f"{t.dim_style}{ansi.clip_ellipsis(activity, max(4, width))}{ansi.RESET}"
         if member.state == "blocked":
-            style = t.warning_style
-        elif member.state == "killed":
-            style = t.dim_style
-        elif running is not None:
-            style = t.hint_style
-            text = f"{tool_glyph(running.label)} {running.label} {running.detail}".strip()
-            tail = duration(running.secs)
-            head = f"{t.tag_style}{spinner(self.now)}{ansi.RESET} "
+            blocked = t.swarm.blocked
+            return f"{blocked}{ansi.clip_ellipsis(activity, max(4, width))}{ansi.RESET}"
+        if running is None:
+            return f"{t.statusline_style}{ansi.clip_ellipsis(activity, max(4, width))}{ansi.RESET}"
+        head = f"{t.swarm.working}{spinner(self.now)}{ansi.RESET} "
+        tail = duration(running.secs)
         room = max(4, width - ansi.width(head) - ansi.width(tail) - 1)
-        row = f"{head}{style}{ansi.clip_ellipsis(text, room)}{ansi.RESET}"
+        label = ansi.clip_ellipsis(running.label or "tool", 12)
+        lead = f"{tool_style(running.label)}{tool_glyph(running.label)}{ansi.RESET} "
+        lead += f"{t.hint_style}{label}{ansi.RESET} "
+        rest = max(0, room - ansi.width(lead))
+        body = lead + f"{t.statusline_style}{ansi.clip_ellipsis(running.detail, rest)}{ansi.RESET}"
+        row = f"{head}{body}"
         if tail and ansi.width(row) + ansi.width(tail) + 1 <= width:
-            row = ansi.pad(row, width - ansi.width(tail)) + f"{t.dim_style}{tail}{ansi.RESET}"
+            row = ansi.pad(row, width - ansi.width(tail)) + f"{t.swarm.clock}{tail}{ansi.RESET}"
         return row
 
     def _where_line(self, member: MemberView) -> str:
@@ -895,17 +952,12 @@ class SwarmBoard:
         return depth
 
     def _state_face(self, member: MemberView) -> tuple[str, str]:
-        t = theme.current()
         if member.state == "working":
             frames = ("◇", "◈", "◆", "◈")
             pulse = frames[0 if theme.motion_reduced() else int(self.now * 3) % 4]
-            return pulse, t.tag_style
-        return {
-            "blocked": ("◆", t.warning_style),
-            "waiting": ("⏸", t.dim_style),
-            "stopped": ("○", t.dim_style),
-            "killed": ("✕", t.dim_style),
-        }.get(member.state, ("·", t.dim_style))
+            return pulse, state_style("working")
+        glyphs = {"blocked": "◆", "waiting": "⏸", "stopped": "○", "killed": "✕"}
+        return glyphs.get(member.state, "·"), state_style(member.state)
 
     # -- the activity column -----------------------------------------------
 
@@ -945,7 +997,7 @@ class SwarmBoard:
         label = "ACTIVITY · BOARD" if self.panel == "activity" else "BOARD"
         where = "all channels" if self.channel == "all" else f"#{self.channel}"
         left = (
-            f"{t.dim_style}▾{ansi.RESET} {t.hint_style}{ansi.BOLD}{label}{ansi.DIM_OFF}"
+            f"{t.swarm.accent}▾{ansi.RESET} {t.swarm.accent}{ansi.BOLD}{label}{ansi.DIM_OFF}"
             f"{t.dim_style} · {where}{ansi.RESET}"
         )
         if hidden:
@@ -960,40 +1012,43 @@ class SwarmBoard:
             return ansi.pad(left, width - ansi.width(right)) + right
         return ansi.clip(left, width)
 
-    def _event_row(self, event: EventView, width: int, *, newest: bool = False) -> str:
+    def _event_row(
+        self, event: EventView, width: int, *, newest: bool = False, author: bool = True
+    ) -> str:
         """One tool call or one post: who, what, how long, how it went."""
         t = theme.current()
         lead = ""
         if width >= 78 and event.clock:
-            lead += f"{t.dim_style}{event.clock:>8}{ansi.RESET} "
-        if width >= 64 and event.agent:
+            lead += f"{t.swarm.clock}{event.clock:>8}{ansi.RESET} "
+        if author and width >= 64 and event.agent:
             who = ansi.clip_ellipsis("@" + event.agent, 10)
-            lead += f"{t.tag_style}{ansi.pad(who, 11)}{ansi.RESET}"
+            lead += f"{self._person(event.agent)}{ansi.pad(who, 11)}{ansi.RESET}"
         if event.kind == "say":
-            glyph, label, glyph_style = "▤", "board", t.dim_style
+            glyph, label = "▤", "board"
+            glyph_style = t.swarm.board
         else:
             glyph = tool_glyph(event.label)
             label = event.label or "tool"
-            glyph_style = {"run": t.tag_style, "fail": t.diff_removed_style}.get(
-                event.status, t.dim_style
-            )
-        head = (
+            glyph_style = tool_style(event.label)
+        lead += (
             f"{glyph_style}{glyph}{ansi.RESET} "
             f"{t.hint_style}{ansi.pad(ansi.clip_ellipsis(label, 7), 7)}{ansi.RESET}"
         )
-        lead += head
         tail = ""
         if event.kind == "say":
             if event.seq:
-                tail = f"{t.dim_style}#{event.seq}{ansi.RESET}"
+                tail = f"{t.swarm.clock}#{event.seq}{ansi.RESET}"
         else:
             if event.running:
-                mark = f"{t.tag_style}{spinner(self.now)}{ansi.RESET}"
+                mark = f"{t.swarm.accent}{spinner(self.now)}{ansi.RESET}"
+                took = f"{t.swarm.accent}{duration(event.secs):>5}{ansi.RESET}"
             elif event.status == "fail":
-                mark = f"{t.diff_removed_style}✗{ansi.RESET}"
+                mark = f"{t.swarm.fail}✗{ansi.RESET}"
+                took = f"{t.swarm.fail}{duration(event.secs):>5}{ansi.RESET}"
             else:
-                mark = f"{t.diff_added_style}✓{ansi.RESET}"
-            tail = f"{t.dim_style}{duration(event.secs):>5}{ansi.RESET} {mark}"
+                mark = f"{t.swarm.ok}✓{ansi.RESET}"
+                took = f"{t.dim_style}{duration(event.secs):>5}{ansi.RESET}"
+            tail = f"{took} {mark}"
         room = max(4, width - ansi.width(lead) - ansi.width(tail) - 1)
         text = _styled(event.detail) if event.kind == "say" else event.detail
         body_style = t.hint_style if newest else t.statusline_style
@@ -1013,7 +1068,8 @@ class SwarmBoard:
         glyph, style = self._state_face(member)
         unread = self.view.unread(member)
         head = (
-            f"{t.dim_style}▾{ansi.RESET} {t.hint_style}{ansi.BOLD}MEMBER{ansi.DIM_OFF}{ansi.RESET}"
+            f"{t.swarm.accent}▾{ansi.RESET} {t.swarm.accent}{ansi.BOLD}MEMBER"
+            f"{ansi.DIM_OFF}{ansi.RESET}"
         )
         where = " ".join("#" + c for c in member.channels) or "#main"
         if member.workspace != "inherit":
@@ -1027,7 +1083,8 @@ class SwarmBoard:
         )
         rows = [
             ansi.clip(head, width),
-            f" {style}{glyph}{ansi.RESET} {t.tag_style}{ansi.BOLD}{member.name}{ansi.RESET}{role}",
+            f" {style}{glyph}{ansi.RESET} {self._person(member.name)}{ansi.BOLD}"
+            f"{member.name}{ansi.RESET}{role}",
             f"{t.dim_style}{'─' * max(0, width - 1)}{ansi.RESET}",
         ]
         meta = f" {t.hint_style}{member.model or '—'}{ansi.RESET}"
@@ -1037,12 +1094,12 @@ class SwarmBoard:
             f" · read #{member.last_read}{ansi.RESET}"
         )
         if member.fails:
-            meta += f"{t.diff_removed_style} · {member.fails} failed{ansi.RESET}"
+            meta += f"{t.swarm.fail} · {member.fails} failed{ansi.RESET}"
         if unread:
-            meta += f"{t.tag_style} · +{unread} unread{ansi.RESET}"
+            meta += f"{t.swarm.accent} · +{unread} unread{ansi.RESET}"
         rows.append(ansi.clip(meta, width))
         now = self._now_line(member, max(8, width - 6))
-        rows.append(ansi.clip(f" {t.dim_style}NOW{ansi.RESET}  {now}", width))
+        rows.append(ansi.clip(f" {t.swarm.accent}NOW{ansi.RESET}  {now}", width))
         rows.append("")
 
         events = [event for event in member.events]
@@ -1050,12 +1107,14 @@ class SwarmBoard:
         room = max(0, height - len(rows) - 3)
         shown_events = events[-max(1, room * 3 // 5) :] if room else []
         shown_posts = posts[-max(0, room - len(shown_events) - 1) :] if room else []
-        rows.append(f" {t.dim_style}ACTIVITY{ansi.RESET}")
-        rows.extend(self._event_row(event, width) for event in shown_events)
+        rows.append(f" {t.swarm.accent}ACTIVITY{ansi.RESET}")
+        # One member's panel: the author column would repeat the same name on
+        # every row, so it goes and the detail gets the room instead.
+        rows.extend(self._event_row(event, width, author=False) for event in shown_events)
         if not shown_events:
             rows.append(f" {t.dim_style}no tool calls yet{ansi.RESET}")
         rows.append("")
-        rows.append(f" {t.dim_style}POSTS ({len(posts)}){ansi.RESET}")
+        rows.append(f" {t.swarm.accent}POSTS ({len(posts)}){ansi.RESET}")
         for post in shown_posts:
             seq = f"{t.dim_style}#{post.seq:<3}{ansi.RESET}"
             area = ""
@@ -1210,7 +1269,7 @@ def _styled(text: str) -> str:
     out: list[str] = []
     for piece in MENTION_RE.split(text):
         if piece.startswith("@"):
-            out.append(f"{ansi.RESET}{t.tag_style}{piece}{ansi.RESET}")
+            out.append(f"{ansi.RESET}{t.swarm.accent}{piece}{ansi.RESET}")
         else:
             out.append(piece)
     return "".join(out)

@@ -461,10 +461,13 @@ class Demo:
     def _banner(self, cols: int) -> str:
         t = theme.current()
         left = (
-            f"{t.tag_style}{ansi.BOLD}vx swarm{ansi.RESET}"
+            f"{t.swarm.accent}{ansi.BOLD}vx swarm{ansi.RESET}"
             f"{t.dim_style} demo · simulated room, no model calls{ansi.RESET}"
         )
-        right = f"{t.dim_style}{self.sim.speed:g}× · {self.sim.tools} tools · q quits{ansi.RESET}"
+        right = (
+            f"{t.swarm.working}{self.sim.speed:g}×{ansi.RESET}"
+            f"{t.dim_style} · {self.sim.tools} tools · q quits{ansi.RESET}"
+        )
         if ansi.width(left) + ansi.width(right) + 2 > cols:
             return ansi.pad(ansi.clip(left, cols), cols)
         return ansi.pad(left, cols - ansi.width(right)) + right
