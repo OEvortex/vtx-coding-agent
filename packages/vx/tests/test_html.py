@@ -153,6 +153,59 @@ class TestPreAndTable:
         )
         assert max((ansi.width(row) for row in rows), default=0) <= 30
 
+    def test_table_shrinks_inside_narrow_block(self):
+        rows = plain_rows(
+            "<div style='padding:0 10px'><table>"
+            "<tr><th>alpha beta gamma delta epsilon</th></tr></table></div>",
+            30,
+        )
+        text = "\n".join(rows)
+        assert "alpha" in text
+        assert max((ansi.width(row) for row in rows), default=0) <= 30
+
+
+class TestBoxModel:
+    def test_border_draws_side_rails(self):
+        rows = plain_rows("<div style='border:1px'>boxed</div>", 40)
+        text = "\n".join(rows)
+        assert "│ boxed │" in text
+
+    def test_border_uses_border_color(self):
+        rows = render("<div style='border:1px; border-color:#ff6b6b'>x</div>", 40)
+        assert "\x1b[38;2;255;107;107m" in "".join(rows)
+
+    def test_border_shrinks_content_width(self):
+        rows = plain_rows("<div style='border:1px'>" + "word " * 30 + "</div>", 30)
+        assert max((ansi.width(row) for row in rows), default=0) <= 30
+
+    def test_padding_and_background_fill_row(self):
+        rows = render("<p style='padding:0 4px; background-color:#262a33'>hi</p>", 40)
+        joined = "".join(rows)
+        assert "\x1b[48;2;38;42;51m" in joined
+        assert any("    hi    " in ansi.strip_ansi(row) for row in rows)
+
+    def test_em_padding_uses_terminal_cells(self):
+        rows = render(
+            "<div style='margin-top:2; padding:1em 2ch; "
+            "background-color:#262a33'><p>Card</p></div>",
+            50,
+        )
+        plain = [ansi.strip_ansi(row) for row in rows]
+        assert len(rows) == 3
+        assert plain[1].startswith("  Card")
+        assert all(ansi.width(row) <= 50 for row in rows)
+
+    def test_logical_padding_shorthand_expands(self):
+        rows = render("<div style='padding-inline:1em 4ch'>x</div>", 40)
+        assert "x" in "\n".join(ansi.strip_ansi(row) for row in rows)
+        assert max((ansi.width(row) for row in rows), default=0) <= 40
+
+    def test_pre_respects_block_width(self):
+        rows = plain_rows("<pre>" + "x" * 60 + "</pre>", 30)
+        code_rows = [row for row in rows if "x" in row]
+        assert len(code_rows) > 1
+        assert max(ansi.width(row) for row in code_rows) <= 30
+
 
 class TestWidth:
     def test_paragraph_wraps_at_cols(self):

@@ -19,7 +19,9 @@ Properties: color, background-color, font-weight, font-style,
 text-decoration (incl. overline), font-size, text-align, text-transform,
 display (none prunes the subtree), visibility, margin/padding (logical and
 physical longhands plus shorthands, px/em/%), border (uniform ``─`` rules and
-``│`` cell edges), and ``hidden``. Lengths are rough cells (1em ~ 14 cells).
+``│`` cell edges), and ``hidden``. Lengths are rough cells: ``em``/``rem`` are
+about one row vertically or two columns horizontally, ``px``/``ch`` are cells,
+and ``%`` is relative to ``cols``.
 Table cells wrap and support ``colspan``; ``rowspan`` is ignored. Unknown
 declarations are ignored. There is no box model, flex/grid, pseudo-class or
 at-rule support - this styles terminal text, it does not lay out widgets.
@@ -272,7 +274,7 @@ def _resolve(value: str, variables: dict[str, str], depth: int = 0) -> str:
     return resolved
 
 
-def _length_px(value: str, cols: int) -> int | None:
+def _length_px(value: str, cols: int, *, vertical: bool = False) -> int | None:
     """Parse a CSS length into terminal cells; ``None`` means 'not a length'."""
     match = _LEN_RE.match(value.strip().lower())
     if not match:
@@ -283,14 +285,14 @@ def _length_px(value: str, cols: int) -> int | None:
         return None
     unit = match.group(2) or "px"
     if unit == "em" or unit == "rem":
-        cells = amount * 14
+        cells = amount * (1 if vertical else 2)
     elif unit == "%":
         cells = amount * cols / 100
     elif unit == "ch":
         cells = amount
     else:
         cells = amount
-    return max(0, int(round(cells)))
+    return max(0, round(cells))
 
 
 def _box_sides(prop: str) -> tuple[str, ...] | None:
@@ -311,15 +313,19 @@ def _expand_box(prop: str, value: str, variables: dict[str, str]) -> list[tuple[
         return []
     resolved = _resolve(value, variables)
     parts = resolved.split()
-    if len(parts) == 1:
-        parts = parts * 4
-    elif len(parts) == 2:
-        parts = [parts[0], parts[1], parts[0], parts[1]]
-    elif len(parts) == 3:
-        parts = [parts[0], parts[1], parts[2], parts[1]]
-    if len(parts) != 4:
+    count = len(sides)
+    if count == 4:
+        if len(parts) == 1:
+            parts = parts * 4
+        elif len(parts) == 2:
+            parts = [parts[0], parts[1], parts[0], parts[1]]
+        elif len(parts) == 3:
+            parts = [parts[0], parts[1], parts[2], parts[1]]
+    elif count == 2 and len(parts) == 1:
+        parts = parts * 2
+    if len(parts) != count:
         return []
-    return list(zip(sides, parts))
+    return list(zip(sides, parts, strict=True))
 
 
 def _set_box_property(
@@ -331,15 +337,13 @@ def _set_box_property(
     suffix = prop[len(base) :]
     if suffix in ("", "-block", "-inline") or suffix.startswith(("-block-", "-inline-")):
         for side, part in _expand_box(prop, value, variables):
-            overrides = _set_box_property(
-                overrides, f"{base}-{side}", part, variables, cols
-            )
+            overrides = _set_box_property(overrides, f"{base}-{side}", part, variables, cols)
         return overrides
     side = suffix[1:] if suffix.startswith("-") else ""
     field = _BOX_SIDE_FIELD.get(side)
     if field is None:
         return overrides
-    cells = _length_px(value, cols)
+    cells = _length_px(value, cols, vertical=side in ("top", "bottom"))
     if cells is None:
         return overrides
     attr = ("m" if is_margin else "p") + field
@@ -382,24 +386,31 @@ def _set_property(
         )
     if prop == "hidden":
         return replace(overrides, display="none")
+    if prop in (
+        "border-color",
+        "border-top-color",
+        "border-right-color",
+        "border-bottom-color",
+        "border-left-color",
+    ):
+        return replace(overrides, border_color=value)
     if prop.startswith("border"):
         if prop == "border":
             parts = value.split()
-            width = _length_px(parts[0], cols) if parts else None
+            width = next(
+                (cells for p in parts if (cells := _length_px(p, cols)) is not None), None
+            )
+            color = next((p for p in parts if not _length_px(p, cols)), "")
             return replace(
                 overrides,
                 border=width if width is not None else 1,
-                border_color=next((p for p in parts[1:] if p.startswith("#") or p.isalpha()), "")
-                or overrides.border_color,
+                border_color=color or overrides.border_color,
             )
         for suffix, attr in (("-top", "bt"), ("-right", "br"), ("-bottom", "bb"), ("-left", "bl")):
             if prop == f"border{suffix}":
                 width = _length_px(value, cols)
                 return replace(overrides, **{attr: width if width is not None else 1})
         return overrides
-    if prop in ("border-color", "border-top-color", "border-right-color",
-                "border-bottom-color", "border-left-color"):
-        return replace(overrides, border_color=value)
     if prop in _BOX_PROPS:
         return _set_box_property(overrides, prop, value, variables, cols)
     return overrides
@@ -587,12 +598,8 @@ class _Tree(HTMLParser):
             attrs_dict = {k: v or "" for k, v in attrs}
             if "hidden" in attrs_dict:
                 prior = attrs_dict.get("style", "")
-                attrs_dict["style"] = (
-                    f"{prior};display:none" if prior else "display:none"
-                )
-            self._stack[-1].children.append(
-                _Node(tag, attrs_dict, parent=self._stack[-1])
-            )
+                attrs_dict["style"] = f"{prior};display:none" if prior else "display:none"
+            self._stack[-1].children.append(_Node(tag, attrs_dict, parent=self._stack[-1]))
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "style" and self._style_parts is not None:
@@ -644,9 +651,7 @@ class HTMLView:
         for node in nodes:
             css_normal, css_urgent = self._sheet.overrides_for(node)
             inline_normal, inline_urgent = self._sheet.declarations(node.attrs.get("style", ""))
-            merged = (
-                css_normal.merge(inline_normal).merge(css_urgent).merge(inline_urgent)
-            )
+            merged = css_normal.merge(inline_normal).merge(css_urgent).merge(inline_urgent)
             self._computed[id(node)] = merged
             style = _apply(self._base(), merged)
             if style.hidden:
@@ -745,9 +750,7 @@ class HTMLView:
         bg = _paint(style.bg, bg=True)
         return f"{color}{bg}{'─' * max(0, width)}{ansi.RESET}"
 
-    def _blocks(
-        self, nodes: list[_Node], rows: list[str], style: _Style, indent: int
-    ) -> None:
+    def _blocks(self, nodes: list[_Node], rows: list[str], style: _Style, indent: int) -> None:
         width = max(8, self.cols - indent)
         prev_mb = 0  # collapsed bottom margin of the previous emitted block
         pending_mt = 0  # top margin of the next block, collapsed with prev_mb
@@ -767,7 +770,10 @@ class HTMLView:
                     flush()
                     rows.extend(
                         self._aligned(
-                            [self._fill_bg(r, width, own) for r in ansi.wrap(own.wrap(text), width)],
+                            [
+                                self._fill_bg(r, width, own)
+                                for r in ansi.wrap(own.wrap(text), width)
+                            ],
                             width,
                             own.align,
                         )
@@ -791,20 +797,18 @@ class HTMLView:
             inner_width = max(8, width - own.pl - own.pr - 2 * (1 if own.border else 0))
             inner_indent = indent + own.pl + (1 if own.border else 0)
 
-            def emit(inner: list[str]) -> None:
+            def emit(inner: list[str], own: _Style = own) -> None:
                 nonlocal prev_mb, pending_mt
                 if not inner:
                     return
                 flush()
-                block_rows = [" " * indent + r for r in inner]
                 if own.border:
                     bar = _paint(own.border_color) or ansi.dim()
-                    edge = bar + "│" + ansi.RESET
-                    block_rows = [
-                        edge + r[self._indent_len(r, indent) :] if False else edge + " " + r[len(" " * indent) :] + " " + edge
-                        for r in block_rows
-                    ]
-                rows.extend(block_rows)
+                    edge = f"{bar}│{ansi.RESET}"
+                    inner = [" " * indent + edge + " " + r + " " + edge for r in inner]
+                else:
+                    inner = [" " * indent + r for r in inner]
+                rows.extend(inner)
                 prev_mb = own.mb
 
             if t in _HEADINGS:
@@ -832,15 +836,17 @@ class HTMLView:
                 for line in inner_rows:
                     content.append(rail + line if line else rail.rstrip())
             elif t == "pre":
-                self._pre(node, content, own, inner_indent, inner_width)
+                self._pre(node, content, own, indent, width)
             elif t == "table":
-                self._table(node, content, own, inner_width)
+                self._table(node, content, own, width)
             elif t == "hr":
                 content.append(self._hline(inner_width, own))
             elif t == "br":
                 content.append("")
             elif t == "img":
-                content.append(f"{ansi.dim()}[image: {node.attrs.get('alt', 'image')}]{ansi.RESET}")
+                content.append(
+                    f"{ansi.dim()}[image: {node.attrs.get('alt', 'image')}]{ansi.RESET}"
+                )
             elif t in _INLINE_TAGS:
                 text = self._inline(node, own).strip()
                 if text:
@@ -849,8 +855,10 @@ class HTMLView:
                 self._blocks(node.children, content, own, inner_indent)
 
             # Vertical padding rows (styled bg), then content, then bottom pad.
-            padded = self._bgrow(own.pt, inner_width, own) + content + self._bgrow(
-                own.pb, inner_width, own
+            padded = (
+                self._bgrow(own.pt, inner_width, own)
+                + content
+                + self._bgrow(own.pb, inner_width, own)
             )
             if own.pl or own.pr:
                 pad_left = " " * own.pl
@@ -859,14 +867,10 @@ class HTMLView:
                     pad_left = own.wrap(pad_left)
                     pad_right = own.wrap(pad_right)
                 padded = [pad_left + r + pad_right for r in padded]
-            emit(padded)
             pending_mt = own.mt
+            emit(padded)
 
         flush()
-
-    @staticmethod
-    def _indent_len(row: str, indent: int) -> int:
-        return 0  # placeholder, unused
 
     def _list(
         self, node: _Node, rows: list[str], style: _Style, indent: int, ordered: bool
@@ -891,19 +895,19 @@ class HTMLView:
         for sub in nested:
             self._list(sub, rows, style, indent + 2, sub.tag == "ol")
 
-    def _pre(self, node: _Node, rows: list[str], style: _Style, indent: int) -> None:
+    def _pre(self, node: _Node, rows: list[str], style: _Style, indent: int, width: int) -> None:
         classes = node.attrs.get("class", "").split()
         lang = classes[-1].removeprefix("language-")[:16] if classes else ""
         label = f"─ {lang} " if lang else "─ code "
-        fill = "─" * max(0, min(self.cols, 60) - ansi.width(label))
+        fill = "─" * max(0, min(width, 60) - ansi.width(label))
         rows.append(f"{ansi.dim()}{label}{fill}{ansi.RESET}")
         code_style = style.with_(fg="#d6deeb")
         for line in node.content().splitlines() or [""]:
-            for chunk in ansi.hard_wrap(line.expandtabs(4), max(8, self.cols - indent)):
+            for chunk in ansi.hard_wrap(line.expandtabs(4), max(8, width - indent)):
                 rows.append(code_style.wrap(chunk))
-        rows.append(f"{ansi.dim()}{'─' * min(self.cols, 60)}{ansi.RESET}")
+        rows.append(f"{ansi.dim()}{'─' * min(width, 60)}{ansi.RESET}")
 
-    def _table(self, node: _Node, rows: list[str], style: _Style) -> None:
+    def _table(self, node: _Node, rows: list[str], style: _Style, width: int) -> None:
         """Draw tables like ``markdown.render``: no outer rails, a bold header."""
         table_rows: list[list[tuple[str, bool, str]]] = []
         table_align = _cell_align(node)
@@ -933,7 +937,7 @@ class HTMLView:
                 widths[index] = max(widths[index], ansi.width(text))
         sep = f" {ansi.dim()}│{ansi.RESET} "
         total = sum(widths) + ansi.width(sep) * (columns - 1)
-        while total > self.cols and max(widths) > 3:
+        while total > width and max(widths) > 3:
             widest = widths.index(max(widths))
             widths[widest] -= 1
             total -= 1
