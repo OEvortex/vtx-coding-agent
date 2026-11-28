@@ -57,6 +57,7 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
     ("/handoff", "carry this work into a new session", "Session"),
     ("/recap", "summarise what has happened so far", "Session"),
     ("/agent", "switch or reload agents", "Agents"),
+    ("/board", "the swarm board: every worker, its channel, and the feed", "Agents"),
     ("/skills", "list the loaded skills", "Workspace"),
     ("/tools", "list the available tools", "Workspace"),
     ("/mcp", "manage MCP servers", "Extensions"),
@@ -69,6 +70,8 @@ SLASH_COMMANDS: list[tuple[str, str, str]] = [
 #: Keys worth knowing, listed under the commands in ``/help``; the composer's
 #: readline set is not discoverable from the screen otherwise.
 KEY_BINDINGS: list[tuple[str, str]] = [
+    ("left", "open the swarm board (empty composer), then esc to leave"),
+    ("alt+s", "open the swarm board from anywhere"),
     ("ctrl+g", "fold the sidebar's sections"),
     ("ctrl+f", "search the transcript"),
     ("n / N", "next / previous search match"),
@@ -191,6 +194,7 @@ class CommandsMixin(
             "handoff": lambda: self._handle_handoff_command(args),
             "recap": self._handle_recap_command,
             "agent": lambda: self._handle_agent_command(args),
+            "board": self._handle_swarm_command,
             "skills": self._handle_skills_command,
             "tools": self._handle_tools_command,
             "mcp": lambda: self._handle_mcp_command(args),
@@ -212,6 +216,14 @@ class CommandsMixin(
         except Exception as exc:  # a broken command must not kill the app
             self._fail(f"/{cmd} failed: {exc}")
         return True
+
+    def _handle_swarm_command(self) -> None:
+        """Open the swarm board. It is a page, so it needs no runtime to render."""
+        opener = getattr(self, "_open_swarm", None)
+        if opener is None:  # a support mixin without the page (tests, headless)
+            self._warn("/board: the swarm board is only in the interactive UI")
+            return
+        opener()
 
     def _runtime_ready(self, cmd: str) -> bool:
         if cmd not in NEEDS_RUNTIME or self.runtime is not None:

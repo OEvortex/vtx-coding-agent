@@ -26,12 +26,22 @@ _TOOL_MODULES = {
     "ApplyPatchTool": ".apply_patch",
     "AskUserTool": ".ask_user",
     "BashTool": ".bash",
+    "PostMessageTool": ".swarm",
+    "ReadBoardTool": ".swarm",
     "ReadTool": ".read",
     "SearchTool": ".search",
     "SkillTool": ".skill",
+    "SubagentTool": ".subagent",
+    "SwarmTool": ".swarm",
+    "SwarmWaitTool": ".swarm",
     "TodoTool": ".todo",
     "WebTool": ".web",
 }
+
+#: Tools only the top-level agent gets. A sub-agent dispatched by
+#: ``delegate_subagent`` must not start its own swarm or recurse, and the board
+#: tools belong to a conversation's swarm, not to a one-shot helper.
+PARENT_ONLY = frozenset({"swarm", "post_message", "read_board", "swarm_wait", "delegate_subagent"})
 
 
 def _build_catalog() -> None:
@@ -48,6 +58,8 @@ def _build_catalog() -> None:
         importlib.import_module(".ask_user", __name__),
         importlib.import_module(".todo", __name__),
         importlib.import_module(".search", __name__),
+        importlib.import_module(".subagent", __name__),
+        importlib.import_module(".swarm", __name__),
     ]
     all_tools = [
         modules[0].ReadTool(),
@@ -58,9 +70,28 @@ def _build_catalog() -> None:
         modules[5].AskUserTool(),
         modules[6].TodoTool(),
         modules[7].SearchTool(),
+        modules[8].SubagentTool(),
+        modules[9].SwarmTool(),
+        modules[9].PostMessageTool(),
+        modules[9].ReadBoardTool(),
+        modules[9].SwarmWaitTool(),
     ]
     tools_by_name = {tool.name: tool for tool in all_tools}
-    DEFAULT_TOOLS = ["read", "apply_patch", "bash", "web", "skill", "search", "ask_user", "todo"]
+    DEFAULT_TOOLS = [
+        "read",
+        "apply_patch",
+        "bash",
+        "web",
+        "skill",
+        "search",
+        "ask_user",
+        "todo",
+        "delegate_subagent",
+        "swarm",
+        "post_message",
+        "read_board",
+        "swarm_wait",
+    ]
 
     def get_tools(names: list[str] | None = None):
         if names is None:
@@ -76,7 +107,11 @@ def register_all() -> list[BaseTool]:
         _build_catalog()
     from ctx.agent.tools import register_tools
 
-    return register_tools(all_tools, is_default=True)
+    top_level = [tool for tool in all_tools if tool.name in PARENT_ONLY]
+    rest = [tool for tool in all_tools if tool.name not in PARENT_ONLY]
+    register_tools(rest, is_default=True)
+    register_tools(top_level, is_default=True, parent_only=True)
+    return all_tools
 
 
 def _catalog_getattr(name: str) -> Any | None:
@@ -100,4 +135,11 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["DEFAULT_TOOLS", "all_tools", "get_tools", "register_all", "tools_by_name"]
+__all__ = [
+    "DEFAULT_TOOLS",
+    "PARENT_ONLY",
+    "all_tools",
+    "get_tools",
+    "register_all",
+    "tools_by_name",
+]

@@ -354,7 +354,7 @@ class JobRegistry:
                     text=(
                         f"Task {job.id} finished with status {job.status_word()} "
                         f"(exit {job.exit_code}) after {job.elapsed():.0f}s: {job.command}\n"
-                        + "\n".join(job.tail(5))
+                        f"Log: {job.log_path}\n" + "\n".join(job.tail(5))
                     ).rstrip(),
                 )
             )

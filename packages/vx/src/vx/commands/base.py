@@ -55,6 +55,10 @@ class CommandSupport:
 
     def _refresh_stats(self, *, force: bool = False) -> None: ...
 
+    def _open_swarm(self) -> None:
+        """Show the swarm board page (implemented by VxApp)."""
+        ...
+
     def _reset_sidebar(self) -> None:
         """Forget the plan with the conversation."""
         ...

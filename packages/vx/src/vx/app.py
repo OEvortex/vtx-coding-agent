@@ -154,6 +154,15 @@ class VxApp(_CommandBase):
         #: read off real state -- a tool result, or the job registry. Nothing to
         #: drift.
         self._sidebar = sidebar.Sidebar()
+        #: The swarm board page: ``left`` (or /swarm, or alt+s) opens it. It is a
+        #: whole page, not a docked column, because a room needs the width.
+        self._swarm: Any = None
+        #: Where the last frame put its body, for the page's own hit-testing.
+        self._swarm_rows = 0
+        #: Worker tool calls waiting on you, oldest first, and the tools you have
+        #: already allowed for this swarm (a decision that outlives one member).
+        self._swarm_asks: list[Any] = []
+        self._swarm_allowed: set[str] = set()
         #: The panel belongs to the work: it opens when the agent has a plan or
         #: terminals, and closes when it has neither.
         self._show_sidebar = False
@@ -724,10 +733,145 @@ class VxApp(_CommandBase):
 
         threading.Thread(target=go, daemon=True).start()
 
+    # -- the swarm board ---------------------------------------------------
+
+    def _open_swarm(self) -> None:
+        """Show the swarm board: the room this conversation is running."""
+        from vx.tui import swarm as swarm_page
+
+        if self._swarm is None:
+            self._swarm = swarm_page.SwarmBoard()
+        self._refresh_swarm()
+        self._menu = None
+        self._prompt = None
+        self._draw(force=True)
+
+    def _close_swarm(self) -> None:
+        if self._swarm is not None:
+            self._swarm = None
+            self._deny_pending_asks()
+            self._draw(force=True)
+
+    def _refresh_swarm(self) -> None:
+        """Take a fresh snapshot of the live swarm, if this conversation has one."""
+        from vx.swarm import peek_engine
+        from vx.tui.swarm import snapshot_from_engine
+
+        board = self._swarm
+        if board is None:
+            return
+        engine = None
+        with suppress(Exception):
+            engine = peek_engine()
+        if engine is not None:
+            # Watching the board is opting in to reviewing what workers run. The
+            # hook is re-installed every frame because a killed swarm takes its
+            # engine with it and a new one gets a fresh object.
+            engine.approval_hook = self._swarm_approval
+        board.view = snapshot_from_engine(engine)
+        board.now = time.monotonic()
+        if board.follow:
+            board.seen_head = board.view.head
+
+    # -- worker permissions -------------------------------------------------
+
+    async def _swarm_approval(self, member: Any, event: Any) -> Any:
+        """A worker wants to run a tool while the board is up: ask the human.
+
+        The hook is only installed while the board is open, so watching a swarm is
+        what makes its workers wait on you; with the page closed they go back to
+        approving themselves, which is the difference the page is worth.
+        """
+        from ctx.core import ApprovalResponse
+
+        name = getattr(member, "name", "worker")
+        label = str(getattr(event, "tool_name", "") or "tool")
+        if label in self._swarm_allowed or self._swarm is None:
+            return ApprovalResponse.APPROVE
+        target = " ".join(str(getattr(event, "display", "") or "").split())
+        self._swarm_asks.append((name, label, target, event))
+        self._pump_swarm_asks()
+        try:
+            return await event.future
+        except Exception:
+            return ApprovalResponse.DENY
+
+    def _pump_swarm_asks(self) -> None:
+        """Show the oldest unanswered ask, if the page has room for one."""
+        from vx.tui.swarm import Ask
+
+        board = self._swarm
+        if board is None or board.ask is not None or not self._swarm_asks:
+            return
+        name, label, target, _event = self._swarm_asks[0]
+        board.ask = Ask(member=name, label=label, target=target)
+        self._draw()
+
+    def _answer_swarm_ask(self, choice: str) -> None:
+        """Resolve the ask on the page: approve, allow this tool for the swarm, deny."""
+        from ctx.core import ApprovalResponse
+
+        board = self._swarm
+        if board is None or board.ask is None or not self._swarm_asks:
+            return
+        _name, label, _target, event = self._swarm_asks.pop(0)
+        if choice == "allow":
+            self._swarm_allowed.add(label)
+        decision = ApprovalResponse.DENY if choice == "deny" else ApprovalResponse.APPROVE
+        board.ask = None
+        if event.future is not None and not event.future.done():
+            event.future.set_result(decision)
+        self._pump_swarm_asks()
+
+    def _deny_pending_asks(self) -> None:
+        """Leaving the board answers nothing, so the safe answer is no."""
+        from ctx.core import ApprovalResponse
+
+        for _name, _label, _target, event in self._swarm_asks:
+            if event.future is not None and not event.future.done():
+                event.future.set_result(ApprovalResponse.DENY)
+        self._swarm_asks.clear()
+
+    def _swarm_key(self, key: str) -> bool:
+        """Route a key to the board. True when the board consumed it."""
+        board = self._swarm
+        if board is None:
+            return False
+        if key == "ctrl+c":
+            return False  # the app keeps its own quit
+        if key == "alt+s":
+            self._close_swarm()
+            return True
+        action = board.key(key)
+        if action == "close":
+            self._close_swarm()
+            return True
+        if action in ("approve", "allow", "deny"):
+            self._answer_swarm_ask(action)
+            return True
+        if action == "redraw":
+            self._refresh_swarm()
+            self._draw()
+            return True
+        return True
+
+    def _draw_swarm(self, rows: int, cols: int) -> None:
+        board = self._swarm
+        if board is None:
+            return
+        self._refresh_swarm()
+        frame = board.render(cols, rows)
+        self._swarm_rows = rows
+        payload = self.painter.paint(frame, cols, None)
+        if payload:
+            self.term.write(payload)
+
     def _handle_key(self, key: str) -> None:
         if self._exiting:
             return
         if self._terminal is not None and self._terminal_key(key):
+            return
+        if self._swarm is not None and self._swarm_key(key):
             return
         if self._menu is not None:
             self._menu_key(key)
@@ -757,6 +901,14 @@ class VxApp(_CommandBase):
             step = 1 if key in ("n", "ctrl+n") else -1
             self.viewport.search_next(step, *self._size())
             self._draw()
+            return
+        if key == "left" and not self._input and self._prompt is None:
+            # ``left`` at the start of an empty composer is not a cursor move, so
+            # it opens the room -- the same key the demo board uses.
+            self._open_swarm()
+            return
+        if key == "alt+s":
+            self._open_swarm()
             return
         if key == "tab" and not self._input:
             self._toggle_thinking_level(1)
@@ -2350,6 +2502,12 @@ class VxApp(_CommandBase):
                     display = block.target
         if not display:
             display = ev.tool_name
+        if self._swarm is not None:
+            # The board is a page, so the transcript's approval panel is behind it:
+            # my own tool calls queue behind the workers' and are answered there.
+            self._swarm_asks.append(("coordinator", str(ev.tool_name or "tool"), display, ev))
+            self._pump_swarm_asks()
+            return
         self._approval = {
             "label": ev.tool_name,
             "target": display,
@@ -2806,6 +2964,10 @@ class VxApp(_CommandBase):
             self._draw_force = self._draw_force or force
             return
         rows, cols = self.term.size()
+        if self._swarm is not None:
+            # The board is a page, not a band: it lays out the whole frame itself.
+            self._draw_swarm(rows, cols)
+            return
         foot, caret = self._footer(cols, rows)
         foot = foot[-max(1, rows - 1) :]
         area = max(1, rows - len(foot))

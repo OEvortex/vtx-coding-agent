@@ -1,6 +1,7 @@
 """Read tool for vx — read files and list directories."""
 
 import asyncio
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -27,13 +28,20 @@ def _strip_line_number(line: str) -> str:
 
 
 class ReadParams(BaseModel):
-    path: str = Field(description="Absolute path of file or directory")
-    offset: int | None = Field(
-        description="1-based start line — read a range instead of the whole file", default=None
+    path: str = Field(
+        description=(
+            "File or directory path — absolute, ~/, $VAR, or relative to the working directory"
+        )
     )
-    limit: int | None = Field(
-        description="Max lines to return from offset — pair with offset for large files",
+    start_line: int | None = Field(
+        default=None, description="First line to read (1-based). Omit to start at line 1."
+    )
+    end_line: int | None = Field(
         default=None,
+        description=(
+            "Last line to read, inclusive. Omit to read to the end of the file "
+            "(capped at 2000 lines per call — page with start_line/end_line)."
+        ),
     )
 
 
@@ -44,23 +52,30 @@ class ReadTool(BaseTool):
     mutating = False
     parallel_safe = True
     description = (
-        "Read a file (numbered lines; 2000-line/2000-char caps — use offset/limit "
-        "ranges: search first, then read a window, don't dump whole large files) or "
-        "list a directory (recursive, depth<=3). Supports jpg/png/gif/webp."
+        "Read a file (numbered lines; 2000-line/2000-char caps — page large files "
+        "with start_line/end_line: search first, then read a window, don't dump "
+        "whole files) or list a directory (recursive, depth<=3). Any path works: "
+        "absolute, ~/, or relative to the working directory. Supports jpg/png/gif/webp."
     )
 
     def format_call(self, params: ReadParams) -> str:
         path = shorten_path(params.path)
-        if params.offset or params.limit:
-            start = params.offset or 1
-            end = (start + params.limit - 1) if params.limit else "?"
+        if params.start_line is not None or params.end_line is not None:
+            start = params.start_line or 1
+            end = params.end_line if params.end_line is not None else "?"
             return f"{path}:{start}-{end}"
         return path
 
-    async def read_file(self, file_path: Path, offset: int | None, limit: int | None) -> str:
+    async def read_file(
+        self, file_path: Path, start_line: int | None, end_line: int | None
+    ) -> str:
         lines = []
-        start = (offset - 1) if offset else 0
-        effective_limit = min(limit, MAX_LINES_PER_FILE) if limit else MAX_LINES_PER_FILE
+        start = max(0, (start_line - 1)) if start_line else 0
+        if end_line is not None:
+            # end_line is inclusive: lines wanted = end_line - start (0-based).
+            effective_limit = max(0, min(end_line - start, MAX_LINES_PER_FILE))
+        else:
+            effective_limit = MAX_LINES_PER_FILE
         line_number = 0
 
         async with aiofiles.open(file_path, encoding="utf-8") as f:
@@ -70,7 +85,10 @@ class ReadTool(BaseTool):
                     continue
                 if len(lines) == effective_limit:
                     if effective_limit == MAX_LINES_PER_FILE:
-                        lines.append(f"[output truncated after {MAX_LINES_PER_FILE} lines]")
+                        lines.append(
+                            f"[output truncated after {MAX_LINES_PER_FILE} lines — "
+                            "continue with start_line/end_line]"
+                        )
                     break
 
                 if len(line) > MAX_CHARS_PER_LINE:
@@ -221,7 +239,8 @@ class ReadTool(BaseTool):
     async def execute(
         self, params: ReadParams, cancel_event: asyncio.Event | None = None
     ) -> ToolResult:
-        file_path = Path(params.path)
+        # ~ and $VARS expand so home-dir and env paths work like they do in a shell.
+        file_path = Path(os.path.expandvars(os.path.expanduser(params.path)))
 
         if not file_path.exists():
             msg = "Path not found"
@@ -257,13 +276,13 @@ class ReadTool(BaseTool):
                 return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
         try:
-            content = await self.read_file(file_path, params.offset, params.limit)
+            content = await self.read_file(file_path, params.start_line, params.end_line)
         except OSError as e:
             msg = f"Failed to read: {e}"
             return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
         lines_read = len(content.splitlines()) if content else 0
-        paged = bool(params.offset or params.limit)
+        paged = bool(params.start_line is not None or params.end_line is not None)
         preview_limit = lines_read if paged else PREVIEW_LINES
         preview = "\n".join(
             _strip_line_number(line) for line in content.splitlines()[:preview_limit]
@@ -275,7 +294,7 @@ class ReadTool(BaseTool):
             ui_data={
                 "path": str(file_path),
                 "preview": preview,
-                "start_line": params.offset or 1,
+                "start_line": params.start_line or 1,
                 "paged": paged,
             },
         )
